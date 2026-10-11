@@ -1,5 +1,5 @@
 //! Keep the separately qualified native documents in the shared image corpus.
-use catwalk::Result;
+use catwalk3d::Result;
 use std::path::Path;
 
 /// Copy retained source documents and their licenses, excluding reference image outputs.

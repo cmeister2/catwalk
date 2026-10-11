@@ -1,6 +1,6 @@
 //! Retained DWG line coordinates, provenance and native thumbnail fallback qualification.
 
-use catwalk::{formats, render::RenderOptions, saved_preview, scene::Vec3};
+use catwalk3d::{formats, render::RenderOptions, saved_preview, scene::Vec3};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 
@@ -45,11 +45,11 @@ fn a_genuine_dwg_without_an_image_renders_geometry_by_default() {
         width: 128,
         height: 128,
         transparent: true,
-        ..catwalk::render::RenderOptions::default()
+        ..catwalk3d::render::RenderOptions::default()
     };
-    let fresh = catwalk::geometry_thumbnail(&path, &options).unwrap();
+    let fresh = catwalk3d::geometry_thumbnail(&path, &options).unwrap();
     assert!(fresh.pixels().filter(|p| p[3] != 0).count() > 100);
-    assert_eq!(catwalk::thumbnail(&path, &options).unwrap(), fresh);
+    assert_eq!(catwalk3d::thumbnail(&path, &options).unwrap(), fresh);
 }
 
 #[test]
@@ -57,5 +57,5 @@ fn geometry_mode_does_not_fabricate_a_model_from_a_saved_image_carrier() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/saved-previews/blend_dwg/authored-png.dwg");
     assert!(saved_preview::extract(&path).unwrap().is_some());
-    assert!(catwalk::geometry_thumbnail(&path, &RenderOptions::default()).is_err());
+    assert!(catwalk3d::geometry_thumbnail(&path, &RenderOptions::default()).is_err());
 }

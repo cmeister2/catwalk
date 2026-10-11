@@ -1,9 +1,38 @@
 [package]
-name = "catwalk"
+name = "catwalk3d"
 version = "0.1.0"
 edition = "2024"
 description = "Headless model thumbnails rendered entirely in Rust"
 license = "MIT"
+repository = "https://github.com/cmeister2/catwalk"
+homepage = "https://cmeister2.github.io/catwalk/"
+documentation = "https://docs.rs/catwalk3d"
+readme = "README.md"
+include = [
+    "src/**",
+    "docs/**",
+    "README.md",
+    "LICENSE",
+    "examples/demo.rs",
+    "examples/models/gear.obj",
+    "examples/gear.png",
+    "tests/fixtures/draco/**",
+    "tests/fixtures/slpk/**",
+    "tests/fixtures/saved-previews/lightburn/**",
+    "tests/fixtures/saved-previews/blend_dwg/**",
+    "tests/fixtures/native_geometry/blend/hierarchy-502-no-thumbnail.blend",
+    "tests/fixtures/native_geometry/blend/LICENSE-Khronos.txt",
+    "tests/fixtures/native_geometry/blend/README.md",
+    "tests/fixtures/native_geometry/blend/manifest.json",
+    "tests/fixtures/formats/scientific_cad/iges-iges-box.iges",
+    "tests/fixtures/formats/mesh_scene/obj-palette.mtl",
+    "Cargo.toml",
+    "Cargo.lock",
+]
+
+[[bin]]
+name = "catwalk"
+path = "src/main.rs"
 
 [dependencies]
 acadrust = { version = "=0.6.3", default-features = false }

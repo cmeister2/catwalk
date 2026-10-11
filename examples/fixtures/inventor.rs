@@ -1,5 +1,5 @@
 //! Original CFB/OLEPS thumbnail carriers, with no Inventor CAD geometry.
-use catwalk::Result;
+use catwalk3d::Result;
 use std::{fs::File, io::Write, path::Path};
 
 /// Store an authored PNG in an Inventor-compatible OLE property-set carrier.

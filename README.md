@@ -10,6 +10,8 @@ Catwalk additionally renders stored Blender mesh scenes, `LightBurn` vector draw
 
 ## Build and use
 
+The crate is named `catwalk3d`; its command-line executable is `catwalk`.
+
 Install a current stable Rust toolchain, then:
 
 ```sh
@@ -37,10 +39,10 @@ Geometry uses Z up; scene importers convert formats with other axis conventions.
 ## Library
 
 ```rust,no_run
-use catwalk::{render::{RenderOptions, write_png}, thumbnail};
+use catwalk3d::{render::{RenderOptions, write_png}, thumbnail};
 use std::{fs::File, path::Path};
 
-fn main() -> catwalk::Result<()> {
+fn main() -> catwalk3d::Result<()> {
     let options = RenderOptions {
         width: 256,
         height: 256,
@@ -98,6 +100,16 @@ Material and vertex colors are used where implemented; glTF and supported FBX sk
 Compression and image codecs use Rust backends. The supported Linux, Windows and macOS dependency graphs do not contain native geometry or codec libraries. Rust's standard library and platform bindings still use normal operating-system facilities.
 
 Dependencies are published crates without local patches. Owned adapters decode the affected HDF5 chunk indexes into upstream arrays, restore authored BREP frames through geometry builders, and construct independent IGES preview faces through public topology APIs.
+
+## Releases
+
+Successful CI runs on `main` publish the `catwalk3d` crate and a matching GitHub release through semantic-release. Conventional commits determine the version: `fix:` produces a patch, `feat:` a minor release, and a breaking change a major release. The first release is `1.0.0`. Documentation-only commits do not trigger a release.
+
+Publication waits for formatting, strict Clippy, documentation and every operating-system test job. The release checkout stamps the selected version into `Cargo.toml` and its local `Cargo.lock` entry, verifies the packaged crate and its size, and publishes with locked dependencies before semantic-release creates a version tag. An existing non-yanked version is accepted only when the official crates.io checksum matches the exact verified archive. A failed first upload therefore leaves the version untagged; retrying an identical successful upload does not upload it twice. GitHub releases include the `.crate` source archive. Node dependencies are used only by the release tooling.
+
+Registry publication, Git tagging and GitHub releases are separate operations. If GitHub publication fails after the version tag is pushed, maintainers must finish or repair that tagged GitHub release; rerunning semantic-release alone does not republish an existing tag. Keep the published crate and tag when recovering this partial state.
+
+Maintainers configure a crates.io publishing token in the repository secret `CARGO_REGISTRY_TOKEN`; `PUBLISH_SECRET` is also accepted. Release automation skips publication while neither secret is configured. Local `.env` files are excluded from Git and Cargo packages.
 
 ## License
 

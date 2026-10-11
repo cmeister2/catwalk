@@ -1,6 +1,6 @@
 //! Independent AP242 triangle, representation ownership and assembly qualification.
 
-use catwalk::{
+use catwalk3d::{
     Result, formats,
     scene::{Scene, Triangle, Vec3},
 };

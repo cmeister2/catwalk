@@ -1,0 +1,13 @@
+{
+  "name": "catwalk3d-release",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "release": "semantic-release"
+  },
+  "devDependencies": {
+    "@semantic-release/exec": "^7.1.0",
+    "conventional-changelog-conventionalcommits": "^9.1.0",
+    "semantic-release": "^25.0.2"
+  }
+}

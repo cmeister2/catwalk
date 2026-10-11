@@ -337,7 +337,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Read one finite STEP integer or decimal real, including signed exponents.
+    /// Read finite STEP numbers, accepting either exponent case used by real exporters.
     ///
     /// # Errors
     ///
@@ -358,7 +358,7 @@ impl<'a> Parser<'a> {
             while bytes.get(end).is_some_and(u8::is_ascii_digit) {
                 end += 1;
             }
-            if bytes.get(end) == Some(&b'E') {
+            if matches!(bytes.get(end), Some(b'E' | b'e')) {
                 end += 1;
                 end += usize::from(matches!(bytes.get(end), Some(b'+' | b'-')));
                 let exponent_start = end;
@@ -629,6 +629,22 @@ mod tests {
             subsuper.0[1].parameter,
             Parameter::List(vec![Parameter::List(Vec::new())])
         );
+    }
+
+    #[test]
+    fn producer_lowercase_real_exponents_preserve_values_and_validation() {
+        let parsed = parse(&exchange("#1=TEST(1.25e-2,-3.e+2,4.5E1);")).unwrap();
+        assert_eq!(
+            values(&parsed),
+            &[
+                Parameter::Real(0.0125),
+                Parameter::Real(-300.),
+                Parameter::Real(45.)
+            ]
+        );
+        for number in ["1.2e", "1.2e+", "1.2e-", "1.2e9999"] {
+            assert!(parse(&exchange(&format!("#1=TEST({number});"))).is_err());
+        }
     }
 
     #[test]

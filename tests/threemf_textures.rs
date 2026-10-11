@@ -1,6 +1,6 @@
 //! Independent texture, geometry, packaging, and retained-source qualification for 3MF.
 
-use catwalk::{
+use catwalk3d::{
     Result, formats, render,
     scene::{AlphaMode, Scene, TextureFilter, TextureInterpolationSpace, TextureWrap, Vec3},
 };

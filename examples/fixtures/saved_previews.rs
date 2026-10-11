@@ -4,7 +4,7 @@
 /// Writer for authored Inventor thumbnail carriers.
 mod inventor;
 
-use catwalk::Result;
+use catwalk3d::Result;
 use std::{
     fs,
     io::{Cursor, Write},
@@ -21,13 +21,13 @@ const DIR: &str = "saved_previews";
 /// be encoded, or the output directory and compound files cannot be written.
 pub fn generate_inventor(root: &Path) -> Result<Vec<crate::Fixture>> {
     fs::create_dir_all(root.join(DIR))?;
-    let options = catwalk::render::RenderOptions {
+    let options = catwalk3d::render::RenderOptions {
         width: 160,
         height: 128,
         transparent: true,
-        ..catwalk::render::RenderOptions::default()
+        ..catwalk3d::render::RenderOptions::default()
     };
-    let part = catwalk::thumbnail(
+    let part = catwalk3d::thumbnail(
         &Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/models/gear.obj"),
         &options,
     )?;
@@ -52,7 +52,7 @@ pub fn generate_inventor(root: &Path) -> Result<Vec<crate::Fixture>> {
         ),
     ] {
         let mut png = Vec::new();
-        catwalk::render::write_png(&image, &mut png)?;
+        catwalk3d::render::write_png(&image, &mut png)?;
         let input = format!("{DIR}/{id}.{extension}");
         inventor::write(&root.join(&input), version, &png)?;
         cases.push(crate::fixture(id, extension, title, &input, "saved-preview", "Original MIT-licensed CFB/OLEPS thumbnail-carrier fixture. Native Inventor summary FMTID and PID17 VT_CF wrap a saved PNG of Catwalk's authored gear; no Inventor CAD geometry. Supported carriers and resource bounds are documented in docs/format-coverage.md."));
@@ -126,7 +126,7 @@ pub fn generate_lightburn(root: &Path) -> Result<Vec<crate::Fixture>> {
         ),
     ];
     for case in &cases {
-        let preview = catwalk::saved_preview::lightburn::extract(&root.join(&case.input))?
+        let preview = catwalk3d::saved_preview::lightburn::extract(&root.join(&case.input))?
             .ok_or_else(|| format!("LightBurn corpus fixture has no saved preview: {}", case.id))?;
         if preview.dimensions() != (256, 256) {
             return Err(format!(
@@ -240,15 +240,15 @@ pub fn generate_blend_dwg(root: &Path) -> Result<Vec<crate::Fixture>> {
 pub fn generate_fusion(root: &Path) -> Result<Vec<crate::Fixture>> {
     let directory = root.join(DIR);
     fs::create_dir_all(&directory)?;
-    let options = catwalk::render::RenderOptions {
+    let options = catwalk3d::render::RenderOptions {
         width: 192,
         height: 128,
         supersampling: 2,
-        ..catwalk::render::RenderOptions::default()
+        ..catwalk3d::render::RenderOptions::default()
     };
-    let image = catwalk::thumbnail(&root.join("mesh_scene/obj-material-palette.obj"), &options)?;
+    let image = catwalk3d::thumbnail(&root.join("mesh_scene/obj-material-palette.obj"), &options)?;
     let mut png = Vec::new();
-    catwalk::render::write_png(&image, &mut png)?;
+    catwalk3d::render::write_png(&image, &mut png)?;
     let mut manifest = Vec::new();
     for value in ["3-2-0-0", "FusionDocType"] {
         manifest.extend_from_slice(&u32::try_from(value.len())?.to_le_bytes());
@@ -260,7 +260,7 @@ pub fn generate_fusion(root: &Path) -> Result<Vec<crate::Fixture>> {
     active.extend("FusionAssetName".encode_utf16().flat_map(u16::to_le_bytes));
     let simulation = image::RgbaImage::from_pixel(192, 128, image::Rgba([255, 0, 255, 255]));
     let mut wrong_png = Vec::new();
-    catwalk::render::write_png(&simulation, &mut wrong_png)?;
+    catwalk3d::render::write_png(&simulation, &mut wrong_png)?;
     let mut cases = Vec::new();
     for (id, compression) in [
         (

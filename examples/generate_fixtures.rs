@@ -16,7 +16,7 @@ mod saved_previews;
 /// Generate scientific datasets and CAD boundary representations.
 mod scientific_cad;
 
-use catwalk::{Result, formats};
+use catwalk3d::{Result, formats};
 use serde_json::json;
 use std::{collections::BTreeSet, path::Path};
 
@@ -84,7 +84,7 @@ fn main() -> Result<()> {
     let advertised: BTreeSet<_> = formats::MODEL_EXTENSIONS
         .iter()
         .chain(formats::IMAGE_EXTENSIONS)
-        .chain(catwalk::saved_preview::EXTENSIONS)
+        .chain(catwalk3d::saved_preview::EXTENSIONS)
         .copied()
         .collect();
     let generated: BTreeSet<_> = cases.iter().map(|case| case.extension.as_str()).collect();

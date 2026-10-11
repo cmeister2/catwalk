@@ -1,6 +1,6 @@
 //! Qualification tests for supported CAD solids, triangulation and error handling.
 
-use catwalk::formats;
+use catwalk3d::formats;
 use ogeom_core::Tolerances;
 use ogeom_math::{Frame, Point};
 use ogeom_topo::Model;

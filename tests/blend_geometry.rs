@@ -1,6 +1,6 @@
 //! Independent geometry measurements and thumbnail snapshots for retained Blender files.
 
-use catwalk::{formats, geometry_thumbnail, render::RenderOptions, saved_preview, scene::Scene};
+use catwalk3d::{formats, geometry_thumbnail, render::RenderOptions, saved_preview, scene::Scene};
 use std::{
     fs,
     io::Write,
@@ -193,7 +193,7 @@ fn no_thumbnail_previews_match_reviewed_images_and_render_without_a_display() {
         let path = fixture(&format!("{name}-no-thumbnail.blend"));
         let image = geometry_thumbnail(&path, &options()).unwrap();
         snapshot(&image, &fixture(&format!("{name}-geometry.png")));
-        assert_eq!(image, catwalk::thumbnail(&path, &options()).unwrap());
+        assert_eq!(image, catwalk3d::thumbnail(&path, &options()).unwrap());
         let output = directory.0.join(format!("{name}.png"));
         let result = Command::new(env!("CARGO_BIN_EXE_catwalk"))
             .arg(&path)
@@ -243,7 +243,10 @@ fn compressed_geometry_and_geometry_forcing_ignore_saved_thumbnail_pixels() {
         rendered,
         geometry_thumbnail(&fixture("cube-278-no-thumbnail.blend"), &options()).unwrap()
     );
-    assert_ne!(rendered, catwalk::thumbnail(&original, &options()).unwrap());
+    assert_ne!(
+        rendered,
+        catwalk3d::thumbnail(&original, &options()).unwrap()
+    );
 }
 
 #[test]

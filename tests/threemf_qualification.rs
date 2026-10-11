@@ -1,6 +1,6 @@
 //! Independent geometry and original-byte qualification of multipart 3MF packages.
 
-use catwalk::{
+use catwalk3d::{
     formats,
     scene::{Scene, Vec3},
 };

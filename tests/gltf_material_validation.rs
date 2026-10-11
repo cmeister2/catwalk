@@ -1,7 +1,7 @@
 //! Public-loader validation of glTF material carriers, UV encodings and resource limits.
 
 use base64::Engine;
-use catwalk::{Result, formats, scene::Scene};
+use catwalk3d::{Result, formats, scene::Scene};
 use image::{
     ExtendedColorType, ImageEncoder, Rgba, codecs::jpeg::JpegEncoder, codecs::png::PngEncoder,
 };
@@ -228,9 +228,12 @@ fn png_and_jpeg_external_data_uri_and_glb_view_images_preserve_pixels() {
                     assert_eq!(pixel[3], 255);
                 }
             }
-            assert_eq!(texture.wrap_s, catwalk::scene::TextureWrap::ClampToEdge);
-            assert_eq!(texture.wrap_t, catwalk::scene::TextureWrap::MirroredRepeat);
-            assert_eq!(texture.filter, catwalk::scene::TextureFilter::Nearest);
+            assert_eq!(texture.wrap_s, catwalk3d::scene::TextureWrap::ClampToEdge);
+            assert_eq!(
+                texture.wrap_t,
+                catwalk3d::scene::TextureWrap::MirroredRepeat
+            );
+            assert_eq!(texture.filter, catwalk3d::scene::TextureFilter::Nearest);
         }
     }
 }

@@ -1,5 +1,5 @@
 //! Portable authored point-cloud/raster fixtures, with an attributed I3S sample.
-use catwalk::{Result, render::RenderOptions};
+use catwalk3d::{Result, render::RenderOptions};
 use flate2::{
     Compression,
     write::{GzEncoder, ZlibEncoder},
@@ -51,7 +51,7 @@ impl Fixtures<'_> {
         if kind == "model" {
             verify_points(&self.root.join(&input), extension, id)?;
         }
-        let thumbnail = catwalk::thumbnail(
+        let thumbnail = catwalk3d::thumbnail(
             &self.root.join(&input),
             &RenderOptions {
                 width: 256,
@@ -138,7 +138,7 @@ pub fn generate(root: &Path) -> Result<Vec<crate::Fixture>> {
 /// Validate independently authored placement and RGB through the public loader,
 /// so rendering a nonempty but incorrectly decoded cloud cannot approve input.
 fn verify_points(path: &Path, extension: &str, id: &str) -> Result<()> {
-    let scene = catwalk::formats::load(path)?;
+    let scene = catwalk3d::formats::load(path)?;
     let expected_count = if extension == "slpk" {
         106
     } else if extension == "csd" {

@@ -1,6 +1,6 @@
 //! STEP surface, mapped placement, assembly ownership and unit-conversion qualification.
 
-use catwalk::formats;
+use catwalk3d::formats;
 use std::{fs, path::PathBuf, process::Command};
 use truck_modeling::{Point3, Vector3, builder};
 use truck_stepio::out::{CompleteStepDisplay, StepHeaderDescriptor, StepModel};
@@ -113,7 +113,7 @@ fn nested_mapped_step() -> String {
     )
 }
 
-fn load_text(source: &str, name: &str) -> catwalk::scene::Scene {
+fn load_text(source: &str, name: &str) -> catwalk3d::scene::Scene {
     static SERIAL: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let serial = SERIAL.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let directory = FixtureDirectory(std::env::temp_dir().join(format!(
@@ -131,8 +131,8 @@ fn load_text(source: &str, name: &str) -> catwalk::scene::Scene {
     reason = "Small authored reference coordinates are intentionally rounded to integer micro-units for comparison"
 )]
 fn transformed_vertices(
-    scene: &catwalk::scene::Scene,
-    transform: impl Fn(catwalk::scene::Vec3) -> catwalk::scene::Vec3,
+    scene: &catwalk3d::scene::Scene,
+    transform: impl Fn(catwalk3d::scene::Vec3) -> catwalk3d::scene::Vec3,
 ) -> Vec<[i64; 3]> {
     let mut points: Vec<_> = scene
         .positions()
@@ -154,17 +154,17 @@ fn nested_mapped_instances_preserve_each_authored_surface_and_frame() {
     for outer in 0..2 {
         for inner in 0..2 {
             expected.extend(transformed_vertices(&original, |p| {
-                let q = p - catwalk::scene::Vec3::new(2., 3., 4.);
+                let q = p - catwalk3d::scene::Vec3::new(2., 3., 4.);
                 let q = if inner == 0 {
-                    catwalk::scene::Vec3::new(10. - q.y, q.x, q.z)
+                    catwalk3d::scene::Vec3::new(10. - q.y, q.x, q.z)
                 } else {
-                    catwalk::scene::Vec3::new(q.x, 8. - q.y, 1. - q.z)
+                    catwalk3d::scene::Vec3::new(q.x, 8. - q.y, 1. - q.z)
                 };
-                let q = q - catwalk::scene::Vec3::new(5., 2., 1.);
+                let q = q - catwalk3d::scene::Vec3::new(5., 2., 1.);
                 if outer == 0 {
                     q
                 } else {
-                    catwalk::scene::Vec3::new(-q.y, 20. + q.x, 5. + q.z)
+                    catwalk3d::scene::Vec3::new(-q.y, 20. + q.x, 5. + q.z)
                 }
             }));
         }
@@ -239,11 +239,11 @@ fn assembly_occurrences_and_reversed_relationships_use_product_ownership() {
         transformed_vertices(&reversed, |p| p)
     );
     let mut expected = transformed_vertices(&original, |p| {
-        let q = p - catwalk::scene::Vec3::new(2., 3., 4.);
-        catwalk::scene::Vec3::new(10. - q.y, 20. + q.x, 30. + q.z)
+        let q = p - catwalk3d::scene::Vec3::new(2., 3., 4.);
+        catwalk3d::scene::Vec3::new(10. - q.y, 20. + q.x, 30. + q.z)
     });
     expected.extend(transformed_vertices(&original, |p| {
-        p - catwalk::scene::Vec3::new(12., 23., 34.)
+        p - catwalk3d::scene::Vec3::new(12., 23., 34.)
     }));
     expected.sort_unstable();
     assert_eq!(transformed_vertices(&normal, |p| p), expected);
@@ -277,17 +277,17 @@ fn length_contexts_apply_to_flat_and_mapped_geometry_and_placements() {
     for outer in 0..2 {
         for inner in 0..2 {
             expected.extend(transformed_vertices(&millimeters, |p| {
-                let q = (p - catwalk::scene::Vec3::new(2., 3., 4.)) * 1000.;
+                let q = (p - catwalk3d::scene::Vec3::new(2., 3., 4.)) * 1000.;
                 let q = if inner == 0 {
-                    catwalk::scene::Vec3::new(10. - q.y, q.x, q.z)
+                    catwalk3d::scene::Vec3::new(10. - q.y, q.x, q.z)
                 } else {
-                    catwalk::scene::Vec3::new(q.x, 8. - q.y, 1. - q.z)
+                    catwalk3d::scene::Vec3::new(q.x, 8. - q.y, 1. - q.z)
                 };
-                let q = q - catwalk::scene::Vec3::new(5., 2., 1.);
+                let q = q - catwalk3d::scene::Vec3::new(5., 2., 1.);
                 if outer == 0 {
                     q
                 } else {
-                    catwalk::scene::Vec3::new(-q.y, 20. + q.x, 5. + q.z)
+                    catwalk3d::scene::Vec3::new(-q.y, 20. + q.x, 5. + q.z)
                 }
             }));
         }
@@ -433,18 +433,18 @@ fn nonidentity_mapping_origin_rotation_is_inverted_before_target_placement() {
     for outer in 0..2 {
         for inner in 0..2 {
             expected.extend(transformed_vertices(&original, |p| {
-                let q = p - catwalk::scene::Vec3::new(2., 3., 4.);
-                let q = catwalk::scene::Vec3::new(q.y, -q.x, q.z); // inverse +90° source frame
+                let q = p - catwalk3d::scene::Vec3::new(2., 3., 4.);
+                let q = catwalk3d::scene::Vec3::new(q.y, -q.x, q.z); // inverse +90° source frame
                 let q = if inner == 0 {
-                    catwalk::scene::Vec3::new(10. - q.y, q.x, q.z)
+                    catwalk3d::scene::Vec3::new(10. - q.y, q.x, q.z)
                 } else {
-                    catwalk::scene::Vec3::new(q.x, 8. - q.y, 1. - q.z)
+                    catwalk3d::scene::Vec3::new(q.x, 8. - q.y, 1. - q.z)
                 };
-                let q = q - catwalk::scene::Vec3::new(5., 2., 1.);
+                let q = q - catwalk3d::scene::Vec3::new(5., 2., 1.);
                 if outer == 0 {
                     q
                 } else {
-                    catwalk::scene::Vec3::new(-q.y, 20. + q.x, 5. + q.z)
+                    catwalk3d::scene::Vec3::new(-q.y, 20. + q.x, 5. + q.z)
                 }
             }));
         }
@@ -528,8 +528,8 @@ fn equivalent_geometry_representation_links_accept_both_endpoint_orders() {
         );
         let expected = transformed_vertices(&original, |p| {
             if mapped {
-                let q = p - catwalk::scene::Vec3::new(2., 3., 4.);
-                catwalk::scene::Vec3::new(10. - q.y, 20. + q.x, 30. + q.z)
+                let q = p - catwalk3d::scene::Vec3::new(2., 3., 4.);
+                catwalk3d::scene::Vec3::new(10. - q.y, 20. + q.x, 30. + q.z)
             } else {
                 p
             }

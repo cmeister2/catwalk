@@ -1161,6 +1161,22 @@
       "title": "STL binary closed tetrahedron"
     },
     {
+      "extension": "stl",
+      "id": "stl-jumper-source",
+      "input": "scientific_cad/stl-jumper-source.stl",
+      "kind": "model",
+      "provenance": "Unmodified Jumper Replica geometry/components_mm/LF_finger_link__C004.stl at commit 07cc1867185c2a7c0ceb4b3d317e73710a17c91a; Apache-2.0, derived from Jumper geometry Copyright 2026 KingKong Robotics at commit 61d065219fca767f3142c8f10aff59eae5a5a004. Producer millimeter source STL accompanying the faceted STEP export. SHA-256 955cae66249058e00a25dc913228766275803a1cc471c09581cb2984cf674733; unchanged license and relevant producer notices retained in scientific_cad/step-jumper-LICENSE and step-jumper-NOTICE.txt. https://github.com/manifoldor/jumper-replica/blob/07cc1867185c2a7c0ceb4b3d317e73710a17c91a/geometry/components_mm/LF_finger_link__C004.stl",
+      "title": "Jumper source STL for the faceted STEP component"
+    },
+    {
+      "extension": "stp",
+      "id": "step-jumper-faceted",
+      "input": "scientific_cad/step-jumper-faceted.stp",
+      "kind": "model",
+      "provenance": "Unmodified Jumper Replica geometry/step_trials/LF_finger_link__C004.step at commit 07cc1867185c2a7c0ceb4b3d317e73710a17c91a; Apache-2.0, derived from Jumper geometry Copyright 2026 KingKong Robotics at commit 61d065219fca767f3142c8f10aff59eae5a5a004. Mesh-derived AP214 faceted B-rep export, not original manufacturer CAD. SHA-256 2d31965483cc219cfdd3375816658fee90ac1eb01ccfb7d8539f35c25322826f; unchanged license and relevant producer notices retained in scientific_cad/step-jumper-LICENSE and step-jumper-NOTICE.txt. https://github.com/manifoldor/jumper-replica/blob/07cc1867185c2a7c0ceb4b3d317e73710a17c91a/geometry/step_trials/LF_finger_link__C004.step",
+      "title": "Jumper mesh-derived faceted STEP component"
+    },
+    {
       "extension": "stp",
       "id": "step-nist-ap242-tessellated",
       "input": "scientific_cad/step-nist-ap242-tessellated.stp",

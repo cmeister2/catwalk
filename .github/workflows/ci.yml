@@ -2,6 +2,7 @@ name: CI
 
 on:
   push:
+    branches: ['**']
   pull_request:
   workflow_dispatch:
 
@@ -25,6 +26,12 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
         run: cargo doc --no-deps --document-private-items --locked
+      - name: Verify publishable crate
+        run: |
+          cargo package --locked
+          python3 -c 'from pathlib import Path; archive = next(Path("target/package").glob("catwalk3d-*.crate")); assert archive.stat().st_size < 10_000_000, "Crate exceeds the registry upload limit"'
+      - name: Check release preparation and publication guards
+        run: python3 -m unittest discover -s tests -p 'test_*.py'
       - name: Check runtime geometry and compression backends
         shell: bash
         run: |
@@ -111,3 +118,35 @@ jobs:
       - name: Deploy verified gallery
         id: deployment
         uses: actions/deploy-pages@v4
+
+  release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [checks, tests]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: crates-io-release
+      cancel-in-progress: false
+    env:
+      CARGO_PUBLISH_READY: ${{ secrets.CARGO_REGISTRY_TOKEN != '' || secrets.PUBLISH_SECRET != '' }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Publish crate and GitHub release
+        if: env.CARGO_PUBLISH_READY == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN || secrets.PUBLISH_SECRET }}
+        run: npm run release
+      - name: Await registry secret
+        if: env.CARGO_PUBLISH_READY != 'true'
+        run: echo 'Add CARGO_REGISTRY_TOKEN (or PUBLISH_SECRET) to repository secrets to enable automatic publication.'

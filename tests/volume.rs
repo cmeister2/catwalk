@@ -71,7 +71,7 @@ fn volume_formats_render_identical_nonuniform_density_without_a_display() {
     let mut reference = None;
     for extension in ["vti", "nrrd", "nhdr", "mhd", "mha"] {
         let input = directory.join(format!("shell.{extension}"));
-        let scene = catwalk::formats::load(&input).unwrap();
+        let scene = catwalk3d::formats::load(&input).unwrap();
         assert!(scene.triangles.len() > 1000);
         let output = directory.join(format!("{extension}.png"));
         let status = Command::new(env!("CARGO_BIN_EXE_catwalk"))

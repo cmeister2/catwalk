@@ -1,7 +1,7 @@
 //! Headless CLI input, output, resource isolation and saved-preview behavior tests.
 
 use base64::Engine;
-use catwalk::{formats, render::write_png, scene::Vec3};
+use catwalk3d::{formats, render::write_png, scene::Vec3};
 use image::{Rgba, RgbaImage};
 use serde_json::{Value, json};
 use std::{
@@ -454,7 +454,7 @@ fn no_arguments_has_clean_error_and_format_listing_is_available() {
     let formats = String::from_utf8(formats.stdout).unwrap();
     assert!(formats.contains("obj") && formats.contains("gltf") && formats.contains("3mf"));
     assert!(formats.contains("limitations"));
-    for extension in catwalk::saved_preview::EXTENSIONS {
+    for extension in catwalk3d::saved_preview::EXTENSIONS {
         assert!(formats.contains(extension));
     }
 }
@@ -545,12 +545,12 @@ fn native_geometry_forcing_and_corrupt_saved_image_fallback_keep_extraction_expl
             &format!("<Thumbnail Source=\"{payload}\"/></LightBurnProject>"),
         ),
     );
-    let options = catwalk::render::RenderOptions {
+    let options = catwalk3d::render::RenderOptions {
         width: 64,
         height: 64,
         ..Default::default()
     };
-    let fresh = catwalk::geometry_thumbnail(&input, &options).unwrap();
+    let fresh = catwalk3d::geometry_thumbnail(&input, &options).unwrap();
     let forced = run(&input, Path::new("-"), &["--render-geometry"]);
     assert_success(&forced);
     assert_eq!(decode(&forced.stdout), fresh);

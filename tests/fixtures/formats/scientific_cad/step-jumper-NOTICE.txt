@@ -1,0 +1,63 @@
+Jumper Replica mechanical component test fixtures
+
+The retained files below are unchanged copies from Jumper Replica at commit
+07cc1867185c2a7c0ceb4b3d317e73710a17c91a, renamed for the Catwalk corpus:
+
+step-jumper-faceted.stp
+Original: geometry/step_trials/LF_finger_link__C004.step
+https://github.com/manifoldor/jumper-replica/blob/07cc1867185c2a7c0ceb4b3d317e73710a17c91a/geometry/step_trials/LF_finger_link__C004.step
+Bytes: 273247
+SHA-256: 2d31965483cc219cfdd3375816658fee90ac1eb01ccfb7d8539f35c25322826f
+
+stl-jumper-source.stl
+Original: geometry/components_mm/LF_finger_link__C004.stl
+https://github.com/manifoldor/jumper-replica/blob/07cc1867185c2a7c0ceb4b3d317e73710a17c91a/geometry/components_mm/LF_finger_link__C004.stl
+Bytes: 38484
+SHA-256: 955cae66249058e00a25dc913228766275803a1cc471c09581cb2984cf674733
+
+The STEP is a mesh-derived AP214 faceted export of the retained millimeter STL,
+not original manufacturer CAD. Its FILE_NAME identifies the Jumper faceted
+B-rep converter. The public producer's conversion source is pinned here:
+https://github.com/manifoldor/jumper-replica/blob/07cc1867185c2a7c0ceb4b3d317e73710a17c91a/tools/jumper_faceted_step.py
+Catwalk does not modify either geometry file.
+
+These test assets are separately licensed under Apache-2.0. The unchanged
+11358-byte license is retained in step-jumper-LICENSE, SHA-256:
+cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30
+The producer's pinned license and explicit geometry licensing statement:
+https://github.com/manifoldor/jumper-replica/blob/07cc1867185c2a7c0ceb4b3d317e73710a17c91a/LICENSE
+https://github.com/manifoldor/jumper-replica/blob/07cc1867185c2a7c0ceb4b3d317e73710a17c91a/docs/LICENSING.md
+
+Relevant original source attribution (verbatim):
+
+Jumper
+Copyright 2026 KingKong Robotics.
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Original source commit: 61d065219fca767f3142c8f10aff59eae5a5a004
+https://github.com/KingKongRobotics/jumper/blob/61d065219fca767f3142c8f10aff59eae5a5a004/LICENSE
+https://github.com/KingKongRobotics/jumper/blob/61d065219fca767f3142c8f10aff59eae5a5a004/NOTICE
+
+Relevant replica attribution and modification notice (verbatim excerpts):
+
+Jumper Replica
+
+Includes selected Jumper source materials and derived geometry.
+Jumper: Copyright 2026 KingKong Robotics. Apache License 2.0.
+Source: https://github.com/KingKongRobotics/jumper
+Pinned commit: 61d065219fca767f3142c8f10aff59eae5a5a004
+
+Changes in this project: connected-component extraction, meter-to-millimeter
+conversion, vertex-only seam welding, faceted STEP conversion, rigid print
+orientations, assembly explosion translations, annotations and documentation.
+All changed/generated files are catalogued in provenance/artifact_manifest.json.
+
+New project scripts, documentation, annotations and renders are explicitly
+licensed under Apache-2.0. This project is independent and does not imply
+manufacturer endorsement. External references retain their own terms.
+
+Complete pinned replica notice:
+https://github.com/manifoldor/jumper-replica/blob/07cc1867185c2a7c0ceb4b3d317e73710a17c91a/NOTICE
+Only notices pertaining to these mechanical geometry assets are reproduced;
+unrelated third-party training-library materials are not part of the fixtures.

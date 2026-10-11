@@ -1,6 +1,6 @@
 //! Authored scientific/CAD fixtures and retained, licensed exporter examples.
 use base64::{Engine, engine::general_purpose::STANDARD};
-use catwalk::{Result, scene::Vec3};
+use catwalk3d::{Result, scene::Vec3};
 use flate2::{
     Compression,
     write::{GzEncoder, ZlibEncoder},
@@ -23,6 +23,10 @@ const DIR: &str = "scientific_cad";
 const CADQUERY: &str = "Unmodified CadQuery tests/testdata/red_cube_blue_cylinder.step; Apache-2.0; https://github.com/CadQuery/cadquery/blob/5f5bc62b255f62e3512105740025361b6c31eddd/tests/testdata/red_cube_blue_cylinder.step; SHA-256 1fd5c7d9325bcfb9863365faf84554f89e7e7a5e86760a0fc8d5db00619d9ef5; original license and provenance retained in scientific_cad/step-cadquery-LICENSE and step-cadquery-NOTICE.txt";
 /// NIST source revision, unrestricted-reuse terms and unchanged STEP checksum.
 const NIST: &str = "Unmodified NIST FTC 08 ASME1 nist_ftc_08_asme1_ap242-e4-tg.stp from usnistgov/SFA Release/NIST-PMI-STEP-Files.zip at commit 72375d17c09cf7072c30d9393b5c08b7aa272285; unrestricted reuse with NIST acknowledgement, no endorsement. SHA-256 40cd4e5e2e02b5742e0884ba5b132f2e37d2215c45f57afb48962a05a060c384; source and terms retained in scientific_cad/step-nist-NOTICE.txt. https://github.com/usnistgov/SFA/blob/72375d17c09cf7072c30d9393b5c08b7aa272285/Release/NIST-PMI-STEP-Files.zip";
+/// Unchanged Apache-2.0 producer STEP, source revision and geometry attribution.
+const JUMPER_STEP: &str = "Unmodified Jumper Replica geometry/step_trials/LF_finger_link__C004.step at commit 07cc1867185c2a7c0ceb4b3d317e73710a17c91a; Apache-2.0, derived from Jumper geometry Copyright 2026 KingKong Robotics at commit 61d065219fca767f3142c8f10aff59eae5a5a004. Mesh-derived AP214 faceted B-rep export, not original manufacturer CAD. SHA-256 2d31965483cc219cfdd3375816658fee90ac1eb01ccfb7d8539f35c25322826f; unchanged license and relevant producer notices retained in scientific_cad/step-jumper-LICENSE and step-jumper-NOTICE.txt. https://github.com/manifoldor/jumper-replica/blob/07cc1867185c2a7c0ceb4b3d317e73710a17c91a/geometry/step_trials/LF_finger_link__C004.step";
+/// Unchanged Apache-2.0 millimeter STL used by the retained producer STEP export.
+const JUMPER_STL: &str = "Unmodified Jumper Replica geometry/components_mm/LF_finger_link__C004.stl at commit 07cc1867185c2a7c0ceb4b3d317e73710a17c91a; Apache-2.0, derived from Jumper geometry Copyright 2026 KingKong Robotics at commit 61d065219fca767f3142c8f10aff59eae5a5a004. Producer millimeter source STL accompanying the faceted STEP export. SHA-256 955cae66249058e00a25dc913228766275803a1cc471c09581cb2984cf674733; unchanged license and relevant producer notices retained in scientific_cad/step-jumper-LICENSE and step-jumper-NOTICE.txt. https://github.com/manifoldor/jumper-replica/blob/07cc1867185c2a7c0ceb4b3d317e73710a17c91a/geometry/components_mm/LF_finger_link__C004.stl";
 /// Written corpus provenance explaining authored geometry and retained licensing.
 const README: &str = r"# Scientific and CAD fixtures
 
@@ -32,7 +36,9 @@ Authored examples are generated deterministically by `examples/fixtures/scientif
 
 `step-nist-ap242-tessellated.stp` is the unchanged NIST FTC 08 ASME1 AP242 export from [the pinned NIST archive](https://github.com/usnistgov/SFA/blob/72375d17c09cf7072c30d9393b5c08b7aa272285/Release/NIST-PMI-STEP-Files.zip), renamed only for the corpus. [Source and reuse terms](step-nist-NOTICE.txt) acknowledge NIST and retain its unrestricted-reuse terms. The snapshot renders the product-owned tessellated part with its authored normals. Geometry tests check triangle count, bounds and the producer's embedded surface area, while excluding construction geometry, validation copies and drafting views. This is one real export; fans, surface sets and linked B-rep alternatives have separate authored tests.
 
-Regeneration uses Rust and retained fixture bytes; no CAD application, native writer or network is required. The separately licensed upstream asset is not relabeled as an authored fixture.
+`step-jumper-faceted.stp` and `stl-jumper-source.stl` are unchanged [Jumper Replica producer files](https://github.com/manifoldor/jumper-replica/tree/07cc1867185c2a7c0ceb4b3d317e73710a17c91a/geometry), renamed for this corpus. The mesh-derived AP214 STEP export contains 768 triangular planar `FACE_SURFACE` faces with Cartesian-point `POLY_LOOP` boundaries. Its millimeter source STL provides an independent geometric and visual counterpart. These mechanical geometry test assets retain their separate Apache-2.0 license in [step-jumper-LICENSE](step-jumper-LICENSE), KingKong Robotics attribution and producer modification notices in [step-jumper-NOTICE.txt](step-jumper-NOTICE.txt), with pinned source URLs and exact SHA-256 values. The export is derived from robot mesh geometry; it is not original manufacturer CAD. Authored polygon/hole tests qualify behavior beyond this triangular exporter case.
+
+Regeneration uses Rust and retained fixture bytes; no CAD application, native writer or network is required. Separately licensed upstream assets retain their source attribution and terms.
 ";
 
 /// Writes corpus resources and records models after checking they load geometry.
@@ -67,7 +73,7 @@ impl Fixtures<'_> {
     /// Returns an error if the model cannot be loaded or has no geometry.
     fn register(&mut self, id: &str, extension: &str, title: &str, provenance: &str) -> Result<()> {
         let input = format!("{DIR}/{id}.{extension}");
-        let scene = catwalk::formats::load(&self.root.join(&input))?;
+        let scene = catwalk3d::formats::load(&self.root.join(&input))?;
         if scene.triangles.is_empty() && scene.points.is_empty() && scene.lines.is_empty() {
             return Err(format!("generated {input} has no geometry").into());
         }
@@ -703,6 +709,7 @@ fn cad(f: &mut Fixtures<'_>) -> Result<()> {
         "NIST AP242 tessellated part with authored surface normals",
         NIST,
     )?;
+    jumper_component(f)?;
     for (ext, kind) in [("iges", "box"), ("igs", "cylinder")] {
         let (model, root) = cad_body(kind)?;
         let mut document = ogeom_doc::Document::over(model);
@@ -730,6 +737,42 @@ fn cad(f: &mut Fixtures<'_>) -> Result<()> {
         "brep",
         "Open CASCADE translated planar topology",
         brep.as_bytes(),
+    )?;
+    Ok(())
+}
+
+/// Retain the paired producer STEP/STL component, validate both, and preserve its license notices.
+///
+/// # Errors
+/// Writing a retained model or notice fails, or either source model cannot load geometry.
+fn jumper_component(f: &mut Fixtures<'_>) -> Result<()> {
+    f.resource(
+        "step-jumper-faceted.stp",
+        include_bytes!("../../tests/fixtures/formats/scientific_cad/step-jumper-faceted.stp"),
+    )?;
+    f.register(
+        "step-jumper-faceted",
+        "stp",
+        "Jumper mesh-derived faceted STEP component",
+        JUMPER_STEP,
+    )?;
+    f.resource(
+        "stl-jumper-source.stl",
+        include_bytes!("../../tests/fixtures/formats/scientific_cad/stl-jumper-source.stl"),
+    )?;
+    f.register(
+        "stl-jumper-source",
+        "stl",
+        "Jumper source STL for the faceted STEP component",
+        JUMPER_STL,
+    )?;
+    f.resource(
+        "step-jumper-LICENSE",
+        include_bytes!("../../tests/fixtures/formats/scientific_cad/step-jumper-LICENSE"),
+    )?;
+    f.resource(
+        "step-jumper-NOTICE.txt",
+        include_bytes!("../../tests/fixtures/formats/scientific_cad/step-jumper-NOTICE.txt"),
     )?;
     Ok(())
 }

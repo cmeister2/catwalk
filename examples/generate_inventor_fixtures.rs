@@ -8,9 +8,9 @@ mod inventor;
 ///
 /// # Errors
 /// Returns an error if the image cannot be encoded as PNG.
-fn png(image: &image::RgbaImage) -> catwalk::Result<Vec<u8>> {
+fn png(image: &image::RgbaImage) -> catwalk3d::Result<Vec<u8>> {
     let mut output = Vec::new();
-    catwalk::render::write_png(image, &mut output)?;
+    catwalk3d::render::write_png(image, &mut output)?;
     Ok(output)
 }
 
@@ -19,18 +19,18 @@ fn png(image: &image::RgbaImage) -> catwalk::Result<Vec<u8>> {
 /// # Errors
 /// Returns an error if the model cannot be loaded or rendered, an image cannot
 /// be encoded, or the fixture directory and compound files cannot be written.
-fn main() -> catwalk::Result<()> {
+fn main() -> catwalk3d::Result<()> {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let destination = root.join("tests/fixtures/saved-previews/autodesk");
     std::fs::create_dir_all(&destination)?;
-    let scene = catwalk::formats::load(&root.join("examples/models/gear.obj"))?;
-    let options = catwalk::render::RenderOptions {
+    let scene = catwalk3d::formats::load(&root.join("examples/models/gear.obj"))?;
+    let options = catwalk3d::render::RenderOptions {
         width: 160,
         height: 128,
         transparent: true,
-        ..catwalk::render::RenderOptions::default()
+        ..catwalk3d::render::RenderOptions::default()
     };
-    let part = catwalk::render::render(&scene, &options)?;
+    let part = catwalk3d::render::render(&scene, &options)?;
     inventor::write(
         &destination.join("part-carrier.ipt"),
         cfb::Version::V3,

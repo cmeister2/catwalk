@@ -1,6 +1,6 @@
 //! Retained `LightBurn` vector geometry, source provenance and headless thumbnail qualification.
 
-use catwalk::{formats, scene::Vec3};
+use catwalk3d::{formats, scene::Vec3};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 
@@ -25,7 +25,7 @@ fn fixture(name: &str) -> PathBuf {
 }
 
 /// Measure drawing-plane bounds independently from all emitted segment endpoints.
-fn bounds(scene: &catwalk::scene::Scene) -> [Vec3; 2] {
+fn bounds(scene: &catwalk3d::scene::Scene) -> [Vec3; 2] {
     scene.positions().fold(
         [
             Vec3::new(f64::INFINITY, f64::INFINITY, f64::INFINITY),
@@ -60,7 +60,7 @@ fn licensed_external_sources_are_unchanged_and_have_no_thumbnail_carrier() {
                 .any(|node| node.has_tag_name("Thumbnail"))
         );
         assert!(
-            catwalk::saved_preview::lightburn::extract(&input)
+            catwalk3d::saved_preview::lightburn::extract(&input)
                 .unwrap()
                 .is_none()
         );
@@ -98,7 +98,7 @@ fn real_exporter_line_rectangle_and_circle_have_independent_expected_coordinates
 fn authored_classic_no_thumbnail_geometry_has_bezier_and_group_placements() {
     let input = fixture("classic-geometry.lbrn");
     assert!(
-        catwalk::saved_preview::lightburn::extract(&input)
+        catwalk3d::saved_preview::lightburn::extract(&input)
             .unwrap()
             .is_none()
     );
@@ -213,16 +213,16 @@ fn closed_pcb_contours_and_large_motor_controller_project_are_complete() {
 
 #[test]
 fn no_thumbnail_projects_render_plan_view_png_snapshots_and_default_fallback() {
-    let options = catwalk::render::RenderOptions {
+    let options = catwalk3d::render::RenderOptions {
         width: 256,
         height: 256,
         transparent: true,
-        ..catwalk::render::RenderOptions::default()
+        ..catwalk3d::render::RenderOptions::default()
     };
     for name in RENDER_CASES {
         let input = fixture(name);
-        let actual = catwalk::geometry_thumbnail(&input, &options).unwrap();
-        let fallback = catwalk::thumbnail(&input, &options).unwrap();
+        let actual = catwalk3d::geometry_thumbnail(&input, &options).unwrap();
+        let fallback = catwalk3d::thumbnail(&input, &options).unwrap();
         assert_eq!(
             actual, fallback,
             "default no-thumbnail geometry fallback: {name}"
@@ -282,18 +282,18 @@ fn normal_and_explicit_geometry_previews_ignore_a_poisoned_thumbnail_without_a_d
     let expected = image::open(fixture("snapshots/square.lbrn2.png"))
         .unwrap()
         .to_rgba8();
-    let options = catwalk::render::RenderOptions {
+    let options = catwalk3d::render::RenderOptions {
         width: 256,
         height: 256,
         transparent: true,
-        ..catwalk::render::RenderOptions::default()
+        ..catwalk3d::render::RenderOptions::default()
     };
     // Establish that normal thumbnail rendering takes the extraction-error
     // fallback, rather than the simpler absent-image fallback.
-    assert!(catwalk::saved_preview::lightburn::extract(&input).is_err());
-    assert_eq!(catwalk::thumbnail(&input, &options).unwrap(), expected);
+    assert!(catwalk3d::saved_preview::lightburn::extract(&input).is_err());
+    assert_eq!(catwalk3d::thumbnail(&input, &options).unwrap(), expected);
     assert_eq!(
-        catwalk::geometry_thumbnail(&input, &options).unwrap(),
+        catwalk3d::geometry_thumbnail(&input, &options).unwrap(),
         expected
     );
     for force_geometry in [false, true] {

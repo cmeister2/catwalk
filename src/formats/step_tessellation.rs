@@ -5,26 +5,15 @@
 //! <https://www.mbx-if.org/home/wp-content/uploads/2024/05/rec_prac_3dtess_geo_v11.pdf>.
 //! Assembly selection, units and placements remain the STEP importer's responsibility.
 
+use super::step_budget::{Budget, MAX_VECTORS};
 use crate::Result;
 use crate::scene::{Scene, Triangle, TriangleAppearance, Vec3};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use truck_stepio::r#in::ruststep::ast::{EntityInstance, Name, Parameter, Record};
 
-/// Maximum coordinates and normal vectors decoded from selected geometry.
-const MAX_VECTORS: usize = 5_000_000;
-/// Maximum selected point/normal and triangle index entries visited.
-const MAX_INDICES: usize = 15_000_000;
-/// Maximum triangles expanded from selected faces and surface sets.
-const MAX_TRIANGLES: usize = 5_000_000;
-/// Maximum cumulative vector, index, reference and corner-processing operations.
-const MAX_WORK: usize = 50_000_000;
-/// Maximum coordinate, index and estimated scene storage allocated by this decoder.
-const MAX_BYTES: usize = 512 * 1024 * 1024;
 /// Maximum structured-item references in one selected shell or solid.
 const MAX_ITEMS: usize = 100_000;
-/// Maximum cumulative selected faces and surface sets, matching the STEP face ceiling.
-const MAX_FACES: usize = 100_000;
 
 /// Concrete triangle-bearing schema layouts and shared coordinate records.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -323,74 +312,6 @@ fn complex_fields<'a>(
     Ok(values)
 }
 
-/// Cumulative budgets shared across every lazily selected item decoded from one file.
-#[derive(Default)]
-struct Budget {
-    /// Surface items decoded across all selected representations and containers.
-    faces: usize,
-    /// Coordinates and normals parsed, counting shared coordinate lists once.
-    vectors: usize,
-    /// Point/normal mapping and primitive-index entries parsed.
-    indices: usize,
-    /// Output triangle count, including authored zero-area triangles.
-    triangles: usize,
-    /// Estimated aggregate decoded storage, including corner appearances.
-    bytes: usize,
-    /// Aggregate decoding and corner expansion operations.
-    work: usize,
-}
-
-/// Charge a budget before allocation or bounded repeated processing.
-fn charge(counter: &mut usize, amount: usize, maximum: usize, description: &str) -> Result<()> {
-    *counter = counter
-        .checked_add(amount)
-        .filter(|&total| total <= maximum)
-        .ok_or_else(|| format!("AP242 tessellation exceeds {description} limit"))?;
-    Ok(())
-}
-
-impl Budget {
-    /// Account finite vector storage and its three component validations.
-    fn vectors(&mut self, count: usize) -> Result<()> {
-        charge(&mut self.vectors, count, MAX_VECTORS, "vector")?;
-        self.storage(count, std::mem::size_of::<Vec3>())?;
-        self.work(count.checked_mul(3).ok_or("AP242 vector work overflows")?)
-    }
-
-    /// Account index entries and their validation work before decoding a list.
-    fn indices(&mut self, count: usize) -> Result<()> {
-        charge(&mut self.indices, count, MAX_INDICES, "index")?;
-        self.work(count)
-    }
-
-    /// Account work before traversing repeated references or triangle corners.
-    fn work(&mut self, count: usize) -> Result<()> {
-        charge(&mut self.work, count, MAX_WORK, "processing work")
-    }
-
-    /// Account decoded allocation bytes using checked multiplication.
-    fn storage(&mut self, count: usize, size: usize) -> Result<()> {
-        let bytes = count.checked_mul(size).ok_or("AP242 storage overflows")?;
-        charge(&mut self.bytes, bytes, MAX_BYTES, "512 MiB decoded storage")
-    }
-
-    /// Account triangles, retained corner appearances and three corner lookups before expansion.
-    fn triangles(&mut self, count: usize, normals: bool) -> Result<()> {
-        charge(&mut self.triangles, count, MAX_TRIANGLES, "triangle")?;
-        let appearance = if normals {
-            std::mem::size_of::<TriangleAppearance>() + 4 * std::mem::size_of::<usize>()
-        } else {
-            0
-        };
-        self.storage(count, std::mem::size_of::<Triangle>() + appearance)?;
-        self.work(
-            count
-                .checked_mul(3)
-                .ok_or("AP242 triangle work overflows")?,
-        )
-    }
-}
-
 /// Validated point/normal indirection for a single selected tessellated surface.
 struct Face {
     /// Cached coordinates shared across faces.
@@ -452,8 +373,6 @@ pub(super) struct Decoder<'a> {
     entities: &'a HashMap<u64, &'a EntityInstance>,
     /// Coordinates already decoded from selected faces.
     coordinates: HashMap<u64, Arc<Vec<Vec3>>>,
-    /// Aggregate source, output, memory and processing limits.
-    budget: Budget,
 }
 
 impl<'a> Decoder<'a> {
@@ -462,7 +381,6 @@ impl<'a> Decoder<'a> {
         Self {
             entities,
             coordinates: HashMap::new(),
-            budget: Budget::default(),
         }
     }
 
@@ -472,8 +390,8 @@ impl<'a> Decoder<'a> {
     /// Returns an error for malformed attributes, missing references, invalid indices,
     /// normals or declared counts, unsupported structured children, duplicate set items,
     /// or excessive selected geometry, memory and processing work.
-    pub fn decode(&mut self, id: u64) -> Result<Option<Scene>> {
-        self.budget.work(1)?;
+    pub fn decode(&mut self, id: u64, budget: &mut Budget) -> Result<Option<Scene>> {
+        budget.work(1)?;
         let entity = self
             .entities
             .get(&id)
@@ -483,14 +401,14 @@ impl<'a> Decoder<'a> {
         };
         let mut scene = Scene::default();
         if fields.kind.surface() {
-            self.surface(&fields, &mut scene)?;
+            self.surface(&fields, &mut scene, budget)?;
         } else if matches!(fields.kind, Kind::Shell | Kind::Solid) {
             let items = list(fields.values[1])?;
             if items.is_empty() || items.len() > MAX_ITEMS {
                 return Err("AP242 tessellated shell/solid item count is invalid".into());
             }
             link(fields.values[2], self.entities, fields.kind)?;
-            self.budget.work(items.len())?;
+            budget.work(items.len())?;
             let mut seen = HashSet::new();
             for item in items {
                 let child = reference(item)?;
@@ -502,7 +420,7 @@ impl<'a> Decoder<'a> {
                     .get(&child)
                     .ok_or("AP242 tessellated shell/solid references a missing item")?;
                 let child = fields_for_face(child)?;
-                self.surface(&child, &mut scene)?;
+                self.surface(&child, &mut scene, budget)?;
             }
         } else {
             return Ok(None);
@@ -512,7 +430,7 @@ impl<'a> Decoder<'a> {
     }
 
     /// Resolve and cache a counted coordinate list referenced by selected geometry.
-    fn coordinates(&mut self, id: u64) -> Result<Arc<Vec<Vec3>>> {
+    fn coordinates(&mut self, id: u64, budget: &mut Budget) -> Result<Arc<Vec<Vec3>>> {
         if let Some(points) = self.coordinates.get(&id) {
             return Ok(Arc::clone(points));
         }
@@ -530,15 +448,15 @@ impl<'a> Decoder<'a> {
         if values.len() != count {
             return Err("AP242 coordinate count does not match npoints".into());
         }
-        self.budget.vectors(count)?;
+        budget.vectors(count)?;
         let points = Arc::new(values.iter().map(vector).collect::<Result<Vec<_>>>()?);
         self.coordinates.insert(id, Arc::clone(&points));
         Ok(points)
     }
 
     /// Validate a face's point/normal mapping and optional exact geometry link.
-    fn face(&mut self, fields: &Fields<'_>) -> Result<Face> {
-        let coordinates = self.coordinates(reference(fields.values[1])?)?;
+    fn face(&mut self, fields: &Fields<'_>, budget: &mut Budget) -> Result<Face> {
+        let coordinates = self.coordinates(reference(fields.values[1])?, budget)?;
         let pnmax = positive(fields.values[2])?;
         if pnmax > MAX_VECTORS {
             return Err("AP242 pnmax exceeds vector limit".into());
@@ -547,7 +465,7 @@ impl<'a> Decoder<'a> {
         if !matches!(values.len(), 0 | 1) && values.len() != pnmax {
             return Err("AP242 normal count must be zero, one or pnmax".into());
         }
-        self.budget.vectors(values.len())?;
+        budget.vectors(values.len())?;
         let normals = values
             .iter()
             .map(|value| {
@@ -571,9 +489,8 @@ impl<'a> Decoder<'a> {
         {
             return Err("AP242 pnindex count is inconsistent with pnmax and coordinates".into());
         }
-        self.budget.indices(values.len())?;
-        self.budget
-            .storage(values.len(), std::mem::size_of::<usize>())?;
+        budget.indices(values.len())?;
+        budget.storage(values.len(), std::mem::size_of::<usize>())?;
         let mapping = values
             .iter()
             .map(|value| {
@@ -593,9 +510,14 @@ impl<'a> Decoder<'a> {
     }
 
     /// Expand direct triples or alternating strips and fixed-center fans into one scene.
-    fn surface(&mut self, fields: &Fields<'_>, scene: &mut Scene) -> Result<()> {
-        charge(&mut self.budget.faces, 1, MAX_FACES, "selected face")?;
-        let face = self.face(fields)?;
+    fn surface(
+        &mut self,
+        fields: &Fields<'_>,
+        scene: &mut Scene,
+        budget: &mut Budget,
+    ) -> Result<()> {
+        budget.faces(1)?;
+        let face = self.face(fields, budget)?;
         let primitive = if fields.kind.linked_face() { 6 } else { 5 };
         if fields.kind.complex_triangles() {
             let strips = list(fields.values[primitive])?;
@@ -603,21 +525,20 @@ impl<'a> Decoder<'a> {
             if strips.is_empty() && fans.is_empty() {
                 return Err("AP242 complex surface has no triangle strips or fans".into());
             }
-            self.sequences(&face, strips, false, scene)?;
-            self.sequences(&face, fans, true, scene)?;
+            Self::sequences(&face, strips, false, scene, budget)?;
+            Self::sequences(&face, fans, true, scene, budget)?;
         } else {
             let triangles = list(fields.values[primitive])?;
             if triangles.is_empty() {
                 return Err("AP242 triangulated surface has no triangles".into());
             }
-            self.budget.indices(
+            budget.indices(
                 triangles
                     .len()
                     .checked_mul(3)
                     .ok_or("AP242 triangle indices overflow")?,
             )?;
-            self.budget
-                .triangles(triangles.len(), !face.normals.is_empty())?;
+            budget.triangles(triangles.len(), !face.normals.is_empty())?;
             scene.triangles.try_reserve_exact(triangles.len())?;
             for triangle in triangles {
                 let [a, b, c] = list(triangle)? else {
@@ -631,21 +552,20 @@ impl<'a> Decoder<'a> {
 
     /// Expand one family of strip or fan aggregates without retaining decoded index arrays.
     fn sequences(
-        &mut self,
         face: &Face,
         sequences: &[Parameter],
         fan: bool,
         scene: &mut Scene,
+        budget: &mut Budget,
     ) -> Result<()> {
-        self.budget.work(sequences.len())?;
+        budget.work(sequences.len())?;
         for sequence in sequences {
             let values = list(sequence)?;
             if values.len() < 3 {
                 return Err("AP242 triangle strip/fan requires at least three indices".into());
             }
-            self.budget.indices(values.len())?;
-            self.budget
-                .triangles(values.len() - 2, !face.normals.is_empty())?;
+            budget.indices(values.len())?;
+            budget.triangles(values.len() - 2, !face.normals.is_empty())?;
             scene.triangles.try_reserve_exact(values.len() - 2)?;
             let first = face.corner(&values[0])?;
             let mut previous = face.corner(&values[1])?;
@@ -769,7 +689,7 @@ mod tests {
             })
             .collect();
         Decoder::new(&indexed)
-            .decode(id)?
+            .decode(id, &mut Budget::default())?
             .ok_or_else(|| "authored tessellated surface was unexpectedly delegated".into())
     }
 
@@ -983,11 +903,12 @@ mod tests {
             .map(|(index, value)| (u64::try_from(index + 1).unwrap(), value))
             .collect();
         let mut decoder = Decoder::new(&indexed);
-        assert_eq!(decoder.decode(4)?.unwrap().triangles.len(), 1);
+        let mut budget = Budget::default();
+        assert_eq!(decoder.decode(4, &mut budget)?.unwrap().triangles.len(), 1);
         assert_eq!(decoder.coordinates.len(), 1);
-        assert_eq!(decoder.budget.vectors, 3);
-        assert_eq!(decoder.decode(3)?.unwrap().triangles.len(), 1);
-        assert_eq!(decoder.budget.vectors, 3);
+        assert_eq!(budget.vectors, 3);
+        assert_eq!(decoder.decode(3, &mut budget)?.unwrap().triangles.len(), 1);
+        assert_eq!(budget.vectors, 3);
         Ok(())
     }
 
@@ -1045,27 +966,6 @@ mod tests {
             ],
         );
         assert!(decode(&[coordinates, edge, solid], 3).is_err());
-    }
-
-    #[test]
-    fn cumulative_limits_fail_before_large_allocation_or_expansion() {
-        let mut budget = Budget::default();
-        assert!(budget.vectors(MAX_VECTORS + 1).is_err());
-        assert!(Budget::default().indices(MAX_INDICES + 1).is_err());
-        assert!(Budget::default().work(MAX_WORK + 1).is_err());
-        assert!(Budget::default().storage(usize::MAX, 2).is_err());
-        assert!(Budget::default().storage(MAX_BYTES + 1, 1).is_err());
-        assert!(
-            Budget::default()
-                .triangles(MAX_TRIANGLES + 1, false)
-                .is_err()
-        );
-        let mut budget = Budget {
-            triangles: MAX_TRIANGLES,
-            ..Default::default()
-        };
-        assert!(budget.triangles(1, true).is_err());
-        assert!(charge(&mut budget.faces, MAX_FACES + 1, MAX_FACES, "selected face").is_err());
     }
 
     #[test]

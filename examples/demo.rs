@@ -1,5 +1,5 @@
 //! Generate a reproducible OBJ model and render its preview.
-use catwalk::{
+use catwalk3d::{
     Result,
     render::{RenderOptions, write_png},
     thumbnail,

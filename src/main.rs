@@ -1,6 +1,6 @@
 //! Command-line preview rendering, saved-image extraction and PNG output.
 
-use catwalk::{
+use catwalk3d::{
     Result, formats,
     render::{RenderOptions, write_png},
     thumbnail,
@@ -11,6 +11,7 @@ use std::{io::Write, path::PathBuf};
 /// CLI arguments shared by thumbnail rendering and original-size extraction.
 #[derive(Parser)]
 #[command(
+    name = "catwalk",
     version,
     about = "Render model preview thumbnails entirely in Rust, without a GPU or display server"
 )]
@@ -98,7 +99,7 @@ fn run(args: &Args) -> Result<()> {
         );
         println!(
             "Saved-preview readers: {}",
-            catwalk::saved_preview::EXTENSIONS.join(", ")
+            catwalk3d::saved_preview::EXTENSIONS.join(", ")
         );
         println!(
             "Native document geometry readers (qualified subsets): {}",
@@ -130,11 +131,11 @@ fn run(args: &Args) -> Result<()> {
     let mut bytes = Vec::new();
     if args.preview_mode.extract_saved_preview {
         if matches!(formats::extension(input)?.as_str(), "ipt" | "iam") {
-            bytes = catwalk::saved_preview::inventor::extract_png(input)?
-                .ok_or(catwalk::saved_preview::NoSavedPreview)?;
+            bytes = catwalk3d::saved_preview::inventor::extract_png(input)?
+                .ok_or(catwalk3d::saved_preview::NoSavedPreview)?;
         } else {
-            let image = catwalk::saved_preview::extract(input)?
-                .ok_or(catwalk::saved_preview::NoSavedPreview)?;
+            let image = catwalk3d::saved_preview::extract(input)?
+                .ok_or(catwalk3d::saved_preview::NoSavedPreview)?;
             write_png(&image, &mut bytes)?;
         }
     } else {
@@ -148,7 +149,7 @@ fn run(args: &Args) -> Result<()> {
             supersampling: args.samples,
         };
         let image = if args.preview_mode.render_geometry {
-            catwalk::geometry_thumbnail(input, &options)?
+            catwalk3d::geometry_thumbnail(input, &options)?
         } else {
             thumbnail(input, &options)?
         };
@@ -172,7 +173,7 @@ fn main() -> std::process::ExitCode {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("catwalk: {error}");
-            if error.is::<catwalk::saved_preview::NoSavedPreview>() {
+            if error.is::<catwalk3d::saved_preview::NoSavedPreview>() {
                 std::process::ExitCode::from(3)
             } else {
                 std::process::ExitCode::FAILURE

@@ -1,6 +1,6 @@
 //! Portable authored mesh/scene fixtures, including genuine native containers.
 use base64::{Engine, engine::general_purpose::STANDARD};
-use catwalk::Result;
+use catwalk3d::Result;
 use serde_json::{Value, json};
 use std::{
     fmt::Write as _,
@@ -101,7 +101,7 @@ impl Fixtures<'_> {
     /// Load a written model, require nonempty geometry and add its manifest entry.
     fn register(&mut self, id: &str, extension: &str, title: &str, provenance: &str) -> Result<()> {
         let input = format!("{DIR}/{id}.{extension}");
-        let scene = catwalk::formats::load(&self.root.join(&input))?;
+        let scene = catwalk3d::formats::load(&self.root.join(&input))?;
         if scene.triangles.is_empty() && scene.points.is_empty() && scene.lines.is_empty() {
             return Err(format!("generated {input} has no geometry").into());
         }
@@ -365,7 +365,7 @@ fn plain_meshes(f: &mut Fixtures<'_>) -> Result<()> {
     reason = "Unit normals are finite components within f32 range and are intentionally stored as STL f32 components."
 )]
 fn normal(face: [u16; 3]) -> [f32; 3] {
-    let [a, b, c] = face.map(|i| catwalk::scene::Vec3::from(POINTS[i as usize]));
+    let [a, b, c] = face.map(|i| catwalk3d::scene::Vec3::from(POINTS[i as usize]));
     let n = (b - a).cross(c - a).normalized();
     [n.x as f32, n.y as f32, n.z as f32]
 }
@@ -631,7 +631,7 @@ fn gltf_cases(f: &mut Fixtures<'_>) -> Result<()> {
         .ok_or("Google fixture has no position attribute")?
         .unique_id();
     let mut document = json!({"asset":{"version":"2.0"},"extensionsRequired":["KHR_draco_mesh_compression"],"extensionsUsed":["KHR_draco_mesh_compression"],"buffers":[{"byteLength":bytes.len(),"uri":"draco-google-cube.drc"}],"bufferViews":[{"buffer":0,"byteLength":bytes.len()}],"accessors":[{"componentType":5126,"type":"VEC3","count":points,"min":[-1,-1,-1],"max":[1,1,1]},{"componentType":5125,"type":"SCALAR","count":indices}],"materials":[{"pbrMetallicRoughness":{"baseColorFactor":[0.2,0.6,0.9,1]}}],"meshes":[{"primitives":[{"attributes":{"POSITION":0},"indices":1,"material":0,"extensions":{"KHR_draco_mesh_compression":{"bufferView":0,"attributes":{"POSITION":id}}}}]}],"nodes":[{"mesh":0,"scale":[1,1.5,1]}],"scenes":[{"nodes":[0]}],"scene":0});
-    let scene = catwalk::formats::load(&f.root.join(DIR).join("draco-google-cube.drc"))?;
+    let scene = catwalk3d::formats::load(&f.root.join(DIR).join("draco-google-cube.drc"))?;
     let positions: Vec<_> = scene
         .triangles
         .iter()

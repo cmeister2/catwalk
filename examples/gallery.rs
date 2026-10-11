@@ -3,7 +3,7 @@
 /// Shared snapshot manifest validation, rendering and comparison helpers.
 mod corpus;
 
-use catwalk::Result;
+use catwalk3d::Result;
 use clap::Parser;
 use serde_json::Value;
 use std::path::{Path, PathBuf};

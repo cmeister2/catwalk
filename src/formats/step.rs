@@ -1,5 +1,7 @@
-//! STEP Part 21 boundary-representation tessellation through the Rust Truck kernel.
-use super::{step_parameters, step_tessellation, transform::Transform};
+//! STEP Part 21 analytic, faceted and AP242 geometry with shared assembly placements.
+use super::{
+    step_budget::Budget, step_faceted, step_parameters, step_tessellation, transform::Transform,
+};
 use crate::Result;
 use crate::scene::{Scene, Triangle, Vec3};
 use ruststep::ast::{EntityInstance, Name, Parameter, Record};
@@ -241,6 +243,7 @@ fn append_closed_surface<S: ParametricSurface3D + SearchParameter<D2, Point = Po
     invert: bool,
     vertex: Point3,
     scene: &mut Scene,
+    budget: &mut Budget,
 ) -> Result<()> {
     if surface.search_parameter(vertex, None, 100).is_none() {
         return Err("STEP vertex loop point does not lie on its analytic surface".into());
@@ -282,6 +285,7 @@ fn append_closed_surface<S: ParametricSurface3D + SearchParameter<D2, Point = Po
                 if scene.triangles.len() == MAX_TRIANGLES {
                     return Err("STEP tessellation exceeds triangle limit".into());
                 }
+                budget.triangles(1, false)?;
                 scene.triangles.push(Triangle {
                     vertices,
                     color: None,
@@ -298,6 +302,7 @@ fn closed_analytic_shell(
     id: u64,
     entities: &HashMap<u64, &EntityInstance>,
     table: &Table,
+    budget: &mut Budget,
 ) -> Result<Option<Scene>> {
     let shell = simple_record(entities, id)?;
     let shell_params = list(&shell.parameter)?;
@@ -349,7 +354,7 @@ fn closed_analytic_shell(
                     <Table as EntityTable<SphericalSurfaceHolder>>::get_owned(table, surface_id)
                         .map_err(|error| format!("cannot resolve STEP sphere: {error}"))?;
                 let surface = truck_stepio::r#in::alias::SphericalSurface::from(&source);
-                append_closed_surface(&surface, invert, vertex, &mut scene)?;
+                append_closed_surface(&surface, invert, vertex, &mut scene, budget)?;
             }
             "TOROIDAL_SURFACE" => {
                 let major = positive_radius(
@@ -369,7 +374,7 @@ fn closed_analytic_shell(
                     <Table as EntityTable<ToroidalSurfaceHolder>>::get_owned(table, surface_id)
                         .map_err(|error| format!("cannot resolve STEP torus: {error}"))?;
                 let surface = truck_stepio::r#in::alias::ToroidalSurface::from(&source);
-                append_closed_surface(&surface, invert, vertex, &mut scene)?;
+                append_closed_surface(&surface, invert, vertex, &mut scene, budget)?;
             }
             _ => {
                 return Err(
@@ -654,8 +659,16 @@ struct Expansion<'a> {
     meshes: &'a HashMap<u64, Scene>,
     /// Owned AP242 decoder loading only geometry selected by shape ownership.
     decoder: step_tessellation::Decoder<'a>,
-    /// Decoded AP242 item scenes reused across repeated part occurrences.
-    tessellated: HashMap<u64, Scene>,
+    /// Owned planar polygon decoder loading only selected topology.
+    faceted: step_faceted::Decoder<'a>,
+    /// Decoded owned item scenes reused across repeated part occurrences.
+    owned: HashMap<u64, Scene>,
+    /// Source dependency graph used to validate selected polygonal geometry.
+    graph: &'a HashMap<u64, Vec<u64>>,
+    /// Dependency depths already checked for selected polygonal items.
+    dependencies: HashMap<u64, usize>,
+    /// Cumulative geometry, allocation and processing budgets across every loader.
+    budget: Budget,
     /// Scene receiving all expanded assembly occurrences.
     scene: Scene,
     /// Active representation identifiers used to reject expansion cycles.
@@ -1110,11 +1123,20 @@ impl<'a> Assembly<'a> {
     /// # Errors
     ///
     /// Expansion encounters invalid references, missing geometry, cycles or occurrence/triangle limits.
-    fn render(&self, meshes: &HashMap<u64, Scene>) -> Result<Scene> {
+    fn render(
+        &self,
+        meshes: &HashMap<u64, Scene>,
+        graph: &HashMap<u64, Vec<u64>>,
+        budget: Budget,
+    ) -> Result<Scene> {
         let mut expansion = Expansion {
             meshes,
             decoder: step_tessellation::Decoder::new(self.entities),
-            tessellated: HashMap::new(),
+            faceted: step_faceted::Decoder::new(self.entities),
+            owned: HashMap::new(),
+            graph,
+            dependencies: HashMap::new(),
+            budget,
             scene: Scene::default(),
             visiting: HashSet::new(),
             used: HashSet::new(),
@@ -1156,7 +1178,12 @@ impl<'a> Assembly<'a> {
         {
             let representation = self.representation(member)?;
             for &item in &representation.items {
-                if let Some(record) = named_record(self.entities, item, "MANIFOLD_SOLID_BREP")? {
+                if let Some(shell) = step_faceted::solid_outer(self.entities[&item])? {
+                    exact_items.insert((item, representation.scale.to_bits()));
+                    exact_items.insert((shell, representation.scale.to_bits()));
+                } else if let Some(record) =
+                    named_record(self.entities, item, "MANIFOLD_SOLID_BREP")?
+                {
                     exact_items.insert((item, representation.scale.to_bits()));
                     exact_items.insert((
                         reference(field(record, 1)?)?,
@@ -1241,13 +1268,29 @@ impl<'a> Assembly<'a> {
         if depth > MAX_REFERENCE_DEPTH || expansion.work > MAX_ENTITIES {
             return Err("STEP assembly exceeds geometry-item expansion limit".into());
         }
-        if !expansion.tessellated.contains_key(&id)
-            && let Some(mesh) = expansion.decoder.decode(id)?
-        {
-            expansion.tessellated.insert(id, mesh);
+        if !expansion.owned.contains_key(&id) {
+            if step_faceted::handles(self.entities[&id])
+                || step_faceted::owns_shell(self.entities, id, &mut expansion.budget)?
+            {
+                check_graph(
+                    id,
+                    expansion.graph,
+                    &mut HashSet::new(),
+                    &mut expansion.dependencies,
+                    0,
+                )?;
+            }
+            let mesh = if let Some(mesh) = expansion.faceted.decode(id, &mut expansion.budget)? {
+                Some(mesh)
+            } else {
+                expansion.decoder.decode(id, &mut expansion.budget)?
+            };
+            if let Some(mesh) = mesh {
+                expansion.owned.insert(id, mesh);
+            }
         }
-        if let Some(mesh) = expansion.tessellated.get(&id) {
-            append_mesh(mesh, transform, &mut expansion.scene)?;
+        if let Some(mesh) = expansion.owned.get(&id) {
+            append_mesh(mesh, transform, &mut expansion.scene, &mut expansion.budget)?;
             expansion.used.insert(id);
             return Ok(());
         }
@@ -1270,7 +1313,7 @@ impl<'a> Assembly<'a> {
                     .meshes
                     .get(&id)
                     .ok_or("STEP component references an unsupported shell")?;
-                append_mesh(mesh, transform, &mut expansion.scene)?;
+                append_mesh(mesh, transform, &mut expansion.scene, &mut expansion.budget)?;
                 expansion.used.insert(id);
             }
             _ => {
@@ -1290,10 +1333,27 @@ impl<'a> Assembly<'a> {
 /// # Errors
 ///
 /// The expanded geometry exceeds the triangle limit or a transformed normal is invalid.
-fn append_mesh(mesh: &Scene, transform: Transform, scene: &mut Scene) -> Result<()> {
+fn append_mesh(
+    mesh: &Scene,
+    transform: Transform,
+    scene: &mut Scene,
+    budget: &mut Budget,
+) -> Result<()> {
     if scene.triangles.len() + mesh.triangles.len() > MAX_TRIANGLES {
         return Err("STEP assembled preview exceeds triangle limit".into());
     }
+    budget.storage(mesh.triangles.len(), std::mem::size_of::<Triangle>())?;
+    budget.storage(
+        mesh.appearances.len(),
+        std::mem::size_of::<crate::scene::TriangleAppearance>() + 4 * std::mem::size_of::<usize>(),
+    )?;
+    budget.work(
+        mesh.triangles
+            .len()
+            .checked_mul(3)
+            .ok_or("STEP expanded corner work overflows")?,
+    )?;
+    scene.triangles.try_reserve_exact(mesh.triangles.len())?;
     let offset = scene.triangles.len();
     for triangle in &mesh.triangles {
         scene.triangles.push(Triangle {
@@ -1324,6 +1384,84 @@ fn append_mesh(mesh: &Scene, transform: Transform, scene: &mut Scene) -> Result<
         scene.appearances.insert(offset + index, appearance);
     }
     Ok(())
+}
+
+/// Identify outer-shell hints without requiring unused faceted geometry to be valid.
+fn faceted_outer_hint(entity: &EntityInstance) -> Option<u64> {
+    let (_, parts) = records(entity);
+    if !parts.iter().any(|record| record.name == "FACETED_BREP") {
+        return None;
+    }
+    let (record, index) = match entity {
+        EntityInstance::Simple { record, .. } => (record, 1),
+        EntityInstance::Complex { .. } => (
+            parts
+                .iter()
+                .find(|record| record.name == "MANIFOLD_SOLID_BREP")?,
+            0,
+        ),
+    };
+    list(&record.parameter)
+        .ok()?
+        .get(index)
+        .and_then(|value| reference(value).ok())
+}
+
+/// Partition polygon shells and explicitly faceted outer shells before kernel loading.
+///
+/// # Errors
+///
+/// Bounded shell classification exceeds its reference ceiling.
+fn polygon_shells(
+    entities: &HashMap<u64, &EntityInstance>,
+    budget: &mut Budget,
+) -> Result<HashSet<u64>> {
+    let mut owned: HashSet<_> = entities
+        .values()
+        .filter_map(|entity| faceted_outer_hint(entity))
+        .collect();
+    for (&id, entity) in entities {
+        if records(entity)
+            .1
+            .iter()
+            .any(|record| matches!(record.name.as_str(), "OPEN_SHELL" | "CLOSED_SHELL"))
+            && step_faceted::owns_shell(entities, id, budget)?
+        {
+            owned.insert(id);
+        }
+    }
+    Ok(owned)
+}
+
+/// Collect existing geometry dependencies once per loader family with bounded storage and work.
+///
+/// # Errors
+///
+/// Metadata traversal or retained lookup storage exceeds the shared preview budget.
+fn dependency_closure(
+    roots: &HashSet<u64>,
+    graph: &HashMap<u64, Vec<u64>>,
+    budget: &mut Budget,
+) -> Result<HashSet<u64>> {
+    let mut seen = HashSet::new();
+    let mut pending = Vec::new();
+    for &id in roots {
+        if graph.contains_key(&id) && seen.insert(id) {
+            budget.storage(1, 4 * std::mem::size_of::<u64>())?;
+            pending.push(id);
+        }
+    }
+    while let Some(id) = pending.pop() {
+        let references = &graph[&id];
+        budget.work(references.len())?;
+        for &next in references {
+            if graph.contains_key(&next) && seen.insert(next) {
+                budget.storage(1, 4 * std::mem::size_of::<u64>())?;
+                pending.push(next);
+            }
+        }
+    }
+    Ok(seen)
 }
 
 /// Parse Part 21 entities, tessellate required shells and instantiate assembly geometry.
@@ -1357,8 +1495,30 @@ fn parse(text: &str) -> Result<Scene> {
             return Err(format!("duplicate STEP entity #{id}").into());
         }
         entities.insert(id, entity);
-        // Avoid Table::from_data_section, which logs and skips malformed entities.
-        if !step_tessellation::handles(entity) {
+    }
+    let mut budget = Budget::default();
+    let owned_shells = polygon_shells(&entities, &mut budget)?;
+    let kernel_shells: HashSet<_> = entities
+        .iter()
+        .filter(|(id, entity)| {
+            !owned_shells.contains(id)
+                && records(entity)
+                    .1
+                    .iter()
+                    .any(|record| matches!(record.name.as_str(), "OPEN_SHELL" | "CLOSED_SHELL"))
+        })
+        .map(|(&id, _)| id)
+        .collect();
+    let owned_geometry = dependency_closure(&owned_shells, &graph, &mut budget)?;
+    let kernel_geometry = dependency_closure(&kernel_shells, &graph, &mut budget)?;
+    for entity in exchange.data.iter().flat_map(|section| &section.entities) {
+        let (id, _) = records(entity);
+        // Keep shared ordinary BREP dependencies in Truck's public table, while
+        // facet-only records are validated lazily by the selected owned loader.
+        if !(step_tessellation::handles(entity)
+            || step_faceted::handles(entity)
+            || (owned_geometry.contains(&id) && !kernel_geometry.contains(&id)))
+        {
             table
                 .push_instance(entity)
                 .map_err(|error| format!("cannot decode STEP entity #{id}: {error}"))?;
@@ -1367,14 +1527,20 @@ fn parse(text: &str) -> Result<Scene> {
     if table.shell.is_empty()
         && !entities
             .values()
-            .any(|entity| step_tessellation::handles(entity))
+            .any(|entity| step_tessellation::handles(entity) || step_faceted::handles(entity))
+        && owned_shells.is_empty()
     {
         return Err("STEP file has no supported open/closed B-rep shells".into());
     }
     if table.face_surface.len() > MAX_FACES {
         return Err("STEP file exceeds face limit".into());
     }
-    let mut shells: Vec<_> = table.shell.iter().collect();
+    budget.faces(table.face_surface.len())?;
+    let mut shells: Vec<_> = table
+        .shell
+        .iter()
+        .filter(|(id, _)| !owned_shells.contains(id))
+        .collect();
     shells.sort_unstable_by_key(|&(id, _)| *id);
     let mut meshes = HashMap::new();
     let mut total_triangles = 0usize;
@@ -1383,7 +1549,7 @@ fn parse(text: &str) -> Result<Scene> {
         let id = *id;
         let mut scene = Scene::default();
         check_graph(id, &graph, &mut HashSet::new(), &mut done, 0)?;
-        if let Some(analytic) = closed_analytic_shell(id, &entities, &table)? {
+        if let Some(analytic) = closed_analytic_shell(id, &entities, &table, &mut budget)? {
             if total_triangles + analytic.triangles.len() > MAX_TRIANGLES {
                 return Err("STEP tessellation exceeds triangle limit".into());
             }
@@ -1486,6 +1652,7 @@ fn parse(text: &str) -> Result<Scene> {
                 if scene.triangles.len() >= MAX_TRIANGLES {
                     return Err("STEP tessellation exceeds triangle limit".into());
                 }
+                budget.triangles(1, false)?;
                 scene.triangles.push(Triangle {
                     vertices,
                     color: None,
@@ -1510,13 +1677,23 @@ fn parse(text: &str) -> Result<Scene> {
                 )
         })
     }) {
-        return Assembly::new(&entities)?.render(&meshes);
+        return Assembly::new(&entities)?.render(&meshes, &graph, budget);
     }
     let mut scene = Scene::default();
     for (&id, _) in shells {
         scene
             .triangles
             .extend(meshes.remove(&id).unwrap().triangles);
+    }
+    let mut decoder = step_faceted::Decoder::new(&entities);
+    let mut polygon_shells: Vec<_> = owned_shells.into_iter().collect();
+    polygon_shells.sort_unstable();
+    for id in polygon_shells {
+        check_graph(id, &graph, &mut HashSet::new(), &mut done, 0)?;
+        let mesh = decoder
+            .decode(id, &mut budget)?
+            .ok_or("STEP polygon shell is unsupported")?;
+        append_mesh(&mesh, Transform::IDENTITY, &mut scene, &mut budget)?;
     }
     scene.validate()?;
     Ok(scene)

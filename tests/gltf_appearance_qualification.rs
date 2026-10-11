@@ -1,6 +1,6 @@
 //! Appearance and placement qualification against authored controls and
 //! unchanged independently exported Khronos sample assets.
-use catwalk::{
+use catwalk3d::{
     formats,
     render::{RenderOptions, render},
     scene::{AlphaMode, Scene, TextureFilter, TextureWrap, Vec3},

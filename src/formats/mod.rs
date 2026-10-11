@@ -45,6 +45,10 @@ mod slpk;
 mod spz;
 /// STEP B-rep and tessellated geometry, length contexts and assembly placements.
 mod step;
+/// Cumulative selected geometry and allocation limits shared by STEP loaders.
+mod step_budget;
+/// Owned planar polygon shells and faceted STEP solids.
+mod step_faceted;
 /// Bounded Part 21 entity loading into unchanged upstream syntax objects.
 mod step_parameters;
 /// Direct AP242 triangle geometry and authored corner normals.

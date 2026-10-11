@@ -116,7 +116,7 @@ fn thumbnail(directory: &Path, name: &str, bytes: &[u8]) -> Vec<u8> {
     let input = directory.join(name);
     let output = directory.join(format!("{name}.png"));
     std::fs::write(&input, bytes).unwrap();
-    let scene = catwalk::formats::load(&input).unwrap();
+    let scene = catwalk3d::formats::load(&input).unwrap();
     assert!(scene.triangles.len() >= 12);
     let result = Command::new(env!("CARGO_BIN_EXE_catwalk"))
         .env_remove("DISPLAY")

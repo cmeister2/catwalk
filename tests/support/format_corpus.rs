@@ -1,5 +1,5 @@
 //! Shared corpus and decoded-pixel comparison used by CI and the Pages gallery.
-use catwalk::{
+use catwalk3d::{
     Result, formats,
     render::{RenderOptions, write_png},
 };
@@ -269,7 +269,7 @@ pub fn read_cases(workspace: &Path) -> Result<Vec<Case>> {
         }
         let kind = if formats::IMAGE_EXTENSIONS.contains(&case.extension.as_str()) {
             "image"
-        } else if catwalk::saved_preview::EXTENSIONS.contains(&case.extension.as_str()) {
+        } else if catwalk3d::saved_preview::EXTENSIONS.contains(&case.extension.as_str()) {
             "saved-preview"
         } else {
             "model"
@@ -288,7 +288,7 @@ pub fn read_cases(workspace: &Path) -> Result<Vec<Case>> {
     let advertised: BTreeSet<String> = formats::MODEL_EXTENSIONS
         .iter()
         .chain(formats::IMAGE_EXTENSIONS)
-        .chain(catwalk::saved_preview::EXTENSIONS)
+        .chain(catwalk3d::saved_preview::EXTENSIONS)
         .map(|s| (*s).to_owned())
         .collect();
     if seen != advertised {
@@ -435,9 +435,9 @@ fn render(
             ..RenderOptions::default()
         };
         let image = if case.kind == "native-geometry" {
-            catwalk::geometry_thumbnail(&input, &options)?
+            catwalk3d::geometry_thumbnail(&input, &options)?
         } else {
-            catwalk::thumbnail(&input, &options)?
+            catwalk3d::thumbnail(&input, &options)?
         };
         save_png(output, &image)?;
         Ok(image)
