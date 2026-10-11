@@ -75,7 +75,7 @@ sha2 = "=0.10.9"
 hdf5-writer = { version = "=0.9.1", default-features = false }
 netcdf-writer = { version = "=0.9.1", default-features = false, features = ["netcdf4"] }
 ogeom-doc = { version = "=0.9.16", default-features = false }
-truck-modeling = "0.6.0"
+truck-modeling = "=0.6.0"
 
 [profile.release]
 lto = "thin"
