@@ -6,6 +6,8 @@ Catwalk has Rust thumbnail readers for all 76 extension aliases in F3D 3.5's pub
 
 It also extracts saved thumbnails from Inventor `.ipt`/`.iam`, `LightBurn` `.lbrn`/`.lbrn2`, Blender `.blend`, Fusion `.f3d` and `AutoCAD` `.dwg`. These seven additional extensions use qualified image carriers. A saved image may be absent, blank or stale; extracting it does not regenerate model geometry.
 
+Catwalk additionally renders stored Blender mesh scenes, `LightBurn` vector drawings and a qualified DWG drawing subset when their saved image is missing or unreadable. `--render-geometry` forces a fresh preview even when a saved image exists. [Native geometry evidence and limitations](docs/research/native-geometry.md) describe these readers and the separate experimental Inventor/Fusion solid bridge.
+
 ## Build and use
 
 Install a current stable Rust toolchain, then:
@@ -17,6 +19,7 @@ cargo build --release --locked
 ./target/release/catwalk model.3mf --output thumbnail.png --transparent
 ./target/release/catwalk model.obj --output - > thumbnail.png
 ./target/release/catwalk project.lbrn2 --output thumbnail.png --size 256
+./target/release/catwalk scene.blend --render-geometry --output fresh.png --size 256
 ./target/release/catwalk part.ipt --extract-saved-preview --output - > saved-preview.png
 ./target/release/catwalk --list-formats
 ```
@@ -52,6 +55,8 @@ fn main() -> catwalk::Result<()> {
 
 `formats::load` returns triangles, points and line segments in a `scene::Scene`. Its optional triangle appearances carry linear RGBA factors, per-vertex colors, UVs, imported normals, shared textures, alpha mode and sidedness. Applications can supply their own scene to `render::render` without writing a model file. `write_png` accepts any `std::io::Write`, including an in-memory buffer or stdout.
 
+`geometry_thumbnail` renders stored geometry without consulting an embedded image. `LightBurn` uses an XY plan view; the other geometry readers use the fitted model view. The native document readers support the static geometry described in the coverage matrix. Application feature evaluation remains unfinished.
+
 `saved_preview::extract` returns `Result<Option<RgbaImage>>` at the saved image's original dimensions: `None` means no supported saved image. Inventor returns `None` for complete unsupported image encodings; malformed data errors. Other readers reject unsupported document versions and carriers. `saved_preview::inventor::extract_png` preserves native PNG bit depth and strips ancillary metadata. Normal `thumbnail` output fits the saved image onto an RGBA8 canvas.
 
 Saved-preview qualification:
@@ -76,17 +81,19 @@ Tests cover depth and winding, centering and aspect ratio, transparent edges, te
 
 The [format corpus](tests/fixtures/formats/manifest.json) supplies an encoded input for every advertised extension, plus additional encoding and scene examples. Saved-preview cases include licensed original projects and clearly identified authored carrier fixtures; minimal carriers contain no CAD geometry. `cargo test --locked --test format_snapshots` renders every case through the CLI and compares decoded RGBA pixels with [committed PNG snapshots](tests/snapshots/formats). Missing fixtures, missing snapshots, decoding failures and visual changes fail CI. Transparent pixels are compared in premultiplied RGBA; each channel may differ by at most 2/255 for platform rounding. PNG compression bytes are not compared.
 
-CI retains actual, expected and amplified diff images as downloadable artifacts on every platform. Successful runs publish the same tested images to the [GitHub Pages gallery](https://cmeister2.github.io/catwalk/), with format search, model/image filters and an interactive snapshot comparison. Deployment waits for formatting, strict Clippy and all three operating-system test jobs. Pull requests produce a gallery artifact for review.
+CI retains actual, expected and amplified diff images as downloadable artifacts on every platform. Successful runs publish the same tested images to the [GitHub Pages gallery](https://cmeister2.github.io/catwalk/), with format search, model/image filters and an interactive snapshot comparison. Deployment waits for formatting, strict Clippy, documentation, all three operating-system test jobs and the separate experimental solid-geometry checks. Pull requests produce a gallery artifact for review.
 
 To regenerate authored inputs, run `cargo run --locked --example generate_fixtures`. To explicitly update baselines and inspect the resulting gallery, run `cargo run --locked --example gallery -- --update-snapshots`. Review the images and commit the changed PNGs; normal tests never update them. For a local gallery from an existing test run, use `cargo run --locked --example gallery -- --report target/format-snapshots`, then serve `target/gallery` with a static HTTP server. These snapshots establish regression coverage for their fixtures, while the broader valid-file limitations in the coverage matrix still apply.
 
-Input and referenced resources are limited to 512 MiB each. Raster image decoding is limited to 256 MiB. Importers bound declared counts, and scene expansion is bounded for formats with instances. CLI output dimensions are 1–4096 pixels per axis; model rendering additionally allows at most 16 million supersampled pixels, so very large thumbnails may need `--samples 1`. Decode failures occur before an output file is opened.
+Input and referenced resources are limited to 512 MiB each. Raster image decoding is limited to 256 MiB. Importers apply format-specific count limits, and scene expansion is bounded for formats with instances. The DWG record ceiling is checked after decoding; additional upstream section and allocation bounds remain [unfinished](docs/research/native-geometry.md). CLI output dimensions are 1–4096 pixels per axis; model rendering additionally allows at most 16 million supersampled pixels, so very large thumbnails may need `--samples 1`. Decode failures occur before an output file is opened.
 
 ## Implementation
 
 Rust importers produce a common triangle, point and line scene. The software renderer normalizes model coordinates, fits projected bounds, resolves opaque visibility with a depth buffer, applies simple lighting, downsamples premultiplied colors and encodes PNG. glTF/GLB triangle previews additionally sample PNG/JPEG base-color textures, interpolate linear vertex RGBA and transformed normals, apply material sidedness and alpha cutouts, and compose transparent fragments in depth order for each sample. Samplers support repeat, mirrored repeat, clamp, nearest and bilinear filtering; mipmap modes use the base-level fallback defined by glTF. Appearance shading, blending and supersampling operate in linear color. Required GPU instancing and texture-transform extensions are supported; skin combined with GPU instancing remains an explicit error.
 
-Material and vertex colors are used where implemented; glTF and supported FBX skins/morphs are evaluated in the first pose. Full physically based materials, normal/emissive/occlusion maps, textures in other formats, Gaussian splatting and additional deformation variants remain tracked limitations. Scalar volumes use a coarse density surface; DICOM and raster images use a fitted image preview.
+3MF previews additionally sample packaged PNG/JPEG texture groups, preserving per-corner UVs, material defaults and repeat/mirror/clamp settings. Texture filtering uses encoded sRGB as specified by 3MF; glTF retains linear filtering. Direct 3MF texture layers are opaque. Composite and layered material resources remain explicit errors.
+
+Material and vertex colors are used where implemented; glTF and supported FBX skins/morphs are evaluated in the first pose. Full physically based materials, normal/emissive/occlusion maps, textures outside glTF/3MF, Gaussian splatting and additional deformation variants remain tracked limitations. Scalar volumes use a coarse density surface; DICOM and raster images use a fitted image preview.
 
 Compression and image codecs use Rust backends. The supported Linux, Windows and macOS dependency graphs do not contain native geometry or codec libraries. Rust's standard library and platform bindings still use normal operating-system facilities.
 

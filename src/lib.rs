@@ -11,7 +11,7 @@ pub mod scene;
 /// Dispatch and aspect-preserving fitting for model, raster and saved previews.
 mod thumbnail;
 
-pub use thumbnail::thumbnail;
+pub use thumbnail::{geometry_thumbnail, thumbnail};
 
 /// An importer, rendering, decoding or I/O failure that can cross thread boundaries.
 pub type Error = Box<dyn std::error::Error + Send + Sync>;

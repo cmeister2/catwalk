@@ -1,0 +1,397 @@
+{
+  "decode_report": {
+    "coverage": {
+      "active_kernel_carriers": 1,
+      "appearance_bindings_transferred": 0,
+      "assembly_occurrences": 0,
+      "assembly_occurrences_transferred": 0,
+      "assembly_placements": 0,
+      "assembly_record_issues": 0,
+      "design_parameters_transferred": 36,
+      "design_record_issues": 0,
+      "embedded_references": 0,
+      "external_references": 0,
+      "face_color_appearances": 0,
+      "feature_record_issues": 0,
+      "feature_result_topologies_transferred": 0,
+      "features_transferred": 0,
+      "kernel_unknown_records": 0,
+      "kernel_unknown_surface_faces": 0,
+      "pm_app_default_styles": 1,
+      "pm_app_rendering_styles": 1,
+      "pm_dc_directions": 19,
+      "pm_dc_entity_style_links": 60,
+      "pm_dc_expressions": 44,
+      "pm_dc_feature_labels": 46,
+      "pm_dc_feature_properties": 160,
+      "pm_dc_feature_terminators": 1,
+      "pm_dc_features": 15,
+      "pm_dc_parameters": 40,
+      "pm_dc_pattern_features": 1,
+      "pm_dc_sketch_constraints": 58,
+      "pm_dc_sketch_entities": 60,
+      "pm_dc_sketches": 11,
+      "pm_dc_transforms": 13,
+      "pm_dc_units": 166,
+      "pm_graphics_faces": 97,
+      "pm_graphics_primary_color_styles": 0,
+      "pm_graphics_style_collections": 214,
+      "presentation_record_issues": 0,
+      "preview_assets": 0,
+      "properties": 54,
+      "property_sets": 6,
+      "protein_appearances": 0,
+      "protein_assets": 0,
+      "protein_entries": 0,
+      "protein_rejections": 0,
+      "rse_databases": 1,
+      "rse_meta_types": 494,
+      "rse_records": 3453,
+      "rse_registry_entries": 8,
+      "rse_revisions": 531,
+      "rse_segment_bulk": 8,
+      "rse_segment_bulk_issues": 0,
+      "rse_segment_meta": 8,
+      "rse_segment_meta_issues": 0,
+      "rse_segment_pairs": 8,
+      "rse_storage_bands": 1,
+      "sketch_constraints_transferred": 19,
+      "sketch_entities_transferred": 22,
+      "sketch_record_issues": 0,
+      "sketches_transferred": 7,
+      "ufrx_model_states": 0,
+      "ufrx_occurrences": 0
+    },
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [
+          {
+            "admission": "admitted",
+            "declared": {
+              "reference_width": "4",
+              "save_format_major": "220",
+              "save_format_minor": "0"
+            },
+            "dialect": "acis:asm-binaryfile-4"
+          }
+        ],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "cfb_major_version": "3",
+            "meta_stream_marker": "RSe Meta Stream Version 8",
+            "meta_stream_version": "8",
+            "rse_db_schema": "31"
+          },
+          "dialect": "inventor:cfb3-rse31-meta8"
+        }
+      }
+    },
+    "losses": [
+      {
+        "code": {
+          "code": "rse.segment-pair-untyped",
+          "kind": "record_not_typed",
+          "namespace": "inventor",
+          "scope": "namespaced"
+        },
+        "message": "Retained 8 structurally paired RSe segment(s) without record semantics.",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "feature.label-unusable",
+          "kind": "metadata_not_transferred",
+          "namespace": "inventor",
+          "scope": "namespaced"
+        },
+        "message": "2 optional feature label(s) have no display name; their exact native records are retained.",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "feature.operation-graph-open",
+          "kind": "feature_history_retained",
+          "namespace": "inventor",
+          "scope": "namespaced"
+        },
+        "message": "Retained 16 typed Inventor feature record(s) whose operation graph is not closed.",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "parameter.graph-open",
+          "kind": "parametric_record_omitted",
+          "namespace": "inventor",
+          "scope": "namespaced"
+        },
+        "message": "Retained 4 Inventor parameter record(s) whose unit or expression graph is not closed.",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "sketch.graph-open",
+          "kind": "feature_history_retained",
+          "namespace": "inventor",
+          "scope": "namespaced"
+        },
+        "message": "Retained 4 Inventor sketch record(s), 38 sketch-entity record(s), and 39 sketch-constraint record(s) whose neutral graph is not closed.",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "metadata.property-unmapped",
+          "kind": "metadata_not_transferred",
+          "namespace": "inventor",
+          "scope": "namespaced"
+        },
+        "message": "Retained 8 property value(s) without neutral metadata mapping.",
+        "severity": "warning"
+      }
+    ],
+    "notes": [],
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
+  },
+  "experimental": true,
+  "geometry_sha256": "036ff9a582670a2de724563705fbbe238015e386af232b7cc4fbd7c9c2b15622",
+  "render_lines": 0,
+  "render_points": 0,
+  "render_triangles": 948,
+  "source_bodies": 1,
+  "source_edges": 48,
+  "source_faces": 49,
+  "source_shells": 1,
+  "source_vertices": 48,
+  "step_export_report": {
+    "census": {
+      "basis": "target_records",
+      "counts": {
+        "ADVANCED_FACE": 49,
+        "APPLICATION_CONTEXT": 1,
+        "APPLICATION_PROTOCOL_DEFINITION": 1,
+        "AXIS2_PLACEMENT_3D": 99,
+        "CARTESIAN_POINT": 110,
+        "CIRCLE": 48,
+        "CLOSED_SHELL": 1,
+        "CYLINDRICAL_SURFACE": 21,
+        "DIRECTION": 23,
+        "EDGE_CURVE": 48,
+        "EDGE_LOOP": 96,
+        "FACE_BOUND": 96,
+        "GEOMETRIC_REPRESENTATION_CONTEXT": 1,
+        "LENGTH_UNIT": 1,
+        "MANIFOLD_SOLID_BREP": 1,
+        "ORIENTED_EDGE": 96,
+        "PLANE": 27,
+        "PLANE_ANGLE_UNIT": 1,
+        "PRODUCT": 1,
+        "PRODUCT_CONTEXT": 1,
+        "PRODUCT_DEFINITION": 1,
+        "PRODUCT_DEFINITION_CONTEXT": 1,
+        "PRODUCT_DEFINITION_FORMATION": 1,
+        "PRODUCT_DEFINITION_SHAPE": 1,
+        "SHAPE_DEFINITION_REPRESENTATION": 1,
+        "SHAPE_REPRESENTATION": 1,
+        "SOLID_ANGLE_UNIT": 1,
+        "SPHERICAL_SURFACE": 1,
+        "UNCERTAINTY_MEASURE_WITH_UNIT": 1,
+        "VERTEX_POINT": 48
+      }
+    },
+    "identity": {
+      "payload": "native",
+      "target": "step:ap214"
+    },
+    "losses": [
+      {
+        "code": {
+          "code": "design.parametric-records-omitted",
+          "kind": "parametric_record_omitted",
+          "namespace": "step",
+          "scope": "namespaced"
+        },
+        "message": "84 parametric/design record(s) were not represented in STEP: parameter=36, sketch=7, sketch entity=22, sketch constraint=19",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "product.bom-property-omitted",
+          "kind": "metadata_not_transferred",
+          "namespace": "step",
+          "scope": "namespaced"
+        },
+        "message": "27 product BOM property value(s) were not represented in STEP",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "attribute.source-record-not-written",
+          "kind": "attributes_not_transferred",
+          "namespace": "step",
+          "scope": "namespaced"
+        },
+        "message": "257 source attribute record(s) were not written to STEP",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "native.source-record-omitted",
+          "kind": "parametric_record_omitted",
+          "namespace": "step",
+          "scope": "namespaced"
+        },
+        "message": "5919 source-native record(s) were not represented in STEP",
+        "severity": "info"
+      }
+    ],
+    "notes": [],
+    "write_path": {
+      "fidelity": {
+        "status": "not_provided"
+      },
+      "path": "synthesized"
+    }
+  },
+  "step_roundtrip_report": {
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "file_schema_identifier": "AUTOMOTIVE_DESIGN { 1 0 10303 214 1 1 1 1 }",
+            "implementation_level": "2;1",
+            "long_form_arcs": " 1 0 10303 214 1 1 1 1 "
+          },
+          "dialect": "step:ap214"
+        }
+      }
+    },
+    "losses": [
+      {
+        "code": {
+          "code": "decode.opaque-record-preserved",
+          "kind": "record_not_typed",
+          "namespace": "step",
+          "scope": "namespaced"
+        },
+        "message": "preserved 1 APPLICATION_PROTOCOL_DEFINITION instance(s) as named opaque STEP records",
+        "severity": "warning"
+      }
+    ],
+    "notes": [
+      "byte accounting: 1050 structural, 31574 typed, 95 named opaque, 0 unclassified"
+    ],
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
+  },
+  "upstream_commit": "9e8f6d6b5da9371bc791ce3924f364aea81be0ec",
+  "validation_report": {
+    "entity_counts": {
+      "appearance_bindings": 0,
+      "appearances": 0,
+      "assembly_joints": 0,
+      "assets": 0,
+      "attributes": 257,
+      "bodies": 1,
+      "coedges": 96,
+      "configurations": 0,
+      "curves": 48,
+      "drawings": 0,
+      "edges": 48,
+      "faces": 49,
+      "feature_input_topologies": 0,
+      "feature_result_topologies": 0,
+      "features": 0,
+      "loops": 96,
+      "native.inventor.active_carrier": 1,
+      "native.inventor.body_native_keys": 1,
+      "native.inventor.databases": 1,
+      "native.inventor.edge_continuities": 48,
+      "native.inventor.edge_ownerships": 48,
+      "native.inventor.face_native_keys": 49,
+      "native.inventor.face_sidedness": 49,
+      "native.inventor.meta_sections": 88,
+      "native.inventor.meta_types": 494,
+      "native.inventor.pm_app_default_styles": 1,
+      "native.inventor.pm_app_rendering_styles": 1,
+      "native.inventor.pm_dc_directions": 19,
+      "native.inventor.pm_dc_entity_style_links": 60,
+      "native.inventor.pm_dc_expressions": 44,
+      "native.inventor.pm_dc_feature_labels": 46,
+      "native.inventor.pm_dc_feature_properties": 160,
+      "native.inventor.pm_dc_feature_terminators": 1,
+      "native.inventor.pm_dc_features": 15,
+      "native.inventor.pm_dc_parameters": 40,
+      "native.inventor.pm_dc_pattern_features": 1,
+      "native.inventor.pm_dc_sketch_constraints": 58,
+      "native.inventor.pm_dc_sketch_entities": 60,
+      "native.inventor.pm_dc_sketches": 11,
+      "native.inventor.pm_dc_transforms": 13,
+      "native.inventor.pm_dc_units": 166,
+      "native.inventor.pm_graphics_faces": 97,
+      "native.inventor.pm_graphics_style_collections": 214,
+      "native.inventor.properties": 54,
+      "native.inventor.property_sections": 6,
+      "native.inventor.property_sets": 6,
+      "native.inventor.protein": 1,
+      "native.inventor.revisions": 531,
+      "native.inventor.rse_records": 3453,
+      "native.inventor.segment_bulk": 8,
+      "native.inventor.segment_meta": 8,
+      "native.inventor.segment_pairs": 8,
+      "native.inventor.segment_registry": 8,
+      "native.inventor.storage_bands": 1,
+      "native.inventor.ufrx": 1,
+      "native.inventor.vertex_ownerships": 48,
+      "occurrences": 0,
+      "parameters": 36,
+      "pcurves": 0,
+      "pmi": 0,
+      "points": 48,
+      "presentation_documents": 0,
+      "presentation_layers": 0,
+      "procedural_curves": 0,
+      "procedural_surfaces": 0,
+      "product_definitions": 1,
+      "regions": 1,
+      "semantic_annotations": 0,
+      "shells": 1,
+      "sketch_constraints": 19,
+      "sketch_entities": 22,
+      "sketches": 7,
+      "spatial_sketch_constraints": 0,
+      "spatial_sketch_entities": 0,
+      "spatial_sketches": 0,
+      "spreadsheets": 0,
+      "subds": 0,
+      "surfaces": 49,
+      "surfaces_unknown_geometry": 0,
+      "tessellations": 0,
+      "vertices": 48,
+      "view_presentations": 0
+    },
+    "findings": [
+      {
+        "check": "referential_integrity",
+        "entity": "inventor:design:parameter#pvm1uhbdsagckbv6etwlljg1nb-63",
+        "message": "parameter dependency `inventor:design:parameter#pvm1uhbdsagckbv6etwlljg1nb-71` does not precede its consumer",
+        "severity": "error"
+      },
+      {
+        "check": "referential_integrity",
+        "entity": "inventor:design:parameter#pvm1uhbdsagckbv6etwlljg1nb-65",
+        "message": "parameter dependency `inventor:design:parameter#pvm1uhbdsagckbv6etwlljg1nb-71` does not precede its consumer",
+        "severity": "error"
+      }
+    ],
+    "losses": []
+  }
+}

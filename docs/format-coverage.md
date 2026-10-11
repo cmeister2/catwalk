@@ -8,7 +8,7 @@ The CLI recognizes **all 76 published extension aliases**, covering all 57 reade
 
 Each section corresponds to a reader row in the summary table. Extension aliases sharing one format remain together, and shared renderer or codec policies are linked from the relevant section.
 
-These seven extension aliases are additional saved-image formats, outside the published F3D baseline. Their sections describe supported image carriers and representative fixtures. Saved images may be missing, blank or stale relative to model geometry; extraction does not regenerate geometry or establish compatibility with every application release.
+These seven extension aliases are additional document formats, outside the published F3D baseline. Qualified fresh geometry readers support Blender, LightBurn and DWG. The separately built Inventor/Fusion bridge supplies experimental solid previews. [Native geometry evidence](research/native-geometry.md) records their tested scope and remaining work. Saved-image extraction does not regenerate geometry or establish compatibility with every application release.
 
 | F3D reader | Extensions | Current Rust preview coverage |
 | --- | --- | --- |
@@ -54,7 +54,7 @@ These seven extension aliases are additional saved-image formats, outside the pu
 | [OFF](#off) | `.off` | Subset: polygon geometry and colors. |
 | [DXF](#dxf) | `.dxf` | Subset: ASCII/binary drawing faces, points, lines, sampled curves/splines, meshes and nested block instances. |
 | [DirectX](#directx) | `.x` | Subset: text/binary/MSZIP mesh scenes, static frames, bind geometry and colors. |
-| [3MF](#3mf) | `.3mf` | Subset: core and production multipart meshes/components/build transforms, units and base/color-group colors. |
+| [3MF](#3mf) | `.3mf` | Subset: core/production multipart meshes, placements, units, colors and packaged PNG/JPEG textures. |
 | [USD](#usd) | `.usd`, `.usda`, `.usdc`, `.usdz` | Subset: local composed stages, static meshes/primitives/points/curves, instances, transforms and diffuse colors. |
 | [VDB](#vdb) | `.vdb` | Subset: scalar sparse 5/4/3 trees, half-float values, density/level-set surfaces and affine transforms. |
 | [IFC](#ifc) | `.ifc` | Subset: Part 21 product placements, mapped/faceted/tessellated shapes, extruded/revolved profiles, primitives and bounded solid operations/openings. |
@@ -72,7 +72,7 @@ These seven extension aliases are additional saved-image formats, outside the pu
 
 ## Shared preview policies
 
-The renderer uses one automatically fitted orthographic view, a depth buffer, simple lighting, colored triangles, points and line segments. Optional triangle appearances support base-color texture sampling, interpolated linear RGBA and normals, unlit shading, sidedness, alpha masks and per-sample depth-sorted transparency. glTF/GLB currently populate these appearances; other readers retain their stated material subsets. Static scene importers select the authored pose or earliest supported transform sample. Animation playback, authored camera views, scene lighting, full physically based materials, volume transfer functions and Gaussian opacity/covariance are outside the current preview policy. Supporting a first static view permits omission of interactive viewer features, but does not remove the need to parse each model format correctly.
+The renderer uses an automatically fitted orthographic view, a depth buffer, simple lighting, colored triangles, points and line segments. Optional triangle appearances support base-color texture sampling, interpolated linear RGBA and normals, unlit shading, sidedness, alpha masks and per-sample depth-sorted transparency. glTF/GLB and textured 3MF populate these appearances; each reader retains its stated material subset. LightBurn drawings use an XY view. Static scene importers select the authored pose or earliest supported transform sample. Animation playback, authored camera views, scene lighting, full physically based materials, volume transfer functions and Gaussian opacity/covariance are outside the current preview policy. Supporting a first static view permits omission of interactive viewer features, but does not remove the need to parse each model format correctly.
 
 All current importers ignore non-geometric fields that do not affect their supported static geometry. Exact encoding restrictions are enforced by each reader. New variants need representative fixtures and thumbnail checks before this matrix changes to implemented.
 
@@ -498,13 +498,15 @@ DirectX X accepts text, binary 32/64-bit and MSZIP-compressed streams, including
 
 **Extensions:** `.3mf`.
 
-**Coverage:** Subset: core and production multipart meshes/components/build transforms, units and base/color-group colors.
+**Coverage:** Subset: core/production multipart meshes, placements, units, colors and packaged PNG/JPEG textures.
 
 3MF loads core meshes, nested component instances, build transforms, base materials and optional material color groups. The [Production Extension 1.1.2](https://3mf.io/spec/production-v1-1-2/) permits the root model's components and build items to reference other model parts inside the package. These namespace-qualified `p:path` references are resolved through OPC model relationships; object IDs and material palettes stay local to each model part. Only the selected root build contributes geometry. Child builds are ignored, and child component references remain local as required by the extension. The six core length units normalize to millimeters, including translations in each referencing part's units; nested rotations and dimensionless scales are preserved.
 
-Authored multipart fixtures exercise colliding IDs and palettes, nested placement, direct cross-part build references and mixed inch/centimeter units. Unchanged [Bambu Studio, OrcaSlicer and PrusaSlicer packages](../tests/fixtures/formats/mesh_scene/README.md) add real exporter examples, with independent triangle-count, bounds, area and source-hash checks. Tests reject missing relationships/parts/objects, ambiguous duplicate entries, malformed namespaces, cycles and excessive expansion. Limits cover 256 model parts, 512 MiB of aggregate consumed XML, five million source vertices/triangles and output triangles, 100,000 resources/archive entries, one million references/instances and 256 levels of component nesting.
+Direct `texture2d`/`texture2dgroup` material resources load packaged PNG/JPEG images through the owning model part's typed OPC texture relationships. Part-local property IDs, object defaults and per-corner `p1`/`p2`/`p3` coordinates are preserved. Lower-left 3MF UVs convert to the renderer's image origin. Repeat, mirrored repeat and edge clamp are supported; `none` acts as clamp for these single-layer textures, and their alpha is ignored as specified by 3MF. Nearest and bilinear filtering operate in encoded sRGB before lighting in linear color; `auto` selects bilinear filtering. Shared image parts decode once across model parts.
 
-Textures, composite materials and unknown required extensions remain unsupported. Remote model resources are rejected. UUID traceability and slicer settings do not affect preview geometry; this subset does not validate full manufacturing or print conformance.
+Authored multipart fixtures exercise colliding IDs and palettes, nested placement, direct cross-part build references and mixed inch/centimeter units. Unchanged [Bambu Studio, OrcaSlicer, PrusaSlicer and 3MF Consortium packages](../tests/fixtures/formats/mesh_scene/README.md) add real exporter examples, with independent geometry, image, sampler, coordinate and source-hash checks. Tests reject missing relationships/parts/objects, ambiguous duplicate entries, malformed namespaces, cycles and excessive expansion. Limits cover 256 model parts, 512 MiB of aggregate consumed XML and encoded image data, five million source vertices/triangles/texture coordinates and output triangles, 100,000 resources/archive entries, one million references/instances and 256 levels of component nesting. Texture axes are limited to 8192 pixels, individual images to sixteen million pixels, and distinct images to sixty-four million pixels in aggregate before raster decoding.
+
+Composite materials, layered multiproperties, physically based display properties and unknown required extensions remain unsupported. Remote model and texture resources are rejected. UUID traceability and slicer settings do not affect preview geometry; full manufacturing and print conformance remain unvalidated.
 
 ## USD
 
@@ -632,6 +634,8 @@ SLPK supports I3S PointCloud 1.6–1.9/2.0 packages, legacy and node-page hierar
 
 **Extensions:** `.ipt`, `.iam`. **Status:** Rust property-thumbnail extraction; qualified image carriers.
 
+The [separate experimental native geometry tool](../tools/autodesk_geometry/README.md) proves solid decoding and fresh rendering for selected real parts without thumbnails, including a current Zstandard-compressed cylinder. Assembly rendering and normal CLI geometry integration remain unfinished.
+
 The Rust extractor selects root-document CFB/OLE v3/v4 summary property sets by FMTID, prefer the native Inventor summary over the legacy summary, and validate the PID-17 `VT_CF` image. Saved PNG and supported DIB/BMP forms normalize to PNG; the source design remains untouched. A usable legacy summary can rescue an unusable native summary. This follows the structured-storage thumbnail mechanism described by [Autodesk ADN](https://images.autodesk.com/apac_japan_main/files/3538256_API_Thumbnail.pdf) and [Microsoft typed property values](https://learn.microsoft.com/en-us/openspecs/windows_protocols/MS-OLEPS/f122b9d7-e5cf-4484-8466-83f6fd94b3cc).
 
 The [carrier documentation](research/autodesk-previews.json) records supported encodings and bounds. Portable fixtures exercise saved-image extraction; they do not establish every Inventor release.
@@ -640,17 +644,21 @@ Ten Rust tests cover CFB v3/v4 regular/mini streams, native/legacy selection, di
 
 ## LightBurn
 
-**Extensions:** `.lbrn`, `.lbrn2`. **Status:** implemented saved-image extraction; qualified subset.
+**Extensions:** `.lbrn`, `.lbrn2`. **Status:** qualified saved-image extraction and fresh vector-outline rendering.
+
+Fresh geometry support reads classic and compact paths, adaptive Beziers, shared vertex/primitive resources, nested affine groups, rectangles, rounded corners and ellipses. Nine no-thumbnail projects have independent geometry checks and PNG snapshots. The view is XY. Text, bitmaps, laser fills, custom palettes and multipage layouts remain unsupported. [Geometry evidence](../tests/fixtures/native_geometry/lightburn/README.md).
 
 The [official file-management documentation](https://docs.lightburnsoftware.com/latest/Reference/FileManagement/) describes `.lbrn` as legacy and `.lbrn2` as the default; the [0.9.21 announcement](https://lightburnsoftware.com/blogs/news/lightburn-0-9-21-image-adjustment-window-image-compositing-measure-tool-new-file-format-memory-savings-and-much-more) introduced the newer format. The Rust reader accepts UTF-8, unnamespaced `LightBurnProject` XML with `FormatVersion` 0 or 1 and one direct-child `Thumbnail/@Source` containing a Base64 PNG. It preserves decoded RGBA pixels. Missing or empty previews return `None`; corrupt, ambiguous, namespaced and unsupported carriers error. DTDs are rejected.
 
 The [research report](research/lightburn-preview.json) records 45 downloaded paths representing 43 distinct files: 21 extracted previews, 22 absent previews and no errors. Successful samples span application labels 0.9.16–2.0.05 and format versions 0/1; all 21 Rust results matched independent PNG pixel decoding. This convenience corpus includes parser/generator fixtures and does not establish universal release compatibility. Two licensed source/image pairs are [retained for CI](../tests/fixtures/saved-previews/lightburn/README.md), with five focused tests for pixel preservation, absence, malformed carriers, limits, ambiguity and whitespace.
 
-Limits cap input at 64 MiB, XML nodes at 500,000, encoded previews at 12 MiB, PNG payloads at 8 MiB, axes at 8192 pixels and images at sixteen million pixels. Version 2.1 templates, 2.2 multi-page projects, other encodings/carriers and fresh geometry rendering remain unqualified.
+Limits cap input at 64 MiB, XML nodes at 500,000, encoded previews at 12 MiB, PNG payloads at 8 MiB, axes at 8192 pixels and images at sixteen million pixels. Version 2.1 templates, 2.2 multi-page projects, other encodings/carriers remain unqualified.
 
 ## Blender
 
-**Extension:** `.blend`. **Status:** implemented saved-scene-thumbnail extraction; qualified subset.
+**Extension:** `.blend`. **Status:** qualified saved-image extraction and static mesh geometry rendering.
+
+The fresh geometry reader uses BHead/SDNA layouts to load old and modern mesh arrays, active scene membership, static object/parent placements, collection instances, loose edges and vertices. Six licensed no-thumbnail scenes from 2.52 through 5.2 have source integrity, measured topology/bounds/areas and PNG comparisons. Modifiers, shape keys, non-mesh surfaces, external libraries and material textures remain unsupported. [Geometry evidence](../tests/fixtures/native_geometry/blend/README.md).
 
 The Rust reader follows Blender's [thumbnail extractor](https://github.com/blender/blender/blob/main/source/blender/blendthumb/src/blendthumb_extract.cc): leading `REND` records followed by `TEST`, whose payload is two signed 32-bit dimensions and raw RGBA pixels. Exact payload length and dimensions are validated, and rows are flipped vertically for display. Historical 12-byte file headers with 20/24-byte blocks and new 17-byte headers with 32-byte blocks are supported; [Blender 5.0 introduced larger-buffer headers](https://developer.blender.org/docs/release_notes/5.0/core/). `GLOB`/`ENDB` without `TEST` returns `None`. Big-endian files, versions below 2.50 and malformed carriers error.
 
@@ -662,17 +670,21 @@ The [research report](research/blend-dwg-previews.json) records eight successful
 
 **Extension:** `.f3d`. **Status:** implemented saved-PNG extraction; qualified archive subset.
 
+The [separate experimental native geometry bridge](../tools/autodesk_geometry/README.md) decodes selected real ASM solids and renders them without embedded images. The validated 107-face extrusion is a complete solid preview; this does not establish every Fusion graph, surface type or assembly. Normal CLI geometry integration remains unfinished.
+
 Autodesk defines F3D as a single-workspace archive; distributed F3Z archives contain one or more F3D files and require separate qualification. Fusion's `.f3d` is unrelated to the F3D viewer whose format list defines the main matrix. See [Autodesk archive documentation](https://help.autodesk.com/view/fusion360/ENU/?caas=caas%2Fsfdcarticles%2Fsfdcarticles%2FHow-to-make-a-local-archive-back-up-file-in-Fusion-360.html).
 
 The Rust reader selects exactly `FusionAssetName[Active]/Previews/small.png` in single-disk ZIP32 archives, validates manifest tag `3-2-0-0`, document type `FusionDocType` and the active-asset manifest, and checks selected-member lengths and CRCs. Stored, Deflate and single-frame Zstandard members are supported. An absent preview returns `None`; malformed or unsupported carriers error. Other image blobs are not candidates. Limits cap the source at 512 MiB, selected members at 8 MiB and image axes at 4096 pixels.
 
 Four authored unit tests exercise member selection, RGBA preservation, compression, absence, invalid carriers and limits. External research outputs include four Deflate projects with archive timestamps in 2023–2025 and Zstandard `KeyLock Assembly.f3d` dated 2026-02-12. Five independently inspected archives from [Adafruit CAD Parts](https://github.com/adafruit/Adafruit_CAD_Parts/tree/c128bceb1f96b6ea8b68f250bda986ba85da24ea) and [Riley Rainey's AGC CAD models](https://github.com/rrainey/agc-mechanical-cad/tree/2d7dccd5bc4f0263a14ac5a4fd112a15d447010d) add Stored/Deflate examples from 2018–2025, with 256 × 256 RGBA previews.
 
-Archive timestamps and `3-2-0-0` do not establish Fusion application-version coverage. ZIP64, split archives, encrypted selected members, alternate manifests/assets and nested F3Z remain unsupported. Genuine Fusion source files and extracted images were kept under `/tmp`; they are not committed CI fixtures or gallery examples.
+Archive timestamps and `3-2-0-0` do not establish Fusion application-version coverage. ZIP64, split archives, encrypted selected members, alternate manifests/assets and nested F3Z remain unsupported. The earlier saved-preview investigation did not retain its genuine Fusion archives or extracted images as CI fixtures. The separate [solid-geometry evidence](../tools/autodesk_geometry/evidence/manifest.json) now retains licensed original and preview-free Fusion archives with geometry checks and rendered snapshots; it does not expand normal CLI geometry support.
 
 ## AutoCAD drawings
 
-**Extension:** `.dwg`. **Status:** implemented addressed DIB/PNG extraction; qualified subset across eight signatures.
+**Extension:** `.dwg`. **Status:** qualified addressed DIB/PNG extraction and a native drawing geometry subset.
+
+Fresh geometry decoding uses pinned Rust acadrust records and the in-memory static DXF reader, without converter subprocesses or native codecs. Five genuine line drawings match independent AutoCAD coordinates; the 2018 file originally has no saved image and renders automatically. Broader entities and ACIS solids remain unfinished, and the decoder needs fuller section/work bounds. [Geometry evidence and failed broader probes](../tests/fixtures/native_geometry/dwg/README.md).
 
 [LibreDWG documents drawing previews](https://github.com/LibreDWG/libredwg/blob/a3d51f13f7afc143c2adb87d4b0e858e24cdac95/doc/LibreDWG.texi) as optional BMP/WMF/PNG carriers; block and proxy previews must not be mistaken for the drawing thumbnail. Its [header schema](https://github.com/LibreDWG/libredwg/blob/a3d51f13f7afc143c2adb87d4b0e858e24cdac95/src/header.spec) places a little-endian thumbnail address at byte `0x0d` for R13-family and later containers. In inspected files it points to a 16-byte sentinel, a size/count header and nine-byte type/address/size entries with absolute file offsets.
 
@@ -680,7 +692,7 @@ The [payload parser](https://github.com/LibreDWG/libredwg/blob/a3d51f13f7afc143c
 
 The [recorded Rust checks](research/blend-dwg-previews.json) cover one real file from each accepted generation: R13/R14/2000/2004/2007/2010 signatures AC1012/AC1014/AC1015/AC1018/AC1021/AC1024 supplied DIB; 2013/2018 signatures AC1027/AC1032 supplied PNG. Independent inspection of ten [LibreDWG corpus files](https://github.com/LibreDWG/libredwg/tree/a3d51f13f7afc143c2adb87d4b0e858e24cdac95/test/test-data) also yielded fully decoded previews. [Committed regressions](../tests/fixtures/saved-previews/blend_dwg/README.md) contain authored AC1032 DIB, PNG and absent-preview carriers with pixel snapshots. These incomplete drawings test extraction, not AutoCAD geometry loading.
 
-The reader does not parse geometry, verify whole-file CRCs or recover previews through section maps. LibreDWG handles [R2004/R2010+ section maps](https://github.com/LibreDWG/libredwg/blob/a3d51f13f7afc143c2adb87d4b0e858e24cdac95/src/decode.c) and [R2007 page/section maps](https://github.com/LibreDWG/libredwg/blob/a3d51f13f7afc143c2adb87d4b0e858e24cdac95/src/decode_r2007.c) differently; direct-pointer success does not qualify those broader layouts. Other producers, service packs, real encrypted or multiple-image previews, beta formats and AC1013 remain unqualified; AC1009 and other signatures are explicitly rejected. Real research drawings were not copied into Catwalk.
+The saved-preview reader does not parse geometry, verify whole-file CRCs or recover previews through section maps. LibreDWG handles [R2004/R2010+ section maps](https://github.com/LibreDWG/libredwg/blob/a3d51f13f7afc143c2adb87d4b0e858e24cdac95/src/decode.c) and [R2007 page/section maps](https://github.com/LibreDWG/libredwg/blob/a3d51f13f7afc143c2adb87d4b0e858e24cdac95/src/decode_r2007.c) differently; direct-pointer success does not qualify those broader layouts. Other producers, service packs, real encrypted or multiple-image previews, beta formats and AC1013 remain unqualified; AC1009 and other signatures are explicitly rejected. The native geometry investigation retains five licensed real line drawings separately from these minimal saved-image carriers.
 
 ## Remaining compatibility work
 

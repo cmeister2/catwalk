@@ -1,0 +1,720 @@
+catwalk-autodesk-geometry v0.1.0 (REPOSITORY/tools/autodesk_geometry)
+├── cadmpeg-codec-f3d v0.6.1 (tools/autodesk_geometry/.upstream/crates/cadmpeg-codec-f3d)
+│   ├── cadmpeg-asm v0.6.1 (tools/autodesk_geometry/.upstream/crates/cadmpeg-asm)
+│   │   ├── cadmpeg-core v0.6.1 (tools/autodesk_geometry/.upstream/crates/cadmpeg-core)
+│   │   │   ├── flate2 v1.1.10
+│   │   │   │   ├── crc32fast v1.5.2
+│   │   │   │   │   └── cfg-if v1.0.5
+│   │   │   │   ├── miniz_oxide v0.9.1
+│   │   │   │   │   ├── adler2 v2.0.1
+│   │   │   │   │   └── simd-adler32 v0.3.10
+│   │   │   │   └── zlib-rs v0.6.8
+│   │   │   ├── memchr v2.8.3
+│   │   │   ├── roxmltree v0.21.1
+│   │   │   │   └── memchr v2.8.3
+│   │   │   ├── ruzstd v0.9.0
+│   │   │   │   └── twox-hash v2.1.5
+│   │   │   ├── serde v1.0.229
+│   │   │   │   ├── serde_core v1.0.229
+│   │   │   │   └── serde_derive v1.0.229 (proc-macro)
+│   │   │   │       ├── proc-macro2 v1.0.107
+│   │   │   │       │   └── unicode-ident v1.0.26
+│   │   │   │       ├── quote v1.0.47
+│   │   │   │       │   └── proc-macro2 v1.0.107 (*)
+│   │   │   │       └── syn v3.0.7
+│   │   │   │           ├── proc-macro2 v1.0.107 (*)
+│   │   │   │           ├── quote v1.0.47 (*)
+│   │   │   │           └── unicode-ident v1.0.26
+│   │   │   ├── serde_json v1.0.151
+│   │   │   │   ├── itoa v1.0.18
+│   │   │   │   ├── memchr v2.8.3
+│   │   │   │   ├── serde_core v1.0.229
+│   │   │   │   └── zmij v1.0.23
+│   │   │   └── thiserror v2.0.21
+│   │   │       └── thiserror-impl v2.0.21 (proc-macro)
+│   │   │           ├── proc-macro2 v1.0.107 (*)
+│   │   │           ├── quote v1.0.47 (*)
+│   │   │           └── syn v3.0.7 (*)
+│   │   ├── cadmpeg-ir v0.6.1 (tools/autodesk_geometry/.upstream/crates/cadmpeg-ir)
+│   │   │   ├── base64 v0.23.1
+│   │   │   ├── cadmpeg-core v0.6.1 (tools/autodesk_geometry/.upstream/crates/cadmpeg-core) (*)
+│   │   │   ├── serde v1.0.229 (*)
+│   │   │   ├── serde-value v0.7.0
+│   │   │   │   ├── ordered-float v2.10.1
+│   │   │   │   │   └── num-traits v0.2.19
+│   │   │   │   │       └── libm v0.2.16
+│   │   │   │   │       [build-dependencies]
+│   │   │   │   │       └── autocfg v1.5.1
+│   │   │   │   └── serde v1.0.229 (*)
+│   │   │   ├── serde_json v1.0.151 (*)
+│   │   │   ├── sha2 v0.11.0
+│   │   │   │   ├── cfg-if v1.0.5
+│   │   │   │   ├── cpufeatures v0.3.0
+│   │   │   │   └── digest v0.11.3
+│   │   │   │       ├── block-buffer v0.12.1
+│   │   │   │       │   └── hybrid-array v0.4.13
+│   │   │   │       │       └── typenum v1.20.1
+│   │   │   │       ├── const-oid v0.10.2
+│   │   │   │       └── crypto-common v0.2.2
+│   │   │   │           └── hybrid-array v0.4.13 (*)
+│   │   │   └── thiserror v2.0.21 (*)
+│   │   ├── serde v1.0.229 (*)
+│   │   └── serde-value v0.7.0 (*)
+│   ├── cadmpeg-container v0.6.1 (tools/autodesk_geometry/.upstream/crates/cadmpeg-container)
+│   │   ├── cadmpeg-core v0.6.1 (tools/autodesk_geometry/.upstream/crates/cadmpeg-core) (*)
+│   │   ├── crc32fast v1.5.2 (*)
+│   │   ├── flate2 v1.1.10 (*)
+│   │   └── zip v8.6.0
+│   │       ├── crc32fast v1.5.2 (*)
+│   │       ├── flate2 v1.1.10 (*)
+│   │       ├── indexmap v2.14.2
+│   │       │   ├── equivalent v1.0.2
+│   │       │   └── hashbrown v0.17.1
+│   │       ├── memchr v2.8.3
+│   │       ├── typed-path v0.12.3
+│   │       └── zopfli v0.8.3
+│   │           ├── bumpalo v3.20.3
+│   │           ├── crc32fast v1.5.2 (*)
+│   │           ├── log v0.4.34
+│   │           └── simd-adler32 v0.3.10
+│   ├── cadmpeg-core v0.6.1 (tools/autodesk_geometry/.upstream/crates/cadmpeg-core) (*)
+│   ├── cadmpeg-ir v0.6.1 (tools/autodesk_geometry/.upstream/crates/cadmpeg-ir) (*)
+│   ├── cadmpeg-protein v0.6.1 (tools/autodesk_geometry/.upstream/crates/cadmpeg-protein)
+│   │   ├── cadmpeg-container v0.6.1 (tools/autodesk_geometry/.upstream/crates/cadmpeg-container) (*)
+│   │   ├── cadmpeg-core v0.6.1 (tools/autodesk_geometry/.upstream/crates/cadmpeg-core) (*)
+│   │   ├── cadmpeg-ir v0.6.1 (tools/autodesk_geometry/.upstream/crates/cadmpeg-ir) (*)
+│   │   ├── flate2 v1.1.10 (*)
+│   │   ├── roxmltree v0.21.1 (*)
+│   │   ├── serde v1.0.229 (*)
+│   │   └── zip v8.6.0 (*)
+│   ├── lzma-rs v0.3.0
+│   │   ├── byteorder v1.5.0
+│   │   └── crc v3.4.0
+│   │       └── crc-catalog v2.5.0
+│   ├── memchr v2.8.3
+│   ├── roxmltree v0.21.1 (*)
+│   ├── serde v1.0.229 (*)
+│   ├── serde-value v0.7.0 (*)
+│   ├── serde_json v1.0.151 (*)
+│   ├── sha2 v0.11.0 (*)
+│   ├── tempfile v3.27.0
+│   │   ├── fastrand v2.4.1
+│   │   ├── getrandom v0.4.3
+│   │   │   ├── cfg-if v1.0.5
+│   │   │   └── libc v0.2.190
+│   │   ├── once_cell v1.21.4
+│   │   └── rustix v1.1.4
+│   │       ├── bitflags v2.13.2
+│   │       └── linux-raw-sys v0.12.1
+│   └── zip v8.6.0 (*)
+├── cadmpeg-codec-inventor v0.6.1 (tools/autodesk_geometry/.upstream/crates/cadmpeg-codec-inventor)
+│   ├── cadmpeg-asm v0.6.1 (tools/autodesk_geometry/.upstream/crates/cadmpeg-asm) (*)
+│   ├── cadmpeg-container v0.6.1 (tools/autodesk_geometry/.upstream/crates/cadmpeg-container) (*)
+│   ├── cadmpeg-core v0.6.1 (tools/autodesk_geometry/.upstream/crates/cadmpeg-core) (*)
+│   ├── cadmpeg-ir v0.6.1 (tools/autodesk_geometry/.upstream/crates/cadmpeg-ir) (*)
+│   ├── cadmpeg-protein v0.6.1 (tools/autodesk_geometry/.upstream/crates/cadmpeg-protein) (*)
+│   ├── encoding_rs v0.8.42
+│   │   ├── cfg-if v1.0.5
+│   │   ├── core_detect v1.0.0
+│   │   ├── multiversion_no_op v1.0.0 (proc-macro)
+│   │   ├── scopeguard v1.2.0
+│   │   └── simdutf8 v0.1.5
+│   │   [build-dependencies]
+│   │   └── rustversion v1.0.23 (proc-macro)
+│   ├── serde v1.0.229 (*)
+│   └── serde_json v1.0.151 (*)
+├── cadmpeg-codec-step v0.6.1 (tools/autodesk_geometry/.upstream/crates/cadmpeg-codec-step)
+│   ├── base64 v0.23.1
+│   ├── cadmpeg-container v0.6.1 (tools/autodesk_geometry/.upstream/crates/cadmpeg-container) (*)
+│   ├── cadmpeg-core v0.6.1 (tools/autodesk_geometry/.upstream/crates/cadmpeg-core) (*)
+│   ├── cadmpeg-ir v0.6.1 (tools/autodesk_geometry/.upstream/crates/cadmpeg-ir) (*)
+│   ├── encoding_rs v0.8.42 (*)
+│   ├── serde_json v1.0.151 (*)
+│   ├── thiserror v2.0.21 (*)
+│   └── zip v8.6.0 (*)
+├── cadmpeg-core v0.6.1 (tools/autodesk_geometry/.upstream/crates/cadmpeg-core) (*)
+├── cadmpeg-ir v0.6.1 (tools/autodesk_geometry/.upstream/crates/cadmpeg-ir) (*)
+├── catwalk v0.1.0 (REPOSITORY)
+│   ├── acadrust v0.6.3
+│   │   ├── anyhow v1.0.104
+│   │   ├── bitflags v2.13.2
+│   │   ├── byteorder v1.5.0
+│   │   ├── encoding_rs v0.8.42 (*)
+│   │   ├── flate2 v1.1.10 (*)
+│   │   ├── foldhash v0.2.0
+│   │   ├── indexmap v2.14.2 (*)
+│   │   ├── itoa v1.0.18
+│   │   ├── memmap2 v0.9.11
+│   │   │   └── libc v0.2.190
+│   │   ├── nom v7.1.3
+│   │   │   ├── memchr v2.8.3
+│   │   │   └── minimal-lexical v0.2.1
+│   │   ├── once_cell v1.21.4
+│   │   ├── rayon v1.12.0
+│   │   │   ├── either v1.19.0
+│   │   │   └── rayon-core v1.13.0
+│   │   │       ├── crossbeam-deque v0.8.8
+│   │   │       │   ├── crossbeam-epoch v0.9.21
+│   │   │       │   │   └── crossbeam-utils v0.8.23
+│   │   │       │   └── crossbeam-utils v0.8.23
+│   │   │       └── crossbeam-utils v0.8.23
+│   │   ├── ryu v1.0.23
+│   │   ├── thiserror v2.0.21 (*)
+│   │   └── web-time v1.1.0
+│   ├── base64 v0.22.1
+│   ├── cfb v0.15.0
+│   │   ├── fnv v1.0.7
+│   │   ├── uuid v1.28.0
+│   │   └── web-time v1.1.0
+│   ├── clap v4.6.7
+│   │   ├── clap_builder v4.6.7
+│   │   │   ├── anstream v1.0.0
+│   │   │   │   ├── anstyle v1.0.14
+│   │   │   │   ├── anstyle-parse v1.0.0
+│   │   │   │   │   └── utf8parse v0.2.2
+│   │   │   │   ├── anstyle-query v1.1.5
+│   │   │   │   ├── colorchoice v1.0.5
+│   │   │   │   ├── is_terminal_polyfill v1.70.2
+│   │   │   │   └── utf8parse v0.2.2
+│   │   │   ├── anstyle v1.0.14
+│   │   │   ├── clap_lex v1.1.1
+│   │   │   └── strsim v0.11.1
+│   │   └── clap_derive v4.6.7 (proc-macro)
+│   │       ├── heck v0.5.0
+│   │       ├── proc-macro2 v1.0.107 (*)
+│   │       ├── quote v1.0.47 (*)
+│   │       └── syn v3.0.7 (*)
+│   ├── dicom-core v0.10.0
+│   │   ├── chrono v0.4.45
+│   │   │   ├── iana-time-zone v0.1.65
+│   │   │   └── num-traits v0.2.19 (*)
+│   │   ├── either v1.19.0
+│   │   ├── itertools v0.14.0
+│   │   │   └── either v1.19.0
+│   │   ├── num-traits v0.2.19 (*)
+│   │   ├── safe-transmute v0.11.3
+│   │   ├── smallvec v1.16.3
+│   │   └── snafu v0.9.2
+│   │       └── snafu-derive v0.9.2 (proc-macro)
+│   │           ├── heck v0.5.0
+│   │           ├── proc-macro2 v1.0.107 (*)
+│   │           ├── quote v1.0.47 (*)
+│   │           └── syn v2.0.119
+│   │               ├── proc-macro2 v1.0.107 (*)
+│   │               ├── quote v1.0.47 (*)
+│   │               └── unicode-ident v1.0.26
+│   ├── dicom-object v0.10.0
+│   │   ├── byteordered v0.6.0
+│   │   │   └── byteorder v1.5.0
+│   │   ├── dicom-core v0.10.0 (*)
+│   │   ├── dicom-dictionary-std v0.10.0
+│   │   │   ├── dicom-core v0.10.0 (*)
+│   │   │   └── once_cell v1.21.4
+│   │   ├── dicom-encoding v0.10.0
+│   │   │   ├── byteordered v0.6.0 (*)
+│   │   │   ├── dicom-core v0.10.0 (*)
+│   │   │   ├── dicom-dictionary-std v0.10.0 (*)
+│   │   │   ├── encoding v0.2.33
+│   │   │   │   ├── encoding-index-japanese v1.20141219.5
+│   │   │   │   │   └── encoding_index_tests v0.1.4
+│   │   │   │   ├── encoding-index-korean v1.20141219.5
+│   │   │   │   │   └── encoding_index_tests v0.1.4
+│   │   │   │   ├── encoding-index-simpchinese v1.20141219.5
+│   │   │   │   │   └── encoding_index_tests v0.1.4
+│   │   │   │   ├── encoding-index-singlebyte v1.20141219.5
+│   │   │   │   │   └── encoding_index_tests v0.1.4
+│   │   │   │   └── encoding-index-tradchinese v1.20141219.5
+│   │   │   │       └── encoding_index_tests v0.1.4
+│   │   │   └── snafu v0.9.2 (*)
+│   │   ├── dicom-parser v0.10.0
+│   │   │   ├── dicom-core v0.10.0 (*)
+│   │   │   ├── dicom-dictionary-std v0.10.0 (*)
+│   │   │   ├── dicom-encoding v0.10.0 (*)
+│   │   │   ├── smallvec v1.16.3
+│   │   │   ├── snafu v0.9.2 (*)
+│   │   │   └── tracing v0.1.44
+│   │   │       ├── pin-project-lite v0.2.17
+│   │   │       ├── tracing-attributes v0.1.31 (proc-macro)
+│   │   │       │   ├── proc-macro2 v1.0.107 (*)
+│   │   │       │   ├── quote v1.0.47 (*)
+│   │   │       │   └── syn v2.0.119 (*)
+│   │   │       └── tracing-core v0.1.36
+│   │   │           └── once_cell v1.21.4
+│   │   ├── dicom-transfer-syntax-registry v0.10.0
+│   │   │   ├── byteordered v0.6.0 (*)
+│   │   │   ├── dicom-core v0.10.0 (*)
+│   │   │   ├── dicom-encoding v0.10.0 (*)
+│   │   │   ├── flate2 v1.1.10 (*)
+│   │   │   ├── jpeg-decoder v0.3.2
+│   │   │   ├── jpeg-encoder v0.7.1
+│   │   │   ├── lazy_static v1.5.1
+│   │   │   └── tracing v0.1.44 (*)
+│   │   ├── itertools v0.14.0 (*)
+│   │   ├── smallvec v1.16.3
+│   │   ├── snafu v0.9.2 (*)
+│   │   └── tracing v0.1.44 (*)
+│   ├── dicom-pixeldata v0.10.0
+│   │   ├── byteorder v1.5.0
+│   │   ├── dicom-core v0.10.0 (*)
+│   │   ├── dicom-dictionary-std v0.10.0 (*)
+│   │   ├── dicom-encoding v0.10.0 (*)
+│   │   ├── dicom-object v0.10.0 (*)
+│   │   ├── dicom-transfer-syntax-registry v0.10.0 (*)
+│   │   ├── image v0.25.10
+│   │   │   ├── bytemuck v1.25.2
+│   │   │   │   └── bytemuck_derive v1.12.1 (proc-macro)
+│   │   │   │       ├── proc-macro2 v1.0.107 (*)
+│   │   │   │       ├── quote v1.0.47 (*)
+│   │   │   │       └── syn v3.0.7 (*)
+│   │   │   ├── byteorder-lite v0.1.0
+│   │   │   ├── exr v1.74.2
+│   │   │   │   ├── bit_field v0.10.3
+│   │   │   │   ├── half v2.7.1
+│   │   │   │   │   ├── bytemuck v1.25.2 (*)
+│   │   │   │   │   ├── cfg-if v1.0.5
+│   │   │   │   │   ├── num-traits v0.2.19 (*)
+│   │   │   │   │   └── zerocopy v0.8.62
+│   │   │   │   │       └── zerocopy-derive v0.8.62 (proc-macro)
+│   │   │   │   │           ├── proc-macro2 v1.0.107 (*)
+│   │   │   │   │           ├── quote v1.0.47 (*)
+│   │   │   │   │           └── syn v2.0.119 (*)
+│   │   │   │   ├── lebe v0.5.3
+│   │   │   │   ├── miniz_oxide v0.8.9
+│   │   │   │   │   ├── adler2 v2.0.1
+│   │   │   │   │   └── simd-adler32 v0.3.10
+│   │   │   │   ├── num-complex v0.4.6
+│   │   │   │   │   ├── bytemuck v1.25.2 (*)
+│   │   │   │   │   └── num-traits v0.2.19 (*)
+│   │   │   │   ├── pulp v0.22.3
+│   │   │   │   │   ├── bytemuck v1.25.2 (*)
+│   │   │   │   │   ├── cfg-if v1.0.5
+│   │   │   │   │   ├── libm v0.2.16
+│   │   │   │   │   ├── num-complex v0.4.6 (*)
+│   │   │   │   │   ├── paste v1.0.15 (proc-macro)
+│   │   │   │   │   ├── pulp-wasm-simd-flag v0.1.1
+│   │   │   │   │   ├── raw-cpuid v11.6.0
+│   │   │   │   │   │   └── bitflags v2.13.2
+│   │   │   │   │   └── reborrow v0.5.5
+│   │   │   │   │   [build-dependencies]
+│   │   │   │   │   └── version_check v0.9.5
+│   │   │   │   ├── smallvec v1.16.3
+│   │   │   │   └── zune-inflate v0.2.54
+│   │   │   │       └── simd-adler32 v0.3.10
+│   │   │   ├── image-webp v0.2.4
+│   │   │   │   ├── byteorder-lite v0.1.0
+│   │   │   │   └── quick-error v2.0.1
+│   │   │   ├── moxcms v0.8.1
+│   │   │   │   ├── num-traits v0.2.19 (*)
+│   │   │   │   └── pxfm v0.1.30
+│   │   │   ├── num-traits v0.2.19 (*)
+│   │   │   ├── png v0.18.1
+│   │   │   │   ├── bitflags v2.13.2
+│   │   │   │   ├── crc32fast v1.5.2 (*)
+│   │   │   │   ├── fdeflate v0.3.7
+│   │   │   │   │   └── simd-adler32 v0.3.10
+│   │   │   │   ├── flate2 v1.1.10 (*)
+│   │   │   │   └── miniz_oxide v0.8.9 (*)
+│   │   │   ├── tiff v0.11.3
+│   │   │   │   ├── fax v0.2.7
+│   │   │   │   ├── flate2 v1.1.10 (*)
+│   │   │   │   ├── half v2.7.1 (*)
+│   │   │   │   ├── quick-error v2.0.1
+│   │   │   │   ├── weezl v0.1.12
+│   │   │   │   └── zune-jpeg v0.5.15
+│   │   │   │       └── zune-core v0.5.3
+│   │   │   ├── zune-core v0.5.3
+│   │   │   └── zune-jpeg v0.5.15 (*)
+│   │   ├── num-traits v0.2.19 (*)
+│   │   ├── snafu v0.9.2 (*)
+│   │   └── tracing v0.1.44 (*)
+│   ├── draco-core v2.3.1
+│   │   └── bytemuck v1.25.2 (*)
+│   ├── earcutr v0.4.3
+│   │   ├── itertools v0.11.0
+│   │   │   └── either v1.19.0
+│   │   └── num-traits v0.2.19 (*)
+│   ├── fbxcel v0.9.0
+│   │   ├── indextree v4.9.2
+│   │   │   └── indextree-macros v0.1.4 (proc-macro)
+│   │   │       ├── proc-macro2 v1.0.107 (*)
+│   │   │       ├── quote v1.0.47 (*)
+│   │   │       └── syn v3.0.7 (*)
+│   │   ├── libflate v1.4.0
+│   │   │   ├── adler32 v1.2.0
+│   │   │   ├── crc32fast v1.5.2 (*)
+│   │   │   └── libflate_lz77 v1.2.0
+│   │   │       └── rle-decode-fast v1.0.3
+│   │   ├── log v0.4.34
+│   │   └── string-interner v0.14.0
+│   │       ├── cfg-if v1.0.5
+│   │       └── hashbrown v0.11.2
+│   │           └── ahash v0.7.8
+│   │               ├── getrandom v0.2.17
+│   │               │   ├── cfg-if v1.0.5
+│   │               │   └── libc v0.2.190
+│   │               └── once_cell v1.21.4
+│   │               [build-dependencies]
+│   │               └── version_check v0.9.5
+│   ├── flate2 v1.1.10 (*)
+│   ├── gltf v1.4.1
+│   │   ├── byteorder v1.5.0
+│   │   ├── gltf-json v1.4.1
+│   │   │   ├── gltf-derive v1.4.1 (proc-macro)
+│   │   │   │   ├── inflections v1.1.1
+│   │   │   │   ├── proc-macro2 v1.0.107 (*)
+│   │   │   │   ├── quote v1.0.47 (*)
+│   │   │   │   └── syn v2.0.119 (*)
+│   │   │   ├── serde v1.0.229 (*)
+│   │   │   ├── serde_derive v1.0.229 (proc-macro) (*)
+│   │   │   └── serde_json v1.0.151 (*)
+│   │   ├── lazy_static v1.5.1
+│   │   └── serde_json v1.0.151 (*)
+│   ├── hdf5-reader v0.9.1 (REPOSITORY/vendor/hdf5-reader)
+│   │   ├── flate2 v1.1.10 (*)
+│   │   ├── hdf5-core v0.9.1
+│   │   │   └── thiserror v2.0.21 (*)
+│   │   ├── libc v0.2.190
+│   │   ├── lru v0.16.4
+│   │   │   └── hashbrown v0.16.1
+│   │   │       ├── allocator-api2 v0.2.21
+│   │   │       ├── equivalent v1.0.2
+│   │   │       └── foldhash v0.2.0
+│   │   ├── lz4_flex v0.11.6
+│   │   │   └── twox-hash v2.1.5
+│   │   ├── memmap2 v0.9.11 (*)
+│   │   ├── ndarray v0.17.2
+│   │   │   ├── matrixmultiply v0.3.11
+│   │   │   │   └── rawpointer v0.2.1
+│   │   │   │   [build-dependencies]
+│   │   │   │   └── autocfg v1.5.1
+│   │   │   ├── num-complex v0.4.6 (*)
+│   │   │   ├── num-integer v0.1.47
+│   │   │   │   └── num-traits v0.2.19 (*)
+│   │   │   ├── num-traits v0.2.19 (*)
+│   │   │   └── rawpointer v0.2.1
+│   │   ├── parking_lot v0.12.5
+│   │   │   ├── lock_api v0.4.14
+│   │   │   │   └── scopeguard v1.2.0
+│   │   │   └── parking_lot_core v0.9.12
+│   │   │       ├── cfg-if v1.0.5
+│   │   │       ├── libc v0.2.190
+│   │   │       └── smallvec v1.16.3
+│   │   ├── rayon v1.12.0 (*)
+│   │   ├── smallvec v1.16.3
+│   │   └── thiserror v2.0.21 (*)
+│   ├── image v0.25.10 (*)
+│   ├── las v0.11.1
+│   │   ├── byteorder v1.5.0
+│   │   ├── chrono v0.4.45 (*)
+│   │   ├── laz v0.13.0
+│   │   │   ├── byteorder v1.5.0
+│   │   │   └── num-traits v0.2.19 (*)
+│   │   ├── log v0.4.34
+│   │   ├── num-traits v0.2.19 (*)
+│   │   ├── thiserror v2.0.21 (*)
+│   │   └── uuid v1.28.0
+│   ├── lz4_flex v0.11.6 (*)
+│   ├── netcdf-reader v0.9.1
+│   │   ├── hdf5-reader v0.9.1 (REPOSITORY/vendor/hdf5-reader) (*)
+│   │   ├── memmap2 v0.9.11 (*)
+│   │   ├── ndarray v0.17.2 (*)
+│   │   ├── netcdf-core v0.9.1
+│   │   │   └── thiserror v2.0.21 (*)
+│   │   └── thiserror v2.0.21 (*)
+│   ├── ogeom-algo v0.9.16
+│   │   ├── nalgebra v0.35.0
+│   │   │   ├── approx v0.5.1
+│   │   │   │   └── num-traits v0.2.19 (*)
+│   │   │   ├── matrixmultiply v0.3.11 (*)
+│   │   │   ├── nalgebra-macros v0.3.0 (proc-macro)
+│   │   │   │   ├── proc-macro2 v1.0.107 (*)
+│   │   │   │   ├── quote v1.0.47 (*)
+│   │   │   │   └── syn v2.0.119 (*)
+│   │   │   ├── num-complex v0.4.6 (*)
+│   │   │   ├── num-rational v0.4.2
+│   │   │   │   ├── num-integer v0.1.47 (*)
+│   │   │   │   └── num-traits v0.2.19 (*)
+│   │   │   ├── num-traits v0.2.19 (*)
+│   │   │   ├── simba v0.10.2
+│   │   │   │   ├── approx v0.5.1 (*)
+│   │   │   │   ├── num-complex v0.4.6 (*)
+│   │   │   │   ├── num-traits v0.2.19 (*)
+│   │   │   │   └── wide v1.7.1
+│   │   │   │       ├── bytemuck v1.25.2 (*)
+│   │   │   │       └── safe_arch v1.2.0
+│   │   │   │           └── bytemuck v1.25.2 (*)
+│   │   │   └── typenum v1.20.1
+│   │   ├── ogeom-core v0.9.16
+│   │   │   ├── foldhash v0.2.0
+│   │   │   ├── hashbrown v0.16.1 (*)
+│   │   │   ├── robust v1.2.0
+│   │   │   ├── smallvec v1.16.3
+│   │   │   └── thiserror v2.0.21 (*)
+│   │   ├── ogeom-geom v0.9.16
+│   │   │   ├── nalgebra v0.35.0 (*)
+│   │   │   ├── ogeom-core v0.9.16 (*)
+│   │   │   ├── ogeom-math v0.9.16
+│   │   │   │   ├── nalgebra v0.35.0 (*)
+│   │   │   │   ├── ogeom-core v0.9.16 (*)
+│   │   │   │   └── smallvec v1.16.3
+│   │   │   └── smallvec v1.16.3
+│   │   ├── ogeom-intersect v0.9.16
+│   │   │   ├── nalgebra v0.35.0 (*)
+│   │   │   ├── ogeom-core v0.9.16 (*)
+│   │   │   ├── ogeom-geom v0.9.16 (*)
+│   │   │   ├── ogeom-math v0.9.16 (*)
+│   │   │   └── smallvec v1.16.3
+│   │   ├── ogeom-math v0.9.16 (*)
+│   │   ├── ogeom-mesh v0.9.16
+│   │   │   ├── ogeom-core v0.9.16 (*)
+│   │   │   ├── ogeom-geom v0.9.16 (*)
+│   │   │   ├── ogeom-math v0.9.16 (*)
+│   │   │   ├── ogeom-topo v0.9.16
+│   │   │   │   ├── indexmap v2.14.2 (*)
+│   │   │   │   ├── ogeom-core v0.9.16 (*)
+│   │   │   │   ├── ogeom-geom v0.9.16 (*)
+│   │   │   │   ├── ogeom-math v0.9.16 (*)
+│   │   │   │   └── smallvec v1.16.3
+│   │   │   └── spade v2.15.1
+│   │   │       ├── hashbrown v0.16.1 (*)
+│   │   │       ├── num-traits v0.2.19 (*)
+│   │   │       ├── robust v1.2.0
+│   │   │       └── smallvec v1.16.3
+│   │   ├── ogeom-topo v0.9.16 (*)
+│   │   ├── smallvec v1.16.3
+│   │   └── spade v2.15.1 (*)
+│   ├── ogeom-core v0.9.16 (*)
+│   ├── ogeom-geom v0.9.16 (*)
+│   ├── ogeom-intersect v0.9.16 (*)
+│   ├── ogeom-io v0.9.16 (REPOSITORY/vendor/ogeom-io)
+│   │   ├── ogeom-algo v0.9.16 (*)
+│   │   ├── ogeom-bool v0.9.16
+│   │   │   ├── indexmap v2.14.2 (*)
+│   │   │   ├── ogeom-algo v0.9.16 (*)
+│   │   │   ├── ogeom-core v0.9.16 (*)
+│   │   │   ├── ogeom-geom v0.9.16 (*)
+│   │   │   ├── ogeom-intersect v0.9.16 (*)
+│   │   │   ├── ogeom-math v0.9.16 (*)
+│   │   │   ├── ogeom-mesh v0.9.16 (*)
+│   │   │   ├── ogeom-topo v0.9.16 (*)
+│   │   │   └── smallvec v1.16.3
+│   │   ├── ogeom-core v0.9.16 (*)
+│   │   ├── ogeom-doc v0.9.16
+│   │   │   ├── ogeom-core v0.9.16 (*)
+│   │   │   ├── ogeom-geom v0.9.16 (*)
+│   │   │   ├── ogeom-math v0.9.16 (*)
+│   │   │   └── ogeom-topo v0.9.16 (*)
+│   │   ├── ogeom-geom v0.9.16 (*)
+│   │   ├── ogeom-intersect v0.9.16 (*)
+│   │   ├── ogeom-math v0.9.16 (*)
+│   │   ├── ogeom-mesh v0.9.16 (*)
+│   │   └── ogeom-topo v0.9.16 (*)
+│   ├── ogeom-math v0.9.16 (*)
+│   ├── ogeom-mesh v0.9.16 (*)
+│   ├── ogeom-topo v0.9.16 (*)
+│   ├── openusd v0.6.0
+│   │   ├── anyhow v1.0.104
+│   │   ├── bitflags v2.13.2
+│   │   ├── bytemuck v1.25.2 (*)
+│   │   ├── derive_more v2.1.1
+│   │   │   └── derive_more-impl v2.1.1 (proc-macro)
+│   │   │       ├── proc-macro2 v1.0.107 (*)
+│   │   │       ├── quote v1.0.47 (*)
+│   │   │       └── syn v2.0.119 (*)
+│   │   │       [build-dependencies]
+│   │   │       └── rustc_version v0.4.1
+│   │   │           └── semver v1.0.28
+│   │   ├── half v2.7.1 (*)
+│   │   ├── logos v0.16.1
+│   │   │   └── logos-derive v0.16.1 (proc-macro)
+│   │   │       └── logos-codegen v0.16.1
+│   │   │           ├── fnv v1.0.7
+│   │   │           ├── proc-macro2 v1.0.107 (*)
+│   │   │           ├── quote v1.0.47 (*)
+│   │   │           ├── regex-automata v0.4.18
+│   │   │           │   ├── aho-corasick v1.1.5
+│   │   │           │   │   └── memchr v2.8.3
+│   │   │           │   ├── memchr v2.8.3
+│   │   │           │   └── regex-syntax v0.8.11
+│   │   │           ├── regex-syntax v0.8.11
+│   │   │           └── syn v2.0.119 (*)
+│   │   ├── lz4_flex v0.14.0
+│   │   │   └── twox-hash v2.1.5
+│   │   ├── num-traits v0.2.19 (*)
+│   │   ├── regex-lite v0.1.9
+│   │   ├── strum v0.28.0
+│   │   │   └── strum_macros v0.28.0 (proc-macro)
+│   │   │       ├── heck v0.5.0
+│   │   │       ├── proc-macro2 v1.0.107 (*)
+│   │   │       ├── quote v1.0.47 (*)
+│   │   │       └── syn v2.0.119 (*)
+│   │   ├── thiserror v2.0.21 (*)
+│   │   └── zip v8.6.0 (*)
+│   ├── png v0.18.1 (*)
+│   ├── roxmltree v0.21.1 (*)
+│   ├── ruzstd v0.9.0 (*)
+│   ├── serde_json v1.0.151 (*)
+│   ├── truck-meshalgo v0.4.0
+│   │   ├── array-macro v2.1.8
+│   │   ├── derive_more v0.99.20 (proc-macro)
+│   │   │   ├── convert_case v0.4.0
+│   │   │   ├── proc-macro2 v1.0.107 (*)
+│   │   │   ├── quote v1.0.47 (*)
+│   │   │   └── syn v2.0.119 (*)
+│   │   │   [build-dependencies]
+│   │   │   └── rustc_version v0.4.1 (*)
+│   │   ├── itertools v0.13.0
+│   │   │   └── either v1.19.0
+│   │   ├── rayon v1.12.0 (*)
+│   │   ├── rustc-hash v2.1.3
+│   │   ├── spade v2.15.1 (*)
+│   │   ├── truck-base v0.5.0
+│   │   │   ├── cgmath v0.18.0
+│   │   │   │   ├── approx v0.4.0
+│   │   │   │   │   └── num-traits v0.2.19 (*)
+│   │   │   │   ├── num-traits v0.2.19 (*)
+│   │   │   │   └── serde v1.0.229 (*)
+│   │   │   ├── matext4cgmath v0.1.0
+│   │   │   │   ├── cgmath v0.18.0 (*)
+│   │   │   │   ├── katexit v0.1.5 (proc-macro)
+│   │   │   │   │   ├── proc-macro2 v1.0.107 (*)
+│   │   │   │   │   ├── quote v1.0.47 (*)
+│   │   │   │   │   └── syn v2.0.119 (*)
+│   │   │   │   └── num-complex v0.4.6 (*)
+│   │   │   ├── rustc-hash v2.1.3
+│   │   │   └── serde v1.0.229 (*)
+│   │   ├── truck-geometry v0.5.0
+│   │   │   ├── serde v1.0.229 (*)
+│   │   │   ├── thiserror v1.0.69
+│   │   │   │   └── thiserror-impl v1.0.69 (proc-macro)
+│   │   │   │       ├── proc-macro2 v1.0.107 (*)
+│   │   │   │       ├── quote v1.0.47 (*)
+│   │   │   │       └── syn v2.0.119 (*)
+│   │   │   ├── truck-base v0.5.0 (*)
+│   │   │   └── truck-geotrait v0.4.0
+│   │   │       ├── rand v0.8.8
+│   │   │       │   ├── libc v0.2.190
+│   │   │       │   ├── rand_chacha v0.3.1
+│   │   │       │   │   ├── ppv-lite86 v0.2.21
+│   │   │       │   │   │   └── zerocopy v0.8.62 (*)
+│   │   │       │   │   └── rand_core v0.6.4
+│   │   │       │   │       └── getrandom v0.2.17 (*)
+│   │   │       │   └── rand_core v0.6.4 (*)
+│   │   │       ├── thiserror v1.0.69 (*)
+│   │   │       ├── truck-base v0.5.0 (*)
+│   │   │       └── truck-derivers v0.1.0 (proc-macro)
+│   │   │           ├── proc-macro-error v1.0.4
+│   │   │           │   ├── proc-macro-error-attr v1.0.4 (proc-macro)
+│   │   │           │   │   ├── proc-macro2 v1.0.107 (*)
+│   │   │           │   │   └── quote v1.0.47 (*)
+│   │   │           │   │   [build-dependencies]
+│   │   │           │   │   └── version_check v0.9.5
+│   │   │           │   ├── proc-macro2 v1.0.107 (*)
+│   │   │           │   ├── quote v1.0.47 (*)
+│   │   │           │   └── syn v1.0.109
+│   │   │           │       ├── proc-macro2 v1.0.107 (*)
+│   │   │           │       ├── quote v1.0.47 (*)
+│   │   │           │       └── unicode-ident v1.0.26
+│   │   │           │   [build-dependencies]
+│   │   │           │   └── version_check v0.9.5
+│   │   │           ├── proc-macro2 v1.0.107 (*)
+│   │   │           ├── quote v1.0.47 (*)
+│   │   │           └── syn v2.0.119 (*)
+│   │   ├── truck-polymesh v0.6.0
+│   │   │   ├── array-macro v2.1.8
+│   │   │   ├── bytemuck v1.25.2 (*)
+│   │   │   ├── itertools v0.13.0 (*)
+│   │   │   ├── rustc-hash v2.1.3
+│   │   │   ├── serde v1.0.229 (*)
+│   │   │   ├── thiserror v1.0.69 (*)
+│   │   │   ├── truck-base v0.5.0 (*)
+│   │   │   └── truck-geotrait v0.4.0 (*)
+│   │   └── truck-topology v0.6.0
+│   │       ├── parking_lot v0.12.5 (*)
+│   │       ├── rayon v1.12.0 (*)
+│   │       ├── rclite v0.2.8
+│   │       │   └── branches v0.3.0
+│   │       │       [build-dependencies]
+│   │       │       └── rustc_version v0.4.1 (*)
+│   │       ├── rustc-hash v2.1.3
+│   │       ├── serde v1.0.229 (*)
+│   │       ├── thiserror v1.0.69 (*)
+│   │       ├── truck-base v0.5.0 (*)
+│   │       └── truck-geotrait v0.4.0 (*)
+│   ├── truck-stepio v0.3.0
+│   │   ├── chrono v0.4.45 (*)
+│   │   ├── derive_more v0.99.20 (proc-macro) (*)
+│   │   ├── ruststep v0.4.0
+│   │   │   ├── Inflector v0.11.4
+│   │   │   │   ├── lazy_static v1.5.1
+│   │   │   │   └── regex v1.13.1
+│   │   │   │       ├── aho-corasick v1.1.5 (*)
+│   │   │   │       ├── memchr v2.8.3
+│   │   │   │       ├── regex-automata v0.4.18
+│   │   │   │       │   ├── aho-corasick v1.1.5 (*)
+│   │   │   │       │   ├── memchr v2.8.3
+│   │   │   │       │   └── regex-syntax v0.8.11
+│   │   │   │       └── regex-syntax v0.8.11
+│   │   │   ├── derive-new v0.5.9 (proc-macro)
+│   │   │   │   ├── proc-macro2 v1.0.107 (*)
+│   │   │   │   ├── quote v1.0.47 (*)
+│   │   │   │   └── syn v1.0.109 (*)
+│   │   │   ├── derive_more v0.99.20 (proc-macro) (*)
+│   │   │   ├── itertools v0.10.5
+│   │   │   │   └── either v1.19.0
+│   │   │   ├── nom v7.1.3 (*)
+│   │   │   ├── ruststep-derive v0.4.0 (proc-macro)
+│   │   │   │   ├── Inflector v0.11.4 (*)
+│   │   │   │   ├── proc-macro-crate v1.3.1
+│   │   │   │   │   ├── once_cell v1.21.4
+│   │   │   │   │   └── toml_edit v0.19.15
+│   │   │   │   │       ├── indexmap v2.14.2 (*)
+│   │   │   │   │       ├── toml_datetime v0.6.11
+│   │   │   │   │       └── winnow v0.5.40
+│   │   │   │   ├── proc-macro-error v1.0.4 (*)
+│   │   │   │   ├── proc-macro2 v1.0.107 (*)
+│   │   │   │   ├── quote v1.0.47 (*)
+│   │   │   │   └── syn v2.0.119 (*)
+│   │   │   ├── serde v1.0.229 (*)
+│   │   │   └── thiserror v1.0.69 (*)
+│   │   ├── serde v1.0.229 (*)
+│   │   ├── truck-derivers v0.1.0 (proc-macro) (*)
+│   │   ├── truck-geometry v0.5.0 (*)
+│   │   ├── truck-geotrait v0.4.0 (*)
+│   │   ├── truck-modeling v0.6.0
+│   │   │   ├── derive_more v0.99.20 (proc-macro) (*)
+│   │   │   ├── rustc-hash v2.1.3
+│   │   │   ├── serde v1.0.229 (*)
+│   │   │   ├── thiserror v1.0.69 (*)
+│   │   │   ├── truck-base v0.5.0 (*)
+│   │   │   ├── truck-geometry v0.5.0 (*)
+│   │   │   ├── truck-geotrait v0.4.0 (*)
+│   │   │   ├── truck-polymesh v0.6.0 (*)
+│   │   │   └── truck-topology v0.6.0 (*)
+│   │   ├── truck-polymesh v0.6.0 (*)
+│   │   └── truck-topology v0.6.0 (*)
+│   └── zip v2.4.2
+│       ├── crc32fast v1.5.2 (*)
+│       ├── displaydoc v0.2.7 (proc-macro)
+│       │   ├── proc-macro2 v1.0.107 (*)
+│       │   ├── quote v1.0.47 (*)
+│       │   └── syn v3.0.7 (*)
+│       ├── flate2 v1.1.10 (*)
+│       ├── indexmap v2.14.2 (*)
+│       ├── memchr v2.8.3
+│       ├── thiserror v2.0.21 (*)
+│       └── zopfli v0.8.3 (*)
+├── serde_json v1.0.151 (*)
+├── sha2 v0.10.9
+│   ├── cfg-if v1.0.5
+│   ├── cpufeatures v0.2.17
+│   └── digest v0.10.7
+│       ├── block-buffer v0.10.4
+│       │   └── generic-array v0.14.7
+│       │       └── typenum v1.20.1
+│       │       [build-dependencies]
+│       │       └── version_check v0.9.5
+│       └── crypto-common v0.1.7
+│           ├── generic-array v0.14.7 (*)
+│           └── typenum v1.20.1
+└── tempfile v3.27.0 (*)

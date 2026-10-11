@@ -1,0 +1,158 @@
+{
+  "upstream_commit": "9e8f6d6b5da9371bc791ce3924f364aea81be0ec",
+  "runtime": "Rust BRep decode, in-process STEP bridge, tessellation, fixed-view PNG",
+  "fixtures": [
+    {
+      "name": "fusion-extrusion",
+      "format": "f3d",
+      "source": "https://raw.githubusercontent.com/adafruit/Adafruit_CAD_Parts/c128bceb1f96b6ea8b68f250bda986ba85da24ea/1221%20Adafruit%202020%20Extrusion/1221%20Adafruit%202020%20Extrusion.f3d",
+      "commit": "c128bceb1f96b6ea8b68f250bda986ba85da24ea",
+      "git_blob": "dff4fbba8908d13e318820d18987d0320c56084d",
+      "license": "MIT",
+      "license_file": "fixtures/ADAFRUIT-LICENSE",
+      "original": {
+        "file": "fixtures/fusion-extrusion.f3d",
+        "size": 82759,
+        "sha256": "57d2a80c5d12c578fa425a2d14bcff01e86448677c62079ab6183ac0055d5d23"
+      },
+      "without_preview": {
+        "file": "fixtures/fusion-extrusion-without-preview.f3d",
+        "size": 53267,
+        "sha256": "863223226d95f45fb30326946e2ed1da53147555c03d65d3e6f599ebaf9f2eaf"
+      },
+      "geometry": {
+        "source_bodies": 1,
+        "source_shells": 1,
+        "source_faces": 107,
+        "source_edges": 314,
+        "source_vertices": 210,
+        "render_triangles": 444,
+        "geometry_sha256": "d0baac8c659932114438dc52f21a9fec3a02bd323f8e37f91aa6ec276a91aee7"
+      },
+      "output": {
+        "png": "outputs/fusion-extrusion.png",
+        "png_sha256": "f3d7f801ef8a641417030bb886c2a58abb6a5e63967b834a0ecbc99eec16040f",
+        "report": "outputs/fusion-extrusion.json"
+      }
+    },
+    {
+      "name": "fusion-switch",
+      "format": "f3d",
+      "source": "https://raw.githubusercontent.com/adafruit/Adafruit_CAD_Parts/c128bceb1f96b6ea8b68f250bda986ba85da24ea/805%20slide%20switch/805%20slide%20switch.f3d",
+      "commit": "c128bceb1f96b6ea8b68f250bda986ba85da24ea",
+      "git_blob": "399b0db45c1d4d2f293645fddf199f2613e67fd5",
+      "license": "MIT",
+      "license_file": "fixtures/ADAFRUIT-LICENSE",
+      "original": {
+        "file": "fixtures/fusion-switch.f3d",
+        "size": 74664,
+        "sha256": "385920cf610fa9edd8639f8032518619518d8dbebe9c69b319e450527c3d006c"
+      },
+      "without_preview": {
+        "file": "fixtures/fusion-switch-without-preview.f3d",
+        "size": 61387,
+        "sha256": "c35833db9215f43dc8994f6f8aa4e099839faa01ebcf3f44f952d807a2ffd130"
+      },
+      "geometry": {
+        "source_bodies": 1,
+        "source_shells": 1,
+        "source_faces": 19,
+        "source_edges": 46,
+        "source_vertices": 30,
+        "render_triangles": 56,
+        "geometry_sha256": "16da7e4b9434baf5e03c8beb988632bac121776b9d0cf063ffa00d2d73e3ee47"
+      },
+      "output": {
+        "png": "outputs/fusion-switch.png",
+        "png_sha256": "41d788e3e737f5a479ff258511fd6fae99620574a39f659d884f7a38b97a20b0",
+        "report": "outputs/fusion-switch.json"
+      }
+    },
+    {
+      "name": "inventor-cylinder",
+      "format": "ipt",
+      "source": "https://raw.githubusercontent.com/TWiesendanger/ExtrabbitCode.Inventor.MetaReader/cf9b17c69800aaab729b855ab630759eae750e4f/src/InventorMeta.App/Assets/SampleFiles/SampleBg/Cylinder.ipt",
+      "commit": "cf9b17c69800aaab729b855ab630759eae750e4f",
+      "git_blob": "3f2b766df111eb4eed66373c3f7b67a4da924766",
+      "license": "MIT",
+      "license_file": "fixtures/METAREADER-LICENSE",
+      "original": {
+        "file": "fixtures/inventor-cylinder.ipt",
+        "size": 252416,
+        "sha256": "31ce6eacb36f0b9579aa5395508da34b2acddf665235515a845dfcbc91cfe552"
+      },
+      "without_preview": {
+        "file": "fixtures/inventor-cylinder-without-preview.ipt",
+        "size": 252416,
+        "sha256": "bc0c329f5e78843c20f44600d4bf14e537e1d601f07b3a1e94885981305353a9"
+      },
+      "geometry": {
+        "source_bodies": 1,
+        "source_shells": 1,
+        "source_faces": 3,
+        "source_edges": 2,
+        "source_vertices": 2,
+        "render_triangles": 92,
+        "geometry_sha256": "de532f4cd8ae8a1c27f2eb90ea8bd7d8171ca5033184d4828a613c3037a41ff3"
+      },
+      "output": {
+        "png": "outputs/inventor-cylinder.png",
+        "png_sha256": "292d2eba21550a03fbb3d5c8345e65ac475a95f6395eedda37b5050a892fb0c0",
+        "report": "outputs/inventor-cylinder.json"
+      }
+    },
+    {
+      "name": "inventor-subassembly",
+      "format": "iam",
+      "source": "https://raw.githubusercontent.com/TWiesendanger/ExtrabbitCode.Inventor.MetaReader/cf9b17c69800aaab729b855ab630759eae750e4f/src/InventorMeta.App/Assets/SampleFiles/SampleBg/Subassembly.iam",
+      "commit": "cf9b17c69800aaab729b855ab630759eae750e4f",
+      "git_blob": "38c63642b6e79eb2f76d973ad15428abfb273a53",
+      "license": "MIT",
+      "license_file": "fixtures/METAREADER-LICENSE",
+      "original": {
+        "file": "fixtures/inventor-subassembly.iam",
+        "size": 220672,
+        "sha256": "d3c7f29cc079297d14df26b5e81e906e646d856cbc68f001c5fa7f13f1e130ca"
+      },
+      "without_preview": {
+        "file": "fixtures/inventor-subassembly-without-preview.iam",
+        "size": 220672,
+        "sha256": "16e2f7d824e7d6a6db410784d87cf1a406d8c7eb8f4716892cf57e078c3d4df3"
+      },
+      "qualification": "Explicitly unsupported: unresolved external assembly prototypes and occurrence placements."
+    },
+    {
+      "name": "inventor-dice",
+      "format": "ipt",
+      "source": "https://raw.githubusercontent.com/jmplonka/InventorLoader/e94bdf5e29052a0dc7ce6fdf755e956ae507caec/Demo-Status/Demo-Status-0.4.ipt",
+      "commit": "e94bdf5e29052a0dc7ce6fdf755e956ae507caec",
+      "git_blob": "5f512b894d3c725562a8a5c30f5e4bb7d97e9c21",
+      "license": "GPL-2.0",
+      "license_file": "fixtures/INVENTORLOADER-LICENSE",
+      "original": {
+        "file": "fixtures/inventor-dice.ipt",
+        "size": 212992,
+        "sha256": "aef81f0d6ae05838337f7139bcb8bc31606873e57eaa10e9302316f0bd1a80b9"
+      },
+      "without_preview": {
+        "file": "fixtures/inventor-dice-without-preview.ipt",
+        "size": 212992,
+        "sha256": "ba52a96da3c4f484fe757ac0da082f05cdc3dcb6a40b2f71eedfae764cace638"
+      },
+      "geometry": {
+        "source_bodies": 1,
+        "source_shells": 1,
+        "source_faces": 49,
+        "source_edges": 48,
+        "source_vertices": 48,
+        "render_triangles": 948,
+        "geometry_sha256": "036ff9a582670a2de724563705fbbe238015e386af232b7cc4fbd7c9c2b15622"
+      },
+      "output": {
+        "png": "outputs/inventor-dice.png",
+        "png_sha256": "714ac60b5dc666f0fb89d2d001b5dd984f17affff2a11c1c7e6e508093454516",
+        "report": "outputs/inventor-dice.json"
+      }
+    }
+  ]
+}

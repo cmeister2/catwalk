@@ -1,0 +1,225 @@
+{
+  "decode_report": {
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [
+          {
+            "admission": "admitted",
+            "declared": {
+              "carrier": "FusionAssetName[Active]/Breps.BlobParts/BREP.0e379c66-2619-4ad1-a9c2-831602d91e52.smb",
+              "reference_width": "8",
+              "save_format_major": "223",
+              "save_format_minor": "0"
+            },
+            "dialect": "acis:asm-binaryfile-8"
+          }
+        ],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "top_level_manifest_version": "3-2-0-0"
+          },
+          "dialect": "f3d:manifest-3-2-0-0"
+        }
+      }
+    },
+    "losses": [],
+    "notes": [
+      "Design asset folder (from manifests): FusionAssetName[Active]",
+      "1 ASM BREP stream(s); Design body-to-blob bindings select model geometry",
+      "no BREP header declares a history partition"
+    ],
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
+  },
+  "experimental": true,
+  "geometry_sha256": "d0baac8c659932114438dc52f21a9fec3a02bd323f8e37f91aa6ec276a91aee7",
+  "render_lines": 0,
+  "render_points": 0,
+  "render_triangles": 444,
+  "source_bodies": 1,
+  "source_edges": 314,
+  "source_faces": 107,
+  "source_shells": 1,
+  "source_vertices": 210,
+  "step_export_report": {
+    "census": {
+      "basis": "target_records",
+      "counts": {
+        "ADVANCED_BREP_SHAPE_REPRESENTATION": 1,
+        "ADVANCED_FACE": 107,
+        "APPLICATION_CONTEXT": 1,
+        "APPLICATION_PROTOCOL_DEFINITION": 1,
+        "AXIS2_PLACEMENT_3D": 230,
+        "CARTESIAN_POINT": 387,
+        "CIRCLE": 122,
+        "CLOSED_SHELL": 1,
+        "CYLINDRICAL_SURFACE": 61,
+        "DIRECTION": 69,
+        "EDGE_CURVE": 314,
+        "EDGE_LOOP": 110,
+        "FACE_BOUND": 110,
+        "GEOMETRIC_REPRESENTATION_CONTEXT": 1,
+        "LENGTH_UNIT": 1,
+        "LINE": 192,
+        "MANIFOLD_SOLID_BREP": 1,
+        "ORIENTED_EDGE": 628,
+        "PLANE": 46,
+        "PLANE_ANGLE_UNIT": 1,
+        "PRODUCT": 1,
+        "PRODUCT_CONTEXT": 1,
+        "PRODUCT_DEFINITION": 1,
+        "PRODUCT_DEFINITION_CONTEXT": 1,
+        "PRODUCT_DEFINITION_FORMATION": 1,
+        "PRODUCT_DEFINITION_SHAPE": 1,
+        "SHAPE_DEFINITION_REPRESENTATION": 1,
+        "SOLID_ANGLE_UNIT": 1,
+        "UNCERTAINTY_MEASURE_WITH_UNIT": 1,
+        "VECTOR": 192,
+        "VERTEX_POINT": 210
+      }
+    },
+    "identity": {
+      "payload": "native",
+      "target": "step:ap214"
+    },
+    "losses": [
+      {
+        "code": {
+          "code": "appearance.reduced-to-base-color",
+          "kind": "appearance_reduced",
+          "namespace": "step",
+          "scope": "namespaced"
+        },
+        "message": "6 appearance asset(s) were reduced to STYLED_ITEM base colors; unsupported schemas, textures, and shader properties were not written to STEP",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "attribute.source-record-not-written",
+          "kind": "attributes_not_transferred",
+          "namespace": "step",
+          "scope": "namespaced"
+        },
+        "message": "218 source attribute record(s) were not written to STEP",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "native.source-record-omitted",
+          "kind": "parametric_record_omitted",
+          "namespace": "step",
+          "scope": "namespaced"
+        },
+        "message": "1253 source-native record(s) were not represented in STEP",
+        "severity": "info"
+      }
+    ],
+    "notes": [],
+    "write_path": {
+      "fidelity": {
+        "status": "not_provided"
+      },
+      "path": "synthesized"
+    }
+  },
+  "step_roundtrip_report": {
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "file_schema_identifier": "AUTOMOTIVE_DESIGN { 1 0 10303 214 1 1 1 1 }",
+            "implementation_level": "2;1",
+            "long_form_arcs": " 1 0 10303 214 1 1 1 1 "
+          },
+          "dialect": "step:ap214"
+        }
+      }
+    },
+    "losses": [
+      {
+        "code": {
+          "code": "decode.opaque-record-preserved",
+          "kind": "record_not_typed",
+          "namespace": "step",
+          "scope": "namespaced"
+        },
+        "message": "preserved 1 APPLICATION_PROTOCOL_DEFINITION instance(s) as named opaque STEP records",
+        "severity": "warning"
+      }
+    ],
+    "notes": [
+      "byte accounting: 3066 structural, 118910 typed, 97 named opaque, 0 unclassified"
+    ],
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
+  },
+  "upstream_commit": "9e8f6d6b5da9371bc791ce3924f364aea81be0ec",
+  "validation_report": {
+    "entity_counts": {
+      "appearance_bindings": 0,
+      "appearances": 6,
+      "assembly_joints": 0,
+      "assets": 0,
+      "attributes": 218,
+      "bodies": 1,
+      "coedges": 628,
+      "configurations": 0,
+      "curves": 314,
+      "drawings": 0,
+      "edges": 314,
+      "faces": 107,
+      "feature_input_topologies": 0,
+      "feature_result_topologies": 0,
+      "features": 0,
+      "loops": 110,
+      "native.f3d.body_native_keys": 1,
+      "native.f3d.design_body_bindings": 1,
+      "native.f3d.design_body_members": 1,
+      "native.f3d.design_component_naming_spaces": 1,
+      "native.f3d.design_types": 90,
+      "native.f3d.edge_continuities": 314,
+      "native.f3d.edge_ownerships": 314,
+      "native.f3d.face_native_keys": 107,
+      "native.f3d.face_sidedness": 107,
+      "native.f3d.persistent_subentity_tags": 107,
+      "native.f3d.vertex_ownerships": 210,
+      "occurrences": 0,
+      "parameters": 0,
+      "pcurves": 0,
+      "pmi": 0,
+      "points": 210,
+      "presentation_documents": 0,
+      "presentation_layers": 0,
+      "procedural_curves": 0,
+      "procedural_surfaces": 0,
+      "product_definitions": 0,
+      "regions": 1,
+      "semantic_annotations": 0,
+      "shells": 1,
+      "sketch_constraints": 0,
+      "sketch_entities": 0,
+      "sketches": 0,
+      "spatial_sketch_constraints": 0,
+      "spatial_sketch_entities": 0,
+      "spatial_sketches": 0,
+      "spreadsheets": 0,
+      "subds": 0,
+      "surfaces": 107,
+      "surfaces_unknown_geometry": 0,
+      "tessellations": 0,
+      "vertices": 210,
+      "view_presentations": 0
+    },
+    "findings": [],
+    "losses": []
+  }
+}

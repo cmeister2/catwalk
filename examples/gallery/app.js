@@ -28,7 +28,7 @@
   }
 
   function kindLabel(kind) {
-    return kind === "saved-preview" ? "Saved preview" : kind === "image" ? "Image" : "Model";
+    return kind === "native-geometry" ? "Fresh geometry" : kind === "saved-preview" ? "Saved preview" : kind === "image" ? "Image" : "Model";
   }
 
   function assetUrl(value, external = false) {

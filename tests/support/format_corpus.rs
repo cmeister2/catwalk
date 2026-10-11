@@ -172,7 +172,7 @@ pub struct Case {
     pub title: String,
     /// Validated relative input path inside the corpus.
     pub input: String,
-    /// Manifest category: model, image or saved-preview.
+    /// Manifest category: model, image, saved-preview or native-geometry.
     pub kind: String,
     /// Authorship, source and licensing description.
     pub provenance: String,
@@ -229,6 +229,7 @@ pub fn read_cases(workspace: &Path) -> Result<Vec<Case>> {
         .ok_or("corpus cases must be an array")?;
     let mut ids = BTreeSet::new();
     let mut seen = BTreeSet::new();
+    let mut native_seen = BTreeSet::new();
     let mut cases = Vec::new();
     for entry in entries {
         let case = Case {
@@ -273,8 +274,13 @@ pub fn read_cases(workspace: &Path) -> Result<Vec<Case>> {
         } else {
             "model"
         };
-        if case.kind != kind {
+        let native = case.kind == "native-geometry"
+            && formats::NATIVE_GEOMETRY_EXTENSIONS.contains(&case.extension.as_str());
+        if case.kind != kind && !native {
             return Err(format!("wrong fixture kind: {}", case.id).into());
+        }
+        if native {
+            native_seen.insert(case.extension.as_str().to_owned());
         }
         seen.insert(case.extension.clone());
         cases.push(case);
@@ -292,6 +298,13 @@ pub fn read_cases(workspace: &Path) -> Result<Vec<Case>> {
             seen.difference(&advertised).collect::<Vec<_>>()
         )
         .into());
+    }
+    let native_advertised: BTreeSet<String> = formats::NATIVE_GEOMETRY_EXTENSIONS
+        .iter()
+        .map(|s| (*s).to_owned())
+        .collect();
+    if native_seen != native_advertised {
+        return Err("every native geometry reader needs a fresh-render snapshot case".into());
     }
     if cases.len() > 512 {
         return Err("format corpus exceeds the fixture limit".into());
@@ -390,7 +403,11 @@ fn render(
 ) -> Result<RgbaImage> {
     let input = workspace.join("tests/fixtures/formats").join(&case.input);
     if let Some(binary) = binary {
-        let result = Command::new(binary)
+        let mut command = Command::new(binary);
+        if case.kind == "native-geometry" {
+            command.arg("--render-geometry");
+        }
+        let result = command
             .arg(&input)
             .arg("--output")
             .arg(output)
@@ -410,16 +427,18 @@ fn render(
         }
         load_png(output)
     } else {
-        let image = catwalk::thumbnail(
-            &input,
-            &RenderOptions {
-                width: WIDTH,
-                height: HEIGHT,
-                transparent: true,
-                supersampling: 2,
-                ..RenderOptions::default()
-            },
-        )?;
+        let options = RenderOptions {
+            width: WIDTH,
+            height: HEIGHT,
+            transparent: true,
+            supersampling: 2,
+            ..RenderOptions::default()
+        };
+        let image = if case.kind == "native-geometry" {
+            catwalk::geometry_thumbnail(&input, &options)?
+        } else {
+            catwalk::thumbnail(&input, &options)?
+        };
         save_png(output, &image)?;
         Ok(image)
     }

@@ -6,6 +6,9 @@ mod images_points;
 #[path = "fixtures/mesh_scene.rs"]
 /// Generate authored mesh and scene fixtures and register retained reference assets.
 mod mesh_scene;
+#[path = "fixtures/native_geometry.rs"]
+/// Register licensed native documents with fresh geometry render qualification.
+mod native_geometry;
 #[path = "fixtures/saved_previews.rs"]
 /// Generate qualified saved-thumbnail carrier fixtures.
 mod saved_previews;
@@ -27,7 +30,7 @@ pub struct Fixture {
     pub title: String,
     /// Input path relative to the format corpus directory.
     pub input: String,
-    /// Manifest category: model, image or saved-preview.
+    /// Manifest category: model, image, saved-preview or native-geometry.
     pub kind: String,
     /// Source, authorship and licensing description for the input.
     pub provenance: String,
@@ -64,6 +67,7 @@ fn main() -> Result<()> {
     cases.extend(saved_previews::generate_blend_dwg(&root)?);
     cases.extend(saved_previews::generate_fusion(&root)?);
     cases.extend(saved_previews::generate_inventor(&root)?);
+    cases.extend(native_geometry::generate(&root)?);
     cases.sort_by(|a, b| a.extension.cmp(&b.extension).then(a.id.cmp(&b.id)));
     let mut ids = BTreeSet::new();
     for case in &cases {

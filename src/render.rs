@@ -1,7 +1,8 @@
 //! Deterministic, headless thumbnail rendering without graphics drivers or native libraries.
 
 use crate::scene::{
-    AlphaMode, Scene, Texture, TextureFilter, TextureWrap, Triangle, TriangleAppearance, Vec3,
+    AlphaMode, Scene, Texture, TextureFilter, TextureInterpolationSpace, TextureWrap, Triangle,
+    TriangleAppearance, Vec3,
 };
 use image::RgbaImage;
 use std::io::Write;
@@ -177,6 +178,15 @@ struct Camera {
 }
 
 impl Camera {
+    /// Build an orthographic basis that displays XY drawing coordinates upright.
+    fn xy() -> Self {
+        Self {
+            right: Vec3::new(1., 0., 0.),
+            up: Vec3::new(0., 1., 0.),
+            toward_viewer: Vec3::new(0., 0., 1.),
+        }
+    }
+
     /// Build a camera basis using the model Z axis as the vertical reference.
     fn new(direction: Vec3) -> Self {
         let toward_viewer = direction.normalized();
@@ -242,6 +252,17 @@ impl Projection {
     /// Fit projected geometry inside the framebuffer with a proportional margin.
     fn new(scene: &Scene, geometry: Geometry, width: u32, height: u32) -> Self {
         let camera = Camera::choose(scene, geometry);
+        Self::with_camera(scene, geometry, width, height, camera)
+    }
+
+    /// Fit all renderable geometry to the canvas using the supplied view basis.
+    fn with_camera(
+        scene: &Scene,
+        geometry: Geometry,
+        width: u32,
+        height: u32,
+        camera: Camera,
+    ) -> Self {
         let mut bounds = Bounds::empty();
         for triangle in &scene.triangles {
             if let Some((vertices, _)) = geometry.triangle(triangle) {
@@ -765,7 +786,7 @@ fn sample_texture(texture: &Texture, uv: [f64; 2]) -> [f64; 4] {
     sample_texture_with_filter(texture, uv, texture.filter)
 }
 
-/// Sample decoded texels in linear RGBA, applying addressing and nearest or bilinear filtering.
+/// Sample linear RGBA with addressing and filtering in the selected RGB interpolation space.
 #[allow(
     clippy::cast_possible_truncation,
     reason = "Validated framebuffer and texture bounds keep indices representable; color and depth quantization intentionally reduce precision"
@@ -780,12 +801,17 @@ fn sample_texture_with_filter(texture: &Texture, uv: [f64; 2], filter: TextureFi
             texture_index(x, width, texture.wrap_s),
             texture_index(y, height, texture.wrap_t),
         );
-        [
-            srgb_to_linear(f64::from(pixel[0]) / 255.0),
-            srgb_to_linear(f64::from(pixel[1]) / 255.0),
-            srgb_to_linear(f64::from(pixel[2]) / 255.0),
-            f64::from(pixel[3]) / 255.0,
-        ]
+        let rgb = [pixel[0], pixel[1], pixel[2]].map(|channel| {
+            let encoded = f64::from(channel) / 255.0;
+            if filter == TextureFilter::Linear
+                && texture.interpolation_space == TextureInterpolationSpace::Srgb
+            {
+                encoded
+            } else {
+                srgb_to_linear(encoded)
+            }
+        });
+        [rgb[0], rgb[1], rgb[2], f64::from(pixel[3]) / 255.0]
     };
     match filter {
         TextureFilter::Nearest => texel(
@@ -805,10 +831,16 @@ fn sample_texture_with_filter(texture: &Texture, uv: [f64; 2], filter: TextureFi
                 texel(x0, y0 + 1),
                 texel(x0 + 1, y0 + 1),
             ];
-            std::array::from_fn(|channel| {
+            let mut color = std::array::from_fn(|channel| {
                 (corners[0][channel] * (1.0 - tx) + corners[1][channel] * tx) * (1.0 - ty)
                     + (corners[2][channel] * (1.0 - tx) + corners[3][channel] * tx) * ty
-            })
+            });
+            if texture.interpolation_space == TextureInterpolationSpace::Srgb {
+                for channel in &mut color[..3] {
+                    *channel = srgb_to_linear(*channel);
+                }
+            }
+            color
         }
     }
 }
@@ -931,11 +963,34 @@ fn shade(color: [u8; 3], normal: Vec3, camera: Camera) -> [u8; 3] {
 ///
 /// Returns an error for invalid dimensions or supersampling, empty or invalid scene geometry,
 /// allocation failures, or exceeded rasterization and transparency budgets.
+pub fn render(scene: &Scene, options: &RenderOptions) -> crate::Result<RgbaImage> {
+    render_view(scene, options, None)
+}
+
+/// Render an XY drawing from above, preserving its proportions and orientation.
+///
+/// Output dimensions, antialiasing, alpha and work limits match [`render`].
+///
+/// # Errors
+/// Returns an error for invalid output settings or scene geometry, allocation
+/// failures, or exceeded rasterization and transparency budgets.
+pub fn render_xy(scene: &Scene, options: &RenderOptions) -> crate::Result<RgbaImage> {
+    render_view(scene, options, Some(Camera::xy()))
+}
+
+/// Validate a scene and rasterize it from either the fitted model or supplied view.
+///
+/// # Errors
+/// Output settings, scene validation, allocations or raster work budgets fail.
 #[allow(
     clippy::too_many_lines,
     reason = "Keep validated scene setup and the ordered raster passes together"
 )]
-pub fn render(scene: &Scene, options: &RenderOptions) -> crate::Result<RgbaImage> {
+fn render_view(
+    scene: &Scene,
+    options: &RenderOptions,
+    camera: Option<Camera>,
+) -> crate::Result<RgbaImage> {
     if options.width == 0
         || options.height == 0
         || options.width > MAX_DIMENSION
@@ -961,7 +1016,10 @@ pub fn render(scene: &Scene, options: &RenderOptions) -> crate::Result<RgbaImage
         return Err("thumbnail exceeds the limit of 16 million sample pixels; reduce dimensions or supersampling".into());
     }
     let geometry = Geometry::new(scene)?;
-    let projection = Projection::new(scene, geometry, width, height);
+    let projection = match camera {
+        Some(camera) => Projection::with_camera(scene, geometry, width, height, camera),
+        None => Projection::new(scene, geometry, width, height),
+    };
     let background = if options.transparent {
         [0, 0, 0, 0]
     } else {
@@ -1432,6 +1490,7 @@ mod tests {
             wrap_t: TextureWrap::ClampToEdge,
             filter,
             min_filter: filter,
+            interpolation_space: TextureInterpolationSpace::Linear,
         }
     }
 
@@ -1558,6 +1617,87 @@ mod tests {
     }
 
     #[test]
+    fn interpolation_space_changes_bilinear_rgb_while_alpha_stays_linear() {
+        let mut texture = Texture {
+            image: std::sync::Arc::new(
+                RgbaImage::from_raw(2, 1, vec![0, 0, 0, 0, 255, 255, 255, 255]).unwrap(),
+            ),
+            wrap_s: TextureWrap::ClampToEdge,
+            wrap_t: TextureWrap::ClampToEdge,
+            filter: TextureFilter::Linear,
+            min_filter: TextureFilter::Linear,
+            interpolation_space: TextureInterpolationSpace::Linear,
+        };
+        assert_eq!(
+            TextureInterpolationSpace::default(),
+            TextureInterpolationSpace::Linear
+        );
+        for (space, expected) in [
+            (TextureInterpolationSpace::Linear, [188; 3]),
+            (TextureInterpolationSpace::Srgb, [128; 3]),
+        ] {
+            texture.interpolation_space = space;
+            let sample = sample_texture(&texture, [0.5, 0.5]);
+            assert_eq!(encode_color(sample), expected);
+            assert!((sample[3] - 0.5).abs() < 1e-12);
+            assert_eq!(encode_color(sample_texture(&texture, [0.25, 0.5])), [0; 3]);
+            assert_eq!(
+                encode_color(sample_texture(&texture, [0.75, 0.5])),
+                [255; 3]
+            );
+            texture.filter = TextureFilter::Nearest;
+            assert_eq!(encode_color(sample_texture(&texture, [0.5, 0.5])), [255; 3]);
+            texture.filter = TextureFilter::Linear;
+        }
+    }
+
+    #[test]
+    fn both_interpolation_spaces_preserve_wrapping_and_finite_extreme_coordinates() {
+        for space in [
+            TextureInterpolationSpace::Linear,
+            TextureInterpolationSpace::Srgb,
+        ] {
+            let mut texture = color_texture(TextureFilter::Nearest);
+            texture.interpolation_space = space;
+            for (wrap, expected) in [
+                (TextureWrap::Repeat, [0, 255, 0]),
+                (TextureWrap::ClampToEdge, [255, 0, 0]),
+                (TextureWrap::MirroredRepeat, [255, 0, 0]),
+            ] {
+                texture.wrap_s = wrap;
+                assert_eq!(
+                    encode_color(sample_texture(&texture, [-0.25, 0.25])),
+                    expected
+                );
+            }
+            texture.filter = TextureFilter::Linear;
+            texture.wrap_s = TextureWrap::Repeat;
+            let boundary_color = match space {
+                TextureInterpolationSpace::Linear => [188, 188, 0],
+                TextureInterpolationSpace::Srgb => [128, 128, 0],
+            };
+            assert_eq!(
+                encode_color(sample_texture(&texture, [0.0, 0.25])),
+                boundary_color
+            );
+            for wrap in [TextureWrap::ClampToEdge, TextureWrap::MirroredRepeat] {
+                texture.wrap_s = wrap;
+                assert_eq!(
+                    encode_color(sample_texture(&texture, [0.0, 0.25])),
+                    [255, 0, 0]
+                );
+            }
+            texture.wrap_s = TextureWrap::Repeat;
+            texture.wrap_t = TextureWrap::MirroredRepeat;
+            for coordinates in [[f64::MAX, -f64::MAX], [-0.25, 2.75], [0.0, 0.0]] {
+                let sample = sample_texture(&texture, coordinates);
+                assert!(sample.iter().all(|value| value.is_finite()));
+                assert!(sample.iter().all(|value| (0.0..=1.0).contains(value)));
+            }
+        }
+    }
+
+    #[test]
     fn projected_texel_derivatives_select_minification_and_magnification_filters() {
         let mut texture = color_texture(TextureFilter::Linear);
         texture.min_filter = TextureFilter::Nearest;
@@ -1644,6 +1784,7 @@ mod tests {
             wrap_t: TextureWrap::ClampToEdge,
             filter: TextureFilter::Nearest,
             min_filter: TextureFilter::Nearest,
+            interpolation_space: TextureInterpolationSpace::Linear,
         };
         let mask = TriangleAppearance {
             texture: Some(texture),

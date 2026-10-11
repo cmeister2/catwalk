@@ -136,9 +136,20 @@ pub enum TextureWrap {
 pub enum TextureFilter {
     /// Select the closest image texel.
     Nearest,
-    /// Interpolate four neighboring texels in linear color.
+    /// Interpolate four neighboring texels in the texture's selected color space.
     #[default]
     Linear,
+}
+
+/// Color space in which neighboring texture RGB values are interpolated.
+/// Alpha always interpolates linearly, independent of the RGB policy.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum TextureInterpolationSpace {
+    /// Decode sRGB texels before interpolation, as required by glTF.
+    #[default]
+    Linear,
+    /// Interpolate encoded sRGB texels before decoding, as required by 3MF.
+    Srgb,
 }
 
 /// An sRGB color texture. Alpha is linear; UV (0, 0) is the upper-left
@@ -156,6 +167,8 @@ pub struct Texture {
     /// Minification filtering, selected from projected UV derivatives. The
     /// renderer uses the base level rather than constructing mipmaps.
     pub min_filter: TextureFilter,
+    /// RGB interpolation policy; sampled colors always enter shading in linear space.
+    pub interpolation_space: TextureInterpolationSpace,
 }
 
 /// Interpretation of the multiplied material, vertex and texture alpha.
@@ -175,7 +188,7 @@ pub enum AlphaMode {
 
 /// Optional appearance for one triangle. Colors are linear RGBA multipliers;
 /// normals are world-space directions. A texture requires three UV pairs.
-/// Texture RGB is decoded from sRGB before filtering and multiplication.
+/// Texture RGB follows its interpolation policy and enters multiplication in linear space.
 #[derive(Clone, Debug)]
 pub struct TriangleAppearance {
     /// Linear RGBA material multiplier, with components between zero and one.
@@ -382,6 +395,7 @@ mod tests {
                     wrap_t: TextureWrap::Repeat,
                     filter: TextureFilter::Nearest,
                     min_filter: TextureFilter::Nearest,
+                    interpolation_space: TextureInterpolationSpace::Linear,
                 }),
                 ..TriangleAppearance::default()
             },
@@ -392,6 +406,7 @@ mod tests {
                     wrap_t: TextureWrap::Repeat,
                     filter: TextureFilter::Nearest,
                     min_filter: TextureFilter::Nearest,
+                    interpolation_space: TextureInterpolationSpace::Linear,
                 }),
                 texcoords: Some([[0.0; 2]; 3]),
                 ..TriangleAppearance::default()

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LightBurnProject AppVersion="0.9.16" FormatVersion="0" MirrorX="False" MirrorY="True">
+  <Shape Type="Group" CutIndex="1">
+    <XForm>1 0 0 1 10 20</XForm>
+    <Children>
+      <Shape Type="Path" CutIndex="2">
+        <V vx="0" vy="0" c0x="0" c0y="8"/>
+        <V vx="8" vy="0" c1x="8" c1y="8"/>
+        <V vx="8" vy="-2"/>
+        <V vx="0" vy="-2"/>
+        <P T="B" p0="0" p1="1"/>
+        <P T="L" p0="1" p1="2"/>
+        <P T="L" p0="2" p1="3"/>
+        <P T="L" p0="3" p1="0"/>
+      </Shape>
+      <Shape Type="Rect" W="6" H="6" Cr="1">
+        <XForm>1 0 0 1 14 2</XForm>
+      </Shape>
+      <Shape Type="Ellipse" CutIndex="3" Rx="2" Ry="3">
+        <XForm>0 1 -1 0 14 12</XForm>
+      </Shape>
+    </Children>
+  </Shape>
+</LightBurnProject>

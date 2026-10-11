@@ -1,0 +1,20 @@
+These are complete Blender scene fixtures for **geometry rendering without a saved scene thumbnail**. The importer reads the file's Structure DNA, mesh topology and object transforms; no Blender process, native library or image extraction supplies the geometry.
+
+| File | Actual Blender header | Independent geometry expectation |
+| --- | --- | --- |
+| `default-252-no-thumbnail.blend` | 2.52, gzip, 64-bit | Default cube: 12 triangles, surface area 24. Naturally has no `TEST` block. |
+| `cube-278-no-thumbnail.blend` | 2.78, raw, 64-bit | Cube: 12 triangles, bounds −1 to 1, surface area 24. |
+| `shared-278-no-thumbnail.blend` | 2.78, raw, 64-bit | Two objects share one mesh: 24 triangles, including translation and a 45° rotation. |
+| `mesh-280-no-thumbnail.blend` | 2.80, raw, 64-bit | Two cube shapes: 24 triangles, nonidentity object rotation, surface area 27.840000305. |
+| `loose-291-no-thumbnail.blend` | 2.91, raw, 64-bit | Open mesh with 6 triangles, 3 loose edges and 3 isolated vertices. |
+| `hierarchy-502-no-thumbnail.blend` | 5.2, raw format 1 | Full active scene: 7,208 triangles, nested object parents, parent inverses, shared meshes and collection instances with collection offsets. Multiple scenes and reused per-ID data addresses exercise correct selection and pointer scope. |
+
+The first file is an unchanged [Assimp test asset](https://github.com/assimp/assimp/blob/b20ab96a4335a1c464d45c90798eb36624d87aee/test/models/BLEND/BlenderDefault_250_Compressed.blend), redistributed under [LICENSE-Assimp.txt](LICENSE-Assimp.txt). Its filename says “250”, but its actual header is Blender 2.52. It is outside the upstream `test/models-nonbsd` exclusion.
+
+The other files derive from [Khronos glTF-Blender-IO test scenes](https://github.com/KhronosGroup/glTF-Blender-IO/tree/ccc2cc6ea93f7618df42b56f6001538a8366f41c/tests/scenes), redistributed under [LICENSE-Khronos.txt](LICENSE-Khronos.txt), Apache-2.0. **Only the `TEST` scene-thumbnail block was removed.** The 5.2 source was first decompressed from its seekable Zstandard container. Every other decompressed block, including all geometry, object data, pointers and Structure DNA, remains unchanged. Removal does not change saved pointer identifiers: these are memory identifiers, not offsets into the file. Packed textures and other model data are retained.
+
+[manifest.json](manifest.json) records pinned source URLs, original and transformed SHA-256 hashes, removed byte counts, licenses and generated PNG hashes. The six `*-geometry.png` images are reviewed 128×128 transparent, two-sample outputs. Tests compare these decoded images, validate geometry counts/bounds/areas independently, prove saved-preview extraction returns `None`, and run the CLI without display environment variables.
+
+The reader currently renders static mesh polygons, loose edges and points, saved world matrices and XYZ/quaternion static parent transforms and collection instance transforms. Materials, textures, animation evaluation, shape keys, modifiers, generated particle/vertex/face instances, non-mesh surfaces and external libraries remain outside this subset. Required unsupported geometry fails explicitly. Additional authored in-memory tests cover 32/64-bit pointers, both byte orders, both BHead generations, bad references, count limits, truncation and nonfinite data.
+
+Primary layout references: Blender's [file format documentation](https://github.com/blender/blender/blob/main/doc/blender_file_format/mystery_of_the_blend.html), [BHead declarations](https://github.com/blender/blender/blob/main/source/blender/blenloader_core/BLO_core_bhead.hh), [mesh DNA](https://github.com/blender/blender/blob/main/source/blender/makesdna/DNA_mesh_types.h), [attribute DNA](https://github.com/blender/blender/blob/main/source/blender/makesdna/DNA_attribute_types.h) and [collection instance behavior](https://github.com/blender/blender/blob/main/source/blender/blenkernel/intern/object_dupli.cc). These are format references; the Rust reader is independently written and does not incorporate Blender source code.

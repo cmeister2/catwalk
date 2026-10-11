@@ -1,6 +1,8 @@
 //! Explicit importer dispatch. Unsupported readers fail rather than shelling out.
 /// First-sample Alembic geometry and object hierarchies.
 mod alembic;
+/// Static Blender SDNA mesh geometry, placements and collection instances.
+mod blend;
 /// IGES and native ASCII BREP topology conversion and tessellation.
 mod cad;
 /// Static CityGML surfaces and diffuse appearances.
@@ -13,6 +15,8 @@ pub(crate) mod dicom;
 mod directx;
 /// Pure Rust Draco geometry and attribute decoding.
 mod draco;
+/// Strictly decoded DWG drawing geometry passed to the shared DXF importer.
+mod dwg;
 /// DXF drawing entities, sampled curves and block instances.
 mod dxf;
 /// Static and first-pose FBX geometry with supported deformations.
@@ -25,6 +29,8 @@ mod ifc;
 mod legacy_scene;
 /// LAS and Rust-decompressed LAZ survey points.
 mod lidar;
+/// LightBurn XML vector paths, shared resources and planar placements.
+mod lightburn;
 /// Polygon, triangle, point and wire interchange readers.
 mod mesh;
 /// First-frame Quake IDPO model geometry.
@@ -73,6 +79,9 @@ pub const IMAGE_EXTENSIONS: &[&str] = &[
     "png", "jpg", "jpeg", "bmp", "tga", "hdr", "webp", "exr", "tif", "tiff", "dcm",
 ];
 
+/// Document formats with geometry readers in addition to saved-image extraction.
+pub const NATIVE_GEOMETRY_EXTENSIONS: &[&str] = &["blend", "lbrn", "lbrn2", "dwg"];
+
 /// Return the path's extension in ASCII lowercase, without its leading dot.
 ///
 /// # Errors
@@ -91,6 +100,9 @@ pub fn extension(path: &Path) -> Result<String> {
 /// or unimplemented file variants, exceeded reader limits, or invalid geometry.
 pub fn load(path: &Path) -> Result<Scene> {
     let scene = match extension(path)?.as_str() {
+        "blend" => blend::load(path)?,
+        "lbrn" | "lbrn2" => lightburn::load(path)?,
+        "dwg" => dwg::load(path)?,
         "stl" | "obj" | "ply" | "off" | "pts" | "ptx" | "pcd" | "splat" => mesh::load(path)?,
         "gltf" | "glb" => gltf::load(path)?,
         "dae" => legacy_scene::load(path)?,

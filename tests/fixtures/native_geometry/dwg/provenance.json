@@ -1,0 +1,37 @@
+[
+  {
+    "file": "line-2000.dwg",
+    "source": "https://github.com/LibreDWG/libredwg/blob/a3d51f13f7afc143c2adb87d4b0e858e24cdac95/test/test-data/2000/Line.dwg",
+    "sha256": "358fc09c7c27737ba3b500eac122caee4c83c270f5ccb8a9f7f8f3d4b763d937",
+    "license": "GPL-3.0-or-later (test assets retained separately)",
+    "license_file": "LICENSE-LibreDWG.txt"
+  },
+  {
+    "file": "line-2004.dwg",
+    "source": "https://github.com/LibreDWG/libredwg/blob/a3d51f13f7afc143c2adb87d4b0e858e24cdac95/test/test-data/2004/Line.dwg",
+    "sha256": "60c86e1d4f038a3f1755d15bd22710c34608900957af61282432e4719b730c24",
+    "license": "GPL-3.0-or-later (test assets retained separately)",
+    "license_file": "LICENSE-LibreDWG.txt"
+  },
+  {
+    "file": "line-2007.dwg",
+    "source": "https://github.com/LibreDWG/libredwg/blob/a3d51f13f7afc143c2adb87d4b0e858e24cdac95/test/test-data/2007/Line.dwg",
+    "sha256": "75ed6e8ad65af25133def49823a33bb8754b6626881d5fa3d9ed5436c4645bde",
+    "license": "GPL-3.0-or-later (test assets retained separately)",
+    "license_file": "LICENSE-LibreDWG.txt"
+  },
+  {
+    "file": "line-2013.dwg",
+    "source": "https://github.com/LibreDWG/libredwg/blob/a3d51f13f7afc143c2adb87d4b0e858e24cdac95/test/test-data/2013/Line.dwg",
+    "sha256": "351a239cdae05894fe11863aabecfde171bd4d1758a3dd1c9868d8fe534fe6c1",
+    "license": "GPL-3.0-or-later (test assets retained separately)",
+    "license_file": "LICENSE-LibreDWG.txt"
+  },
+  {
+    "file": "line-2018.dwg",
+    "source": "https://github.com/LibreDWG/libredwg/blob/a3d51f13f7afc143c2adb87d4b0e858e24cdac95/test/test-data/2018/Line.dwg",
+    "sha256": "1f4edd4c11aaf28b3295fd69fa59376f9cb911c637aa47a6073408ecac4797a3",
+    "license": "GPL-3.0-or-later (test assets retained separately)",
+    "license_file": "LICENSE-LibreDWG.txt"
+  }
+]

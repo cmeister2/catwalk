@@ -1075,7 +1075,7 @@ pub(super) fn load(path: &Path) -> Result<Scene> {
 /// # Errors
 ///
 /// Sections, entities, references, transformations or preview budgets are invalid or unsupported.
-fn parse(bytes: &[u8]) -> Result<Scene> {
+pub(super) fn parse(bytes: &[u8]) -> Result<Scene> {
     let pairs = if bytes.starts_with(SIGNATURE) {
         binary(bytes, true).or_else(|_| binary(bytes, false))?
     } else {

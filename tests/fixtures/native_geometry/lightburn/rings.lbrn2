@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LightBurnProject AppVersion="1.7.08" DeviceName="JCZFiber (LMC4)" FormatVersion="1" MaterialHeight="0" MirrorX="False" MirrorY="False">
+  <Shape Type="Path" CutIndex="1" VertID="8" PrimID="2">
+    <XForm>0.98702514 0 0 0.99999994 -13.695557 -20.649654</XForm>
+    <VertList>V62.499985 57.5c0x1c0y6.8664551e-05c1x56c1y55V62 57.5c0x1c1x62c1y57.5V62 52.5c0x62c0y52.5c1x1V62.506573 52.5c0x56c0y55c1x1</VertList>
+    <PrimList>LineClosed</PrimList>
+  </Shape>
+  <Shape Type="Path" CutIndex="1" VertID="8" PrimID="2">
+    <XForm>0.98702514 0 0 0.99999994 0.80443954 -20.649654</XForm>
+  </Shape>
+  <Shape Type="Path" CutIndex="0" VertID="0">
+    <XForm>1 0 0 1 0 -20.649658</XForm>
+    <VertList>V86 58c0x56c0y55c1x56c1y55V70.5 58c0x70.5c0y58c1x1V70.5 57.5c0x24c0y5.5c1x24c1y5.5V62.5 57.5c0x24c0y5.5c1x24c1y5.5V47.5 57.5c0x44.5c0y55c1x47.5c1y57.5V39.5 57.5c0x1c1x44.5c1y55SV39.5 58c0x56c0y55c1x1V24 58c0x56c0y55c1x56c1y55V24 52c0x56c0y55c1x56c1y55V39.5 52c0x1c1x1V39.5 52.5c0x44.5c0y55c1x39.5c1y52.5V47.5 52.5c0x47.5c0y52.5c1x44.5c1y55V62.5 52.5c0x67.5c0y55c1x62.5c1y52.5V70.5 52.5c0x70.5c0y52.5c1x67.5c1y55V70.5 52c0x1c1x24V86 52c0x56c0y55c1x56c1y55</VertList>
+    <PrimList>LineClosed</PrimList>
+  </Shape>
+  <Shape Type="Path" CutIndex="0" VertID="1" PrimID="2">
+    <XForm>1 0 0 1 55 68.645714</XForm>
+    <VertList>V37.68 -3c0x1c1x1V-37.68 -3c0x1c1x1V-37.68 3c0x1c1x1V37.68 3c0x1c1x1</VertList>
+  </Shape>
+  <Shape Type="Path" CutIndex="0" VertID="7" PrimID="2">
+    <XForm>1 0 0 1 55 68.645714</XForm>
+    <VertList>V8.5 -3c0x1c1x1V-8.5 -3c0x1c1x1V-8.5 3c0x1c1x1V8.5 3c0x1c1x1</VertList>
+  </Shape>
+  <Shape Type="Path" CutIndex="0" VertID="5" PrimID="3">
+    <XForm>1 0 0 1 0 -20.649658</XForm>
+    <VertList>V46.5 86.295372c0x1c1x1V45.624508 79.29142c0x47.494835c0y82.282608c1x1V55 84.295372c0x59.006924c0y84.295372c1x50.993076c1y84.295372SV64.375488 79.29142c0x1c1x62.505169c1y82.282608SV63.5 86.295372c0x1c1x1</VertList>
+    <PrimList>L0 1B1 2B2 3L3 4</PrimList>
+  </Shape>
+  <Shape Type="Path" CutIndex="0" VertID="5" PrimID="3">
+    <XForm>1 0 0 -1 0 157.94109</XForm>
+  </Shape>
+  <Shape Type="Group" CutIndex="0">
+    <XForm>1 0 0 1 0 -20.649658</XForm>
+    <Children>
+      <Shape Type="Path" CutIndex="1" VertID="3">
+        <XForm>1 0 0 1 0 0</XForm>
+        <VertList>V63.499512 86.79541c0x1c1x1V63.494141 91.801758c0x1c1x1V63.5 91.801758c0x1c1x1V63.5 92.29541c0x1c1x1V46.5 92.29541c0x1c1x1V46.5 86.29541c0x1c1x1V47 86.29541c0x1c1x1V63 86.301758c0x1c1x1V63 86.29541c0x1c1x1V63.5 86.29541c0x1c1x1V63.5 86.79541c0x1c1x1</VertList>
+        <PrimList>LineClosed</PrimList>
+      </Shape>
+      <Shape Type="Path" CutIndex="1" VertID="4" PrimID="2">
+        <XForm>1 0 0 1 0 0</XForm>
+        <VertList>V46.999512 86.79541c0x1c1x1V46.994141 91.79541c0x1c1x1V63 91.801758c0x1c1x1V63 86.79541c0x1c1x1</VertList>
+      </Shape>
+    </Children>
+  </Shape>
+  <Shape Type="Group" CutIndex="0">
+    <XForm>0.90046161 0 0 1 5.4974174 -40.230392</XForm>
+    <Children>
+      <Shape Type="Path" CutIndex="1" VertID="6">
+        <XForm>1 0 0 1 0 0</XForm>
+        <VertList>V62.788086 87.462891c0x1c1x1V63.01709 87.462891c0x1c1x1V63.01709 91.12793c0x1c1x1V62.788086 91.12793c0x1c1x1V62.788086 91.356934c0x1c1x1V47.211914 91.356934c0x1c1x1V47.211914 91.12793c0x1c1x1V46.98291 91.12793c0x1c1x1V46.98291 87.462891c0x1c1x1V47.211914 87.462891c0x1c1x1V47.211914 87.233887c0x1c1x1V62.788086 87.233887c0x1c1x1</VertList>
+        <PrimList>LineClosed</PrimList>
+      </Shape>
+      <Shape Type="Path" CutIndex="1" VertID="2" PrimID="2">
+        <XForm>1 0 0 1 0 0</XForm>
+        <VertList>V62.559082 87.691895c0x1c1x1V47.440918 87.691895c0x1c1x1V47.440918 90.898926c0x1c1x1V62.559082 90.898926c0x1c1x1</VertList>
+      </Shape>
+    </Children>
+  </Shape>
+  <Shape Type="Path" CutIndex="0" VertID="9">
+    <XForm>1 0 0 1 3.8146973e-06 -40.230392</XForm>
+    <VertList>V62 87.462868c0x4.7334828c0y8.3934994c1x55.862526c1y89.295372V63.590427 81.045372c0x61.87672c0y83.786095c1x5.5217295c1y8.3934784SV55 85.630318c0x51.328602c0y85.630318c1x58.671402c1y85.630318SV46.409573 81.045372c0x5.5217295c0y8.3934784c1x48.123287c1y83.786095V47.999996 87.462868c0x55.862526c0y89.295372c1x6.3099723c1y8.3934994V22.499996 87.462868c0x55.862526c0y89.295372c1x55.862526c1y89.295372V22.499996 91.127876c0x55.862526c0y89.295372c1x55.862526c1y89.295372V48 91.127884c0x6.3099723c0y170.19725c1x55.862526c1y89.295372V46.409573 97.545372c0x48.123287c0y94.804649c1x5.5217295c1y170.19727V55 92.960426c0x58.671402c0y92.960426c1x51.328602c1y92.960426SV63.590427 97.545372c0x5.5217295c0y170.19727c1x61.87672c1y94.804649SV62 91.127899c0x55.862526c0y89.295372c1x4.7334828c1y170.19727V87.5 91.127876c0x55.862526c0y89.295372c1x55.862526c1y89.295372V87.5 87.462868c0x55.862526c0y89.295372c1x55.862526c1y89.295372</VertList>
+    <PrimList>L0 1B1 2B2 3L3 4L4 5L5 6L6 7L7 8B8 9B9 10L10 11L11 12L12 13L13 0</PrimList>
+  </Shape>
+</LightBurnProject>

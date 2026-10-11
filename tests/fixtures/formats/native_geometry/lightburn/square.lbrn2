@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LightBurnProject AppVersion="1.7.08" DeviceName="JCZFiber (LMC4)" FormatVersion="1" MaterialHeight="0" MirrorX="False" MirrorY="False">
+  <Shape Type="Rect" CutIndex="0" W="10" H="10" Cr="0">
+    <XForm>1 0 0 1 55 55</XForm>
+  </Shape>
+</LightBurnProject>

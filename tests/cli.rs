@@ -59,7 +59,7 @@ fn command() -> Command {
 fn run(input: &Path, output: &Path, extra: &[&str]) -> Output {
     let mut command = command();
     command.arg(input).arg("--output").arg(output);
-    if !extra.contains(&"--size") {
+    if !extra.contains(&"--size") && !extra.contains(&"--extract-saved-preview") {
         command.args(["--size", "64"]);
     }
     command.args(extra).output().unwrap()
@@ -505,7 +505,7 @@ fn absent_saved_preview_has_a_distinct_exit_status_and_preserves_old_output() {
     let fixtures = FixtureDirectory::new();
     let input = fixtures.write("absent.lbrn2", "<LightBurnProject FormatVersion=\"1\"/>");
     let destination = fixtures.write("existing.png", "keep previous usable preview");
-    let result = run(&input, &destination, &[]);
+    let result = run(&input, &destination, &["--extract-saved-preview"]);
     assert_eq!(result.status.code(), Some(3));
     assert_eq!(result.stdout, [] as [u8; 0]);
     assert!(String::from_utf8_lossy(&result.stderr).contains("no supported saved preview"));
@@ -524,4 +524,62 @@ fn absent_saved_preview_has_a_distinct_exit_status_and_preserves_old_output() {
         fs::read(destination).unwrap(),
         b"keep previous usable preview"
     );
+}
+
+#[test]
+fn native_geometry_forcing_and_corrupt_saved_image_fallback_keep_extraction_explicit() {
+    let fixtures = FixtureDirectory::new();
+    let original = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/native_geometry/lightburn/classic-geometry.lbrn"),
+    )
+    .unwrap();
+    let saved = RgbaImage::from_pixel(4, 2, Rgba([240, 30, 60, 255]));
+    let mut encoded = Vec::new();
+    write_png(&saved, &mut encoded).unwrap();
+    let payload = base64::engine::general_purpose::STANDARD.encode(encoded);
+    let input = fixtures.write(
+        "native-with-image.lbrn",
+        original.replace(
+            "</LightBurnProject>",
+            &format!("<Thumbnail Source=\"{payload}\"/></LightBurnProject>"),
+        ),
+    );
+    let options = catwalk::render::RenderOptions {
+        width: 64,
+        height: 64,
+        ..Default::default()
+    };
+    let fresh = catwalk::geometry_thumbnail(&input, &options).unwrap();
+    let forced = run(&input, Path::new("-"), &["--render-geometry"]);
+    assert_success(&forced);
+    assert_eq!(decode(&forced.stdout), fresh);
+    let preferred = run(&input, Path::new("-"), &[]);
+    assert_success(&preferred);
+    assert_ne!(decode(&preferred.stdout), fresh);
+    let extracted = run(&input, Path::new("-"), &["--extract-saved-preview"]);
+    assert_success(&extracted);
+    assert_eq!(decode(&extracted.stdout), saved);
+
+    let corrupt = fixtures.write(
+        "native-corrupt-image.lbrn",
+        original.replace(
+            "</LightBurnProject>",
+            "<Thumbnail Source=\"invalid-base64\"/></LightBurnProject>",
+        ),
+    );
+    let fallback = run(&corrupt, Path::new("-"), &[]);
+    assert_success(&fallback);
+    assert_eq!(decode(&fallback.stdout), fresh);
+    let previous = fixtures.write("previous.png", "retain existing output");
+    let failed_extract = run(&corrupt, &previous, &["--extract-saved-preview"]);
+    assert!(!failed_extract.status.success());
+    assert_eq!(fs::read(&previous).unwrap(), b"retain existing output");
+    let conflict = run(
+        &input,
+        &previous,
+        &["--render-geometry", "--extract-saved-preview"],
+    );
+    assert_eq!(conflict.status.code(), Some(2));
+    assert_eq!(fs::read(&previous).unwrap(), b"retain existing output");
 }

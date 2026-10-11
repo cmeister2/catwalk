@@ -38,12 +38,23 @@ struct Args {
     /// Supersampling factor for smoothing triangle edges.
     #[arg(long, default_value_t = 2, value_parser = clap::value_parser!(u32).range(1..=4))]
     samples: u32,
-    /// Extract a saved document preview at its original size, without canvas fitting.
-    #[arg(long, conflicts_with_all = ["size", "resolution", "transparent", "background", "color", "samples"])]
-    extract_saved_preview: bool,
+    /// Explicit image extraction or fresh-geometry selection.
+    #[command(flatten)]
+    preview_mode: PreviewMode,
     /// Print implemented readers and their limitations.
     #[arg(long, alias = "list-readers")]
     list_formats: bool,
+}
+
+/// Mutually exclusive ways to bypass normal saved-image preference and fallback.
+#[derive(clap::Args)]
+struct PreviewMode {
+    /// Extract a saved document preview at its original size, without canvas fitting.
+    #[arg(long, conflicts_with_all = ["size", "resolution", "transparent", "background", "color", "samples"])]
+    extract_saved_preview: bool,
+    /// Render stored geometry, ignoring any embedded thumbnail.
+    #[arg(long, conflicts_with = "extract_saved_preview")]
+    render_geometry: bool,
 }
 
 /// Parse six ASCII hexadecimal color digits, with an optional leading hash.
@@ -90,6 +101,10 @@ fn run(args: &Args) -> Result<()> {
             catwalk::saved_preview::EXTENSIONS.join(", ")
         );
         println!(
+            "Native document geometry readers (qualified subsets): {}",
+            formats::NATIVE_GEOMETRY_EXTENSIONS.join(", ")
+        );
+        println!(
             "Fixed-view surface/point/line and image previews. Readers support documented subsets."
         );
         println!("Full importer coverage and limitations: docs/format-coverage.md");
@@ -113,7 +128,7 @@ fn run(args: &Args) -> Result<()> {
     // Finish extraction and encoding before opening an output file or writing
     // stdout, so absent or malformed carriers preserve previous previews.
     let mut bytes = Vec::new();
-    if args.extract_saved_preview {
+    if args.preview_mode.extract_saved_preview {
         if matches!(formats::extension(input)?.as_str(), "ipt" | "iam") {
             bytes = catwalk::saved_preview::inventor::extract_png(input)?
                 .ok_or(catwalk::saved_preview::NoSavedPreview)?;
@@ -132,7 +147,12 @@ fn run(args: &Args) -> Result<()> {
             color: args.color,
             supersampling: args.samples,
         };
-        write_png(&thumbnail(input, &options)?, &mut bytes)?;
+        let image = if args.preview_mode.render_geometry {
+            catwalk::geometry_thumbnail(input, &options)?
+        } else {
+            thumbnail(input, &options)?
+        };
+        write_png(&image, &mut bytes)?;
     }
     if output == &PathBuf::from("-") {
         let stdout = std::io::stdout();

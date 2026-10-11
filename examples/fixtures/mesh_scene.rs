@@ -115,6 +115,7 @@ pub fn generate(root: &Path) -> Result<Vec<crate::Fixture>> {
     plain_meshes(&mut f)?;
     gltf_cases(&mut f)?;
     threemf_cases(&mut f)?;
+    threemf_texture_references(&mut f)?;
     f.add(
         "dae-nested-material",
         "dae",
@@ -2089,4 +2090,35 @@ fn alembic(hierarchy: bool) -> Vec<u8> {
         properties: AbcProperty::default(),
         children: vec![child],
     })
+}
+
+/// Register unchanged licensed reference archives containing actual packaged textures.
+///
+/// # Errors
+/// Returns an error when retained files cannot be written or their decoded scenes are invalid.
+fn threemf_texture_references(f: &mut Fixtures<'_>) -> Result<()> {
+    f.resource(
+        "3mf-lib3mf-png-texture.3mf",
+        include_bytes!("../../tests/fixtures/formats/mesh_scene/3mf-lib3mf-png-texture.3mf"),
+    )?;
+    f.register("3mf-lib3mf-png-texture", "3mf", "3MF Consortium original model with a PNG texture", "Unmodified 3MFConsortium/lib3mf Tests/TestFiles/CPP_UnitTests/Texture.3mf at commit bfb5df00057fae7e306c511fa7c6ff476dfaad28; separately BSD-2-Clause licensed geometry and texture sample. Original archive and complete source license retained as mesh_scene/LIB3MF-LICENSE.txt; exact source hashes and texture details in mesh_scene/README.md. https://github.com/3MFConsortium/lib3mf/blob/bfb5df00057fae7e306c511fa7c6ff476dfaad28/Tests/TestFiles/CPP_UnitTests/Texture.3mf")?;
+    f.resource(
+        "3mf-lib3mf-escaped-textures.3mf",
+        include_bytes!("../../tests/fixtures/formats/mesh_scene/3mf-lib3mf-escaped-textures.3mf"),
+    )?;
+    f.register("3mf-lib3mf-escaped-textures", "3mf", "3MF Consortium six-texture cube with escaped paths", "Unmodified 3MFConsortium/lib3mf Tests/TestFiles/Mixed/texturecube_with_EscapeCharacters.3mf at commit bfb5df00057fae7e306c511fa7c6ff476dfaad28; separately BSD-2-Clause licensed geometry and texture sample. Original archive and complete source license retained as mesh_scene/LIB3MF-LICENSE.txt; exact source hashes and texture details in mesh_scene/README.md. https://github.com/3MFConsortium/lib3mf/blob/bfb5df00057fae7e306c511fa7c6ff476dfaad28/Tests/TestFiles/Mixed/texturecube_with_EscapeCharacters.3mf")?;
+    f.resource(
+        "3mf-consortium-jpeg-textures.3mf",
+        include_bytes!("../../tests/fixtures/formats/mesh_scene/3mf-consortium-jpeg-textures.3mf"),
+    )?;
+    f.register("3mf-consortium-jpeg-textures", "3mf", "3MF Consortium original model with two JPEG textures", "Unmodified 3MFConsortium/3mf-samples examples/material/multipletextures.3mf at commit 665e20dc4d7777fd4c9702bca86a2d4028440337; separately BSD-2-Clause licensed geometry and texture sample. Original archive and complete source license retained as mesh_scene/3MF-SAMPLES-LICENSE.txt; exact source hashes and texture details in mesh_scene/README.md. https://github.com/3MFConsortium/3mf-samples/blob/665e20dc4d7777fd4c9702bca86a2d4028440337/examples/material/multipletextures.3mf")?;
+    f.resource(
+        "LIB3MF-LICENSE.txt",
+        include_bytes!("../../tests/fixtures/formats/mesh_scene/LIB3MF-LICENSE.txt"),
+    )?;
+    f.resource(
+        "3MF-SAMPLES-LICENSE.txt",
+        include_bytes!("../../tests/fixtures/formats/mesh_scene/3MF-SAMPLES-LICENSE.txt"),
+    )?;
+    Ok(())
 }

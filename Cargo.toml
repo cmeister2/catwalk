@@ -6,6 +6,7 @@ description = "Headless model thumbnails rendered entirely in Rust"
 license = "MIT"
 
 [dependencies]
+acadrust = { version = "=0.6.3", default-features = false }
 base64 = "0.22.1"
 cfb = { version = "=0.15.0", default-features = false }
 clap = { version = "4.6.1", features = ["derive"] }

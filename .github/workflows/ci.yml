@@ -25,6 +25,16 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
         run: cargo doc --no-deps --document-private-items --locked
+      - name: Check runtime geometry and compression backends
+        shell: bash
+        run: |
+          for platform in x86_64-unknown-linux-gnu aarch64-apple-darwin x86_64-pc-windows-msvc; do
+            cargo tree --locked --target "$platform" --edges normal,build --prefix none > "target/runtime-$platform.txt"
+            if rg '^(zstd-sys|zstd-safe|libz-sys|libz-ng-sys|hdf5-sys|netcdf-sys|assimp-sys|vtk-sys|occt-sys|bzip2-sys|cmake|bindgen|cc) v' "target/runtime-$platform.txt"; then
+              echo 'A native geometry or compression build dependency entered the runtime graph.' >&2
+              exit 1
+            fi
+          done
 
   tests:
     strategy:
@@ -63,8 +73,54 @@ jobs:
           path: target/gallery
           retention-days: 14
 
+  autodesk-geometry:
+    runs-on: ubuntu-latest
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target/autodesk-geometry
+      CATWALK_AUTODESK_ARTIFACTS: ${{ github.workspace }}/target/autodesk-geometry-snapshots
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Prepare pinned experimental geometry decoder
+        run: bash tools/autodesk_geometry/bootstrap.sh
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: tools/autodesk_geometry -> ../../target/autodesk-geometry
+          key: autodesk-geometry
+      - name: Check experimental tool formatting
+        run: cargo fmt --manifest-path tools/autodesk_geometry/Cargo.toml -p catwalk-autodesk-geometry -- --check
+      - name: Check experimental tool warnings
+        run: cargo clippy --manifest-path tools/autodesk_geometry/Cargo.toml --locked --all-targets -- -D warnings
+      - name: Check experimental tool documentation
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --manifest-path tools/autodesk_geometry/Cargo.toml -p catwalk-autodesk-geometry --no-deps --document-private-items --locked
+      - name: Test fresh solid previews and image snapshots
+        run: env -u DISPLAY -u WAYLAND_DISPLAY -u XDG_RUNTIME_DIR cargo test --manifest-path tools/autodesk_geometry/Cargo.toml --locked --all-targets
+      - name: Record and check runtime compression backends
+        shell: bash
+        run: |
+          cargo tree --manifest-path tools/autodesk_geometry/Cargo.toml --locked --edges normal,build --prefix none > target/autodesk-geometry-dependencies.txt
+          if rg '^(zstd-sys|zstd-safe|libz-sys|libz-ng-sys|cmake|bindgen|cc) v' target/autodesk-geometry-dependencies.txt; then
+            echo 'A native model or compression build dependency entered the experimental tool.' >&2
+            exit 1
+          fi
+      - name: Retain experimental image comparisons
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: autodesk-geometry-snapshots
+          path: |
+            target/autodesk-geometry-snapshots
+            target/autodesk-geometry-dependencies.txt
+            tools/autodesk_geometry/evidence/outputs
+          if-no-files-found: warn
+          retention-days: 14
+
   gallery:
-    needs: [checks, tests]
+    needs: [checks, tests, autodesk-geometry]
     runs-on: ubuntu-latest
     permissions:
       contents: read

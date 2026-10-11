@@ -1,0 +1,58 @@
+[
+  {
+    "file": "line.lbrn2",
+    "source": "https://github.com/jlucaso1/lbrn2-to-svg/blob/7cea0bf68b7caf4ad8d9b16ea03bd8a90c2c9c49/tests/artifacts/line.lbrn2",
+    "sha256": "a5e4e7f7af83ca67c5ef3c0299d27eeaf7e7b6e850ff49e58d6ddcb8387f1c1c",
+    "license": "MIT",
+    "license_file": "LICENSE-jlucaso1-lbrn2-to-svg.txt"
+  },
+  {
+    "file": "square.lbrn2",
+    "source": "https://github.com/jlucaso1/lbrn2-to-svg/blob/7cea0bf68b7caf4ad8d9b16ea03bd8a90c2c9c49/tests/artifacts/square.lbrn2",
+    "sha256": "75e15f922a48e2401a5d0c0be8967e542eba17170344d8230f6959d92caeee49",
+    "license": "MIT",
+    "license_file": "LICENSE-jlucaso1-lbrn2-to-svg.txt"
+  },
+  {
+    "file": "circle.lbrn2",
+    "source": "https://github.com/jlucaso1/lbrn2-to-svg/blob/7cea0bf68b7caf4ad8d9b16ea03bd8a90c2c9c49/tests/artifacts/circle.lbrn2",
+    "sha256": "8d2eca519015f1f9d419c750c9522b032eaa3bb23e3c2b66a6b02f52c4a6d175",
+    "license": "MIT",
+    "license_file": "LICENSE-jlucaso1-lbrn2-to-svg.txt"
+  },
+  {
+    "file": "rings.lbrn2",
+    "source": "https://github.com/jlucaso1/lbrn2-to-svg/blob/7cea0bf68b7caf4ad8d9b16ea03bd8a90c2c9c49/tests/artifacts/rings.lbrn2",
+    "sha256": "e075412aacb6ae61238a25c97693ba852caabf11c22777a7dcb59812952c0880",
+    "license": "MIT",
+    "license_file": "LICENSE-jlucaso1-lbrn2-to-svg.txt"
+  },
+  {
+    "file": "crucifix.lbrn2",
+    "source": "https://github.com/jlucaso1/lbrn2-to-svg/blob/7cea0bf68b7caf4ad8d9b16ea03bd8a90c2c9c49/tests/artifacts/crucifix.lbrn2",
+    "sha256": "82a6e90682313c0956683687e16b4a536e425e4598ee5622f8efc80c4e744278",
+    "license": "MIT",
+    "license_file": "LICENSE-jlucaso1-lbrn2-to-svg.txt"
+  },
+  {
+    "file": "butterfly_vectorized.lbrn2",
+    "source": "https://github.com/jlucaso1/lbrn2-to-svg/blob/7cea0bf68b7caf4ad8d9b16ea03bd8a90c2c9c49/tests/artifacts/butterfly_vectorized.lbrn2",
+    "sha256": "0e861ccb65a6e1803a33d8acabc4848f160dbdcff11a4ac9d78d7263c85e6bef",
+    "license": "MIT",
+    "license_file": "LICENSE-jlucaso1-lbrn2-to-svg.txt"
+  },
+  {
+    "file": "board-with-soldermask-only.lbrn2",
+    "source": "https://github.com/tscircuit/lbrnts/blob/d21a7b29354cd782cabf533b1b8f0ade6a11c7dd/tests/assets/board-with-soldermask-only.lbrn2",
+    "sha256": "bfc1a7d2865d0a524dac756f89fea220a2bdb337bb2edf4575828caebd950779",
+    "license": "MIT",
+    "license_file": "LICENSE-tscircuit-lbrnts.txt"
+  },
+  {
+    "file": "repro04-motor-controller.lbrn2",
+    "source": "https://github.com/tscircuit/lbrnts/blob/d21a7b29354cd782cabf533b1b8f0ade6a11c7dd/tests/assets/repro04-motor-controller.lbrn2",
+    "sha256": "7d86b5f8bc9848d44a47d625376336ca938ad5eecf8894cfa056b7b729c24db2",
+    "license": "MIT",
+    "license_file": "LICENSE-tscircuit-lbrnts.txt"
+  }
+]

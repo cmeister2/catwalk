@@ -230,6 +230,7 @@ pub(super) fn load(
                     _ => TextureFilter::Linear,
                 };
                 material.appearance.texture = Some(Texture {
+                    interpolation_space: crate::scene::TextureInterpolationSpace::Linear,
                     image: Arc::clone(&images[&image_index]),
                     wrap_s: wrapping(sampler.wrap_s()),
                     wrap_t: wrapping(sampler.wrap_t()),

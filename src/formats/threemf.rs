@@ -1,13 +1,18 @@
-//! Unit-normalized 3MF meshes and multipart production-extension assembly builds.
+//! Unit-normalized 3MF builds with multipart placement, colors, and packaged textures.
 use super::{MAX_INPUT_BYTES, transform::Transform};
 use crate::{
     Result,
-    scene::{Scene, Triangle, Vec3},
+    scene::{
+        Scene, Texture, TextureFilter, TextureInterpolationSpace, TextureWrap, Triangle,
+        TriangleAppearance, Vec3,
+    },
 };
+use image::{ImageFormat, RgbaImage};
 use std::{
-    collections::{HashMap, HashSet},
-    io::{Read, Seek, SeekFrom},
+    collections::{BTreeMap, HashMap, HashSet},
+    io::{Cursor, Read, Seek, SeekFrom},
     path::Path,
+    sync::Arc,
 };
 
 /// XML namespace of the supported 3MF core model schema.
@@ -20,6 +25,14 @@ const PRODUCTION: &str = "http://schemas.microsoft.com/3dmanufacturing/productio
 const RELATIONSHIPS: &str = "http://schemas.openxmlformats.org/package/2006/relationships";
 /// Relationship type identifying a 3MF model XML part.
 const MODEL_RELATIONSHIP: &str = "http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel";
+/// Relationship type required between an owning model part and its texture images.
+const TEXTURE_RELATIONSHIP: &str = "http://schemas.microsoft.com/3dmanufacturing/2013/01/3dtexture";
+/// Maximum width or height of a decoded texture image.
+const MAX_TEXTURE_AXIS: u32 = 8192;
+/// Maximum pixel count of an individual decoded texture image.
+const MAX_TEXTURE_PIXELS: u64 = 16 * 1024 * 1024;
+/// Maximum aggregate pixel count across distinct package texture images.
+const MAX_TOTAL_TEXTURE_PIXELS: u64 = 64 * 1024 * 1024;
 /// Maximum source or expanded preview triangle count.
 const MAX_TRIANGLES: usize = 5_000_000;
 /// Maximum model parts referenced by a multipart package.
@@ -45,6 +58,8 @@ struct Reference {
 struct Object {
     /// Authored unit-normalized mesh triangles belonging to the object.
     triangles: Vec<Triangle>,
+    /// Triangle-local texture identifiers and coordinates resolved in the owning part.
+    textures: BTreeMap<usize, TextureMapping>,
     /// Placed references to component objects contained by this object.
     components: Vec<Reference>,
 }
@@ -55,13 +70,57 @@ struct ModelPart {
     objects: HashMap<u32, Object>,
     /// Authored build-item references; only the root part drives instantiation.
     build: Vec<Reference>,
+    /// Part-local texture resources with shared images loaded from the package.
+    textures: HashMap<u32, TextureResource>,
+}
+
+/// A direct single-layer texture resource and its sampler settings.
+struct TextureResource {
+    /// Canonical absolute image part name, stored without its leading slash.
+    path: String,
+    /// PNG or JPEG encoding required by the resource's content type.
+    format: ImageFormat,
+    /// Texture addressing along the horizontal coordinate.
+    wrap_s: TextureWrap,
+    /// Texture addressing along the vertical coordinate.
+    wrap_t: TextureWrap,
+    /// Authored nearest, bilinear, or default high-quality reconstruction.
+    filter: TextureFilter,
+    /// Shared decoded texels, present after package relationship validation.
+    image: Option<Arc<RgbaImage>>,
+}
+
+/// A material property group selecting one texture and indexed UV coordinates.
+struct TextureGroup {
+    /// Part-local resource identifier of the associated texture image.
+    texture: u32,
+    /// Finite UV pairs converted to the renderer's upper-left image origin.
+    coordinates: Vec<[f64; 2]>,
+}
+
+/// Per-corner texture properties attached to one source mesh triangle.
+struct TextureMapping {
+    /// Part-local texture resource selected by the triangle's property group.
+    texture: u32,
+    /// Three UV pairs following geometric triangle corner order.
+    coordinates: [[f64; 2]; 3],
+}
+
+/// One decoded package image with its actual encoding retained for MIME validation.
+struct CachedImage {
+    /// Signature-verified PNG or JPEG encoding of the source package member.
+    format: ImageFormat,
+    /// Shared straight-alpha sRGB pixels used by every referencing model part.
+    image: Arc<RgbaImage>,
 }
 
 /// Aggregate source/decompression/resource limits shared across referenced model parts.
 #[derive(Default)]
 struct Budget {
-    /// Aggregate decompressed XML bytes read across referenced package parts.
+    /// Aggregate decompressed XML and encoded image bytes consumed from package parts.
     bytes: u64,
+    /// Aggregate decoded pixels across distinct cached texture images.
+    pixels: u64,
     /// Aggregate source mesh vertex count across decoded model parts.
     vertices: usize,
     /// Aggregate source mesh triangle count across decoded model parts.
@@ -70,6 +129,8 @@ struct Budget {
     resources: usize,
     /// Aggregate number of decoded object references.
     references: usize,
+    /// Aggregate finite texture-coordinate entries across decoded material groups.
+    texcoords: usize,
 }
 
 /// Increment one aggregate model count without crossing its limit.
@@ -331,6 +392,8 @@ struct Package {
     archive: zip::ZipArchive<std::fs::File>,
     /// Canonical package part names mapped to unambiguous ZIP entry indices.
     entries: HashMap<String, usize>,
+    /// Decoded texture images indexed by canonical package paths across model parts.
+    images: HashMap<String, CachedImage>,
 }
 
 impl Package {
@@ -369,7 +432,11 @@ impl Package {
                 return Err("duplicate 3MF package part name".into());
             }
         }
-        Ok(Self { archive, entries })
+        Ok(Self {
+            archive,
+            entries,
+            images: HashMap::new(),
+        })
     }
 
     /// Test whether the canonical package part name exists in the archive index.
@@ -383,13 +450,22 @@ impl Package {
     ///
     /// The part is missing, unreadable, invalidly encoded or exceeds decompression limits.
     fn read(&mut self, path: &str, budget: &mut Budget) -> Result<String> {
+        Ok(String::from_utf8(self.read_bytes(path, budget)?)?)
+    }
+
+    /// Read one package member within the shared XML and encoded-image byte budget.
+    ///
+    /// # Errors
+    /// Returns an error if the member is missing, unreadable, corrupt, or exceeds
+    /// the remaining aggregate decompression budget.
+    fn read_bytes(&mut self, path: &str, budget: &mut Budget) -> Result<Vec<u8>> {
         let index = *self
             .entries
             .get(path)
             .ok_or_else(|| format!("3MF references a missing package part {path}"))?;
         let mut entry = self.archive.by_index(index)?;
         if entry.size() > MAX_INPUT_BYTES.saturating_sub(budget.bytes) {
-            return Err("3MF decompressed XML exceeds the aggregate 512 MiB limit".into());
+            return Err("3MF consumed package data exceeds the aggregate 512 MiB limit".into());
         }
         let mut bytes = Vec::new();
         entry
@@ -400,9 +476,72 @@ impl Package {
             .bytes
             .checked_add(bytes.len() as u64)
             .filter(|&n| n <= MAX_INPUT_BYTES)
-            .ok_or("3MF decompressed XML exceeds the aggregate 512 MiB limit")?;
-        Ok(String::from_utf8(bytes)?)
+            .ok_or("3MF consumed package data exceeds the aggregate 512 MiB limit")?;
+        Ok(bytes)
     }
+
+    /// Decode a PNG/JPEG once after checking its signature, dimensions, and pixel budgets.
+    ///
+    /// # Errors
+    /// Returns an error for a MIME/signature mismatch, invalid image data,
+    /// missing package member, or exceeded encoded-byte, dimension, or pixel limits.
+    fn texture(
+        &mut self,
+        path: &str,
+        format: ImageFormat,
+        budget: &mut Budget,
+    ) -> Result<Arc<RgbaImage>> {
+        if let Some(cached) = self.images.get(path) {
+            if cached.format != format {
+                return Err("3MF image signature differs from its texture content type".into());
+            }
+            return Ok(Arc::clone(&cached.image));
+        }
+        let bytes = self.read_bytes(path, budget)?;
+        if image::guess_format(&bytes)? != format {
+            return Err("3MF image signature differs from its texture content type".into());
+        }
+        let (width, height) =
+            texture_reader(&bytes, format)
+                .into_dimensions()
+                .map_err(|error| {
+                    format!("3MF texture metadata or dimensions exceed limits: {error}")
+                })?;
+        let pixels = u64::from(width) * u64::from(height);
+        budget.pixels = budget
+            .pixels
+            .checked_add(pixels)
+            .ok_or("3MF texture pixel count overflow")?;
+        if width == 0
+            || height == 0
+            || width > MAX_TEXTURE_AXIS
+            || height > MAX_TEXTURE_AXIS
+            || pixels > MAX_TEXTURE_PIXELS
+            || budget.pixels > MAX_TOTAL_TEXTURE_PIXELS
+        {
+            return Err("3MF textures exceed the dimension or aggregate pixel budget".into());
+        }
+        let image = Arc::new(texture_reader(&bytes, format).decode()?.to_rgba8());
+        self.images.insert(
+            path.to_owned(),
+            CachedImage {
+                format,
+                image: Arc::clone(&image),
+            },
+        );
+        Ok(image)
+    }
+}
+
+/// Apply image allocation and axis limits during both metadata and pixel decoding.
+fn texture_reader(bytes: &[u8], format: ImageFormat) -> image::ImageReader<Cursor<&[u8]>> {
+    let mut reader = image::ImageReader::with_format(Cursor::new(bytes), format);
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(MAX_TEXTURE_AXIS);
+    limits.max_image_height = Some(MAX_TEXTURE_AXIS);
+    limits.max_alloc = Some(128 * 1024 * 1024);
+    reader.limits(limits);
+    reader
 }
 
 /// Load the root 3MF build and referenced production-extension model parts.
@@ -427,7 +566,8 @@ pub(super) fn load(path: &Path) -> Result<Scene> {
         package_path("3D/3dmodel.model")?
     };
     let xml = package.read(&root, &mut budget)?;
-    let root_part = parse_part(&xml, true, &mut budget)?;
+    let mut root_part = parse_part(&xml, true, &mut budget)?;
+    load_textures(&mut package, &root, &mut root_part, &mut budget)?;
     let mut targets: HashSet<_> = root_part
         .objects
         .values()
@@ -457,7 +597,9 @@ pub(super) fn load(path: &Path) -> Result<Scene> {
     let mut parts = HashMap::from([(root.clone(), root_part)]);
     for target in targets {
         let xml = package.read(&target, &mut budget)?;
-        parts.insert(target, parse_part(&xml, false, &mut budget)?);
+        let mut part = parse_part(&xml, false, &mut budget)?;
+        load_textures(&mut package, &target, &mut part, &mut budget)?;
+        parts.insert(target, part);
     }
     render_parts(&root, &parts)
 }
@@ -550,6 +692,21 @@ fn relationship_target(target: &str, directory: &str) -> Result<String> {
 ///
 /// XML relationships are invalid, external, duplicated or above the part limit.
 fn model_relationships(xml: &str, directory: &str) -> Result<HashSet<String>> {
+    relationship_targets(xml, directory, MODEL_RELATIONSHIP, MAX_PARTS, "model")
+}
+
+/// Collect canonical internal targets for one required OPC relationship type.
+///
+/// # Errors
+/// Returns an error if relationship XML or IDs are invalid, a matching target is
+/// external, duplicate, or escapes the package, or the target count exceeds its limit.
+fn relationship_targets(
+    xml: &str,
+    directory: &str,
+    kind: &str,
+    limit: usize,
+    label: &str,
+) -> Result<HashSet<String>> {
     let doc = roxmltree::Document::parse(xml)?;
     let root = doc.root_element();
     if !root.has_tag_name((RELATIONSHIPS, "Relationships")) {
@@ -564,25 +721,149 @@ fn model_relationships(xml: &str, directory: &str) -> Result<HashSet<String>> {
         if !ids.insert(attribute(relation, "Id")?) {
             return Err("duplicate 3MF relationship ID".into());
         }
-        if relation.attribute("Type") != Some(MODEL_RELATIONSHIP) {
+        if relation.attribute("Type") != Some(kind) {
             continue;
         }
         if relation
             .attribute("TargetMode")
             .is_some_and(|mode| mode != "Internal")
         {
-            return Err("external 3MF model relationships are unsupported".into());
+            return Err(format!("external 3MF {label} relationships are unsupported").into());
         }
         let target = attribute(relation, "Target")?;
         let target = relationship_target(target, directory)?;
         if !targets.insert(target) {
-            return Err("duplicate 3MF model relationship target".into());
+            return Err(format!("duplicate 3MF {label} relationship target").into());
         }
-        if targets.len() > MAX_PARTS {
-            return Err("3MF relationships exceed the model-part limit".into());
+        if targets.len() > limit {
+            return Err(format!("3MF relationships exceed the {label} target limit").into());
         }
     }
     Ok(targets)
+}
+
+/// Resolve one model part's direct texture resources through its typed OPC relationships.
+///
+/// # Errors
+/// Returns an error for absent or invalid owning-part relationships, a missing
+/// texture target, image/MIME decoding errors, or exceeded byte and pixel budgets.
+fn load_textures(
+    package: &mut Package,
+    owner: &str,
+    part: &mut ModelPart,
+    budget: &mut Budget,
+) -> Result<()> {
+    if part.textures.is_empty() {
+        return Ok(());
+    }
+    let (directory, name) = owner.rsplit_once('/').unwrap_or(("", owner));
+    let relationships = if directory.is_empty() {
+        format!("_rels/{name}.rels")
+    } else {
+        format!("{directory}/_rels/{name}.rels")
+    };
+    let xml = package.read(&relationships, budget)?;
+    let declared = relationship_targets(
+        &xml,
+        directory,
+        TEXTURE_RELATIONSHIP,
+        MAX_RESOURCES,
+        "texture",
+    )?;
+    // Stable source-ID order makes resource-limit errors deterministic.
+    let mut identifiers: Vec<_> = part.textures.keys().copied().collect();
+    identifiers.sort_unstable();
+    for identifier in identifiers {
+        let texture = part
+            .textures
+            .get_mut(&identifier)
+            .ok_or("3MF texture resource is missing")?;
+        if !declared.contains(&texture.path) {
+            return Err("3MF texture lacks an owning-model texture relationship".into());
+        }
+        texture.image = Some(package.texture(&texture.path, texture.format, budget)?);
+    }
+    Ok(())
+}
+
+/// Parse texture addressing; a direct base layer ignores alpha so `none` uses clamp.
+///
+/// # Errors
+/// Returns an error if the authored tile-style spelling is not supported by 3MF.
+fn texture_wrap(value: Option<&str>) -> Result<TextureWrap> {
+    match value.unwrap_or("wrap") {
+        "wrap" => Ok(TextureWrap::Repeat),
+        "mirror" => Ok(TextureWrap::MirroredRepeat),
+        "clamp" | "none" => Ok(TextureWrap::ClampToEdge),
+        _ => Err("invalid 3MF texture tile style".into()),
+    }
+}
+
+/// Parse one namespace-qualified packaged PNG/JPEG texture and its sampler state.
+///
+/// # Errors
+/// Returns an error for an invalid namespace, path, content type, or sampler setting.
+fn texture_resource(node: roxmltree::Node<'_, '_>) -> Result<TextureResource> {
+    if !node.has_tag_name((MATERIAL, "texture2d")) {
+        return Err("3MF texture2d must use the materials namespace".into());
+    }
+    let path = attribute(node, "path")?;
+    if !path.starts_with('/') {
+        return Err("3MF texture path must be an absolute package part name".into());
+    }
+    let format = match attribute(node, "contenttype")? {
+        "image/png" => ImageFormat::Png,
+        "image/jpeg" => ImageFormat::Jpeg,
+        _ => return Err("3MF texture content type must be image/png or image/jpeg".into()),
+    };
+    let filter = match node.attribute("filter").unwrap_or("auto") {
+        "auto" | "linear" => TextureFilter::Linear,
+        "nearest" => TextureFilter::Nearest,
+        _ => return Err("invalid 3MF texture filter".into()),
+    };
+    Ok(TextureResource {
+        path: package_path(path)?,
+        format,
+        wrap_s: texture_wrap(node.attribute("tilestyleu"))?,
+        wrap_t: texture_wrap(node.attribute("tilestylev"))?,
+        filter,
+        image: None,
+    })
+}
+
+/// Read a materials texture-coordinate group with lower-left to upper-left conversion.
+///
+/// # Errors
+/// Returns an error for invalid namespaces, resource IDs, non-finite or malformed
+/// UV coordinates, unsupported display properties, or excessive coordinate counts.
+fn texture_group(node: roxmltree::Node<'_, '_>, budget: &mut Budget) -> Result<TextureGroup> {
+    if !node.has_tag_name((MATERIAL, "texture2dgroup")) {
+        return Err("3MF texture2dgroup must use the materials namespace".into());
+    }
+    if node.attribute("displaypropertiesid").is_some() {
+        return Err("3MF texture display properties are not implemented".into());
+    }
+    let mut coordinates = Vec::new();
+    for coordinate in node.children().filter(roxmltree::Node::is_element) {
+        if !coordinate.has_tag_name((MATERIAL, "tex2coord")) {
+            return Err("3MF texture group contains an invalid coordinate element".into());
+        }
+        consume(&mut budget.texcoords, MAX_TRIANGLES, "texture coordinate")?;
+        let u: f64 = attribute(coordinate, "u")?.parse()?;
+        let v: f64 = attribute(coordinate, "v")?.parse()?;
+        let uv = [u, 1.0 - v];
+        if !u.is_finite() || !v.is_finite() || !uv[1].is_finite() {
+            return Err("3MF texture coordinates must be finite".into());
+        }
+        coordinates.push(uv);
+    }
+    if coordinates.is_empty() {
+        return Err("3MF texture coordinate group must not be empty".into());
+    }
+    Ok(TextureGroup {
+        texture: id(node, "texid")?,
+        coordinates,
+    })
 }
 
 /// Read a required unqualified 3MF XML attribute.
@@ -721,7 +1002,7 @@ fn parse_part(xml: &str, root: bool, budget: &mut Budget) -> Result<ModelPart> {
     if let Some(extensions) = model.attribute("requiredextensions") {
         for prefix in extensions.split_whitespace() {
             let namespace = model.lookup_namespace_uri(Some(prefix));
-            // Material color groups are sufficient for a shaded preview; more complex materials are rejected below.
+            // Direct colors and textures are supported; complex property resources are rejected below.
             if !matches!(namespace, Some(MATERIAL | PRODUCTION)) {
                 return Err(format!("required 3MF extension {prefix} is not implemented").into());
             }
@@ -731,6 +1012,8 @@ fn parse_part(xml: &str, root: bool, budget: &mut Budget) -> Result<ModelPart> {
     let resources = core_child(model, "resources")?.ok_or("3MF model has no resources")?;
     let mut all_ids = HashSet::new();
     let mut colors: HashMap<u32, Vec<[u8; 3]>> = HashMap::new();
+    let mut textures = HashMap::new();
+    let mut groups = HashMap::new();
     for resource in resources.children().filter(roxmltree::Node::is_element) {
         consume(&mut budget.resources, MAX_RESOURCES, "resource")?;
         let resource_id = id(resource, "id")?;
@@ -759,9 +1042,17 @@ fn parse_part(xml: &str, root: bool, budget: &mut Budget) -> Result<ModelPart> {
                 colors.insert(resource_id, palette);
             }
             "object" => {}
+            "texture2d" => {
+                textures.insert(resource_id, texture_resource(resource)?);
+            }
+            "texture2dgroup" => {
+                groups.insert(resource_id, texture_group(resource, budget)?);
+            }
             // Complex texture/material properties cannot be rendered faithfully by this importer.
-            "texture2d" | "texture2dgroup" | "compositematerials" | "multiproperties" => {
-                return Err("3MF textures and composite materials are not implemented".into());
+            "compositematerials" | "multiproperties" => {
+                return Err(
+                    "3MF composite materials and multiproperties are not implemented".into(),
+                );
             }
             _ => {
                 return Err(
@@ -769,6 +1060,12 @@ fn parse_part(xml: &str, root: bool, budget: &mut Budget) -> Result<ModelPart> {
                 );
             }
         }
+    }
+    if groups
+        .values()
+        .any(|group| !textures.contains_key(&group.texture))
+    {
+        return Err("3MF texture coordinate group references a missing texture".into());
     }
     let mut objects = HashMap::new();
     for resource in resources
@@ -784,6 +1081,7 @@ fn parse_part(xml: &str, root: bool, budget: &mut Budget) -> Result<ModelPart> {
             .unwrap_or(0);
         let mut object = Object {
             triangles: Vec::new(),
+            textures: BTreeMap::new(),
             components: Vec::new(),
         };
         let mesh = core_child(resource, "mesh")?;
@@ -825,9 +1123,6 @@ fn parse_part(xml: &str, root: bool, budget: &mut Budget) -> Result<ModelPart> {
                     .transpose()?
                     .or(property_group);
                 let triangle_color = if let Some(pid) = pid {
-                    let palette = colors
-                        .get(&pid)
-                        .ok_or("3MF color resource is missing or unsupported")?;
                     let p1: usize = node
                         .attribute("p1")
                         .map(str::parse)
@@ -843,15 +1138,34 @@ fn parse_part(xml: &str, root: bool, budget: &mut Budget) -> Result<ModelPart> {
                         .map(str::parse)
                         .transpose()?
                         .unwrap_or(p1);
-                    if [p1, p2, p3].iter().any(|&i| i >= palette.len()) {
-                        return Err("3MF color index is out of range".into());
+                    if let Some(palette) = colors.get(&pid) {
+                        if [p1, p2, p3].iter().any(|&i| i >= palette.len()) {
+                            return Err("3MF color index is out of range".into());
+                        }
+                        Some(std::array::from_fn(|channel| {
+                            ((u32::from(palette[p1][channel])
+                                + u32::from(palette[p2][channel])
+                                + u32::from(palette[p3][channel]))
+                                / 3) as u8
+                        }))
+                    } else if let Some(group) = groups.get(&pid) {
+                        if [p1, p2, p3]
+                            .iter()
+                            .any(|&index| index >= group.coordinates.len())
+                        {
+                            return Err("3MF texture coordinate index is out of range".into());
+                        }
+                        object.textures.insert(
+                            object.triangles.len(),
+                            TextureMapping {
+                                texture: group.texture,
+                                coordinates: [p1, p2, p3].map(|index| group.coordinates[index]),
+                            },
+                        );
+                        None
+                    } else {
+                        return Err("3MF color or texture property group is missing".into());
                     }
-                    Some(std::array::from_fn(|channel| {
-                        ((u32::from(palette[p1][channel])
-                            + u32::from(palette[p2][channel])
-                            + u32::from(palette[p3][channel]))
-                            / 3) as u8
-                    }))
                 } else {
                     None
                 };
@@ -885,7 +1199,11 @@ fn parse_part(xml: &str, root: bool, budget: &mut Budget) -> Result<ModelPart> {
     }
     // Production consumers ignore child builds, including invalid or absent
     // child build entries. Only the selected root model drives the scene.
-    Ok(ModelPart { objects, build })
+    Ok(ModelPart {
+        objects,
+        build,
+        textures,
+    })
 }
 
 /// Validate the multipart object graph and instantiate only the root build items.
@@ -937,9 +1255,10 @@ fn validate_object(
     if active.len() >= MAX_DEPTH || !active.insert(key.clone()) {
         return Err("3MF components are cyclic or too deep".into());
     }
-    let object = parts
+    let model = parts
         .get(part)
-        .ok_or("3MF references a missing model part")?
+        .ok_or("3MF references a missing model part")?;
+    let object = model
         .objects
         .get(&id)
         .ok_or("3MF references a missing object in its model part")?;
@@ -980,21 +1299,48 @@ fn instantiate(
     if transform.0.iter().flatten().any(|value| !value.is_finite()) {
         return Err("3MF composed transform exceeds numeric range".into());
     }
-    let object = parts
+    let model = parts
         .get(part)
-        .ok_or("3MF references a missing model part")?
+        .ok_or("3MF references a missing model part")?;
+    let object = model
         .objects
         .get(&id)
         .ok_or("3MF references a missing object in its model part")?;
     if scene.triangles.len().saturating_add(object.triangles.len()) > MAX_TRIANGLES {
         return Err("3MF instantiated scene exceeds triangle limit".into());
     }
+    let offset = scene.triangles.len();
     scene
         .triangles
         .extend(object.triangles.iter().map(|triangle| Triangle {
             vertices: triangle.vertices.map(|v| transform.apply(v)),
             color: triangle.color,
         }));
+    for (&index, mapping) in &object.textures {
+        let texture = model
+            .textures
+            .get(&mapping.texture)
+            .ok_or("3MF triangle references a missing texture")?;
+        let image = texture
+            .image
+            .as_ref()
+            .ok_or("3MF texture image has not been loaded")?;
+        scene.appearances.insert(
+            offset + index,
+            TriangleAppearance {
+                texcoords: Some(mapping.coordinates),
+                texture: Some(Texture {
+                    image: Arc::clone(image),
+                    wrap_s: texture.wrap_s,
+                    wrap_t: texture.wrap_t,
+                    filter: texture.filter,
+                    min_filter: texture.filter,
+                    interpolation_space: TextureInterpolationSpace::Srgb,
+                }),
+                ..TriangleAppearance::default()
+            },
+        );
+    }
     for child in &object.components {
         instantiate(
             child.part.as_deref().unwrap_or(part),
@@ -1107,6 +1453,21 @@ mod tests {
         entries: &[(&str, &str)],
         read: impl FnOnce(&Path) -> Result<T>,
     ) -> Result<T> {
+        let bytes: Vec<_> = entries
+            .iter()
+            .map(|&(name, contents)| (name, contents.as_bytes()))
+            .collect();
+        with_byte_package(&bytes, read)
+    }
+
+    /// Write a temporary ZIP containing arbitrary XML or image bytes and clean it up.
+    ///
+    /// # Errors
+    /// Returns an error if ZIP writing or the supplied package operation fails.
+    fn with_byte_package<T>(
+        entries: &[(&str, &[u8])],
+        read: impl FnOnce(&Path) -> Result<T>,
+    ) -> Result<T> {
         static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         struct Temp(std::path::PathBuf);
         impl Drop for Temp {
@@ -1126,7 +1487,7 @@ mod tests {
                 zip::write::SimpleFileOptions::default()
                     .compression_method(zip::CompressionMethod::Deflated),
             )?;
-            writer.write_all(contents.as_bytes())?;
+            writer.write_all(contents)?;
         }
         writer.finish()?;
         read(&path.0)
@@ -1382,6 +1743,86 @@ mod tests {
             ))
             .is_err()
         );
+    }
+
+    #[test]
+    fn texture_cache_preserves_mime_and_counts_each_distinct_image_once() {
+        let mut png = Vec::new();
+        crate::render::write_png(
+            &RgbaImage::from_pixel(1, 1, image::Rgba([31, 47, 63, 79])),
+            &mut png,
+        )
+        .unwrap();
+        with_byte_package(&[("first.png", &png), ("second.png", &png)], |path| {
+            let mut package = Package::open(path)?;
+            let mut budget = Budget {
+                pixels: MAX_TOTAL_TEXTURE_PIXELS - 1,
+                ..Budget::default()
+            };
+            let first = package.texture("first.png", ImageFormat::Png, &mut budget)?;
+            assert_eq!(budget.pixels, MAX_TOTAL_TEXTURE_PIXELS);
+            let consumed = budget.bytes;
+            let same = package.texture("first.png", ImageFormat::Png, &mut budget)?;
+            assert!(Arc::ptr_eq(&first, &same));
+            assert_eq!(budget.bytes, consumed);
+            assert_eq!(budget.pixels, MAX_TOTAL_TEXTURE_PIXELS);
+            assert!(
+                package
+                    .texture("first.png", ImageFormat::Jpeg, &mut budget)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("content type")
+            );
+            assert_eq!(budget.bytes, consumed);
+            assert!(
+                package
+                    .texture("second.png", ImageFormat::Png, &mut budget)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("aggregate pixel budget")
+            );
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn encoded_texture_and_coordinate_counts_obey_aggregate_limits() {
+        let mut png = Vec::new();
+        crate::render::write_png(&RgbaImage::new(1, 1), &mut png).unwrap();
+        with_byte_package(&[("image.png", &png)], |path| {
+            let mut package = Package::open(path)?;
+            let error = package
+                .texture(
+                    "image.png",
+                    ImageFormat::Png,
+                    &mut Budget {
+                        bytes: MAX_INPUT_BYTES,
+                        ..Budget::default()
+                    },
+                )
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains("aggregate 512 MiB"));
+            assert!(package.images.is_empty());
+            Ok(())
+        })
+        .unwrap();
+        let xml = format!(
+            "<m:texture2dgroup xmlns:m=\"{MATERIAL}\" id=\"1\" texid=\"2\"><m:tex2coord u=\"0\" v=\"0\"/></m:texture2dgroup>"
+        );
+        let document = roxmltree::Document::parse(&xml).unwrap();
+        let error = texture_group(
+            document.root_element(),
+            &mut Budget {
+                texcoords: MAX_TRIANGLES,
+                ..Budget::default()
+            },
+        )
+        .err()
+        .unwrap()
+        .to_string();
+        assert!(error.contains("texture coordinate"));
     }
 
     #[test]

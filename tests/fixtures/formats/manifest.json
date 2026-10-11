@@ -34,6 +34,30 @@
     },
     {
       "extension": "3mf",
+      "id": "3mf-consortium-jpeg-textures",
+      "input": "mesh_scene/3mf-consortium-jpeg-textures.3mf",
+      "kind": "model",
+      "provenance": "Unmodified 3MFConsortium/3mf-samples examples/material/multipletextures.3mf at commit 665e20dc4d7777fd4c9702bca86a2d4028440337; separately BSD-2-Clause licensed geometry and texture sample. Original archive and complete source license retained as mesh_scene/3MF-SAMPLES-LICENSE.txt; exact source hashes and texture details in mesh_scene/README.md. https://github.com/3MFConsortium/3mf-samples/blob/665e20dc4d7777fd4c9702bca86a2d4028440337/examples/material/multipletextures.3mf",
+      "title": "3MF Consortium original model with two JPEG textures"
+    },
+    {
+      "extension": "3mf",
+      "id": "3mf-lib3mf-escaped-textures",
+      "input": "mesh_scene/3mf-lib3mf-escaped-textures.3mf",
+      "kind": "model",
+      "provenance": "Unmodified 3MFConsortium/lib3mf Tests/TestFiles/Mixed/texturecube_with_EscapeCharacters.3mf at commit bfb5df00057fae7e306c511fa7c6ff476dfaad28; separately BSD-2-Clause licensed geometry and texture sample. Original archive and complete source license retained as mesh_scene/LIB3MF-LICENSE.txt; exact source hashes and texture details in mesh_scene/README.md. https://github.com/3MFConsortium/lib3mf/blob/bfb5df00057fae7e306c511fa7c6ff476dfaad28/Tests/TestFiles/Mixed/texturecube_with_EscapeCharacters.3mf",
+      "title": "3MF Consortium six-texture cube with escaped paths"
+    },
+    {
+      "extension": "3mf",
+      "id": "3mf-lib3mf-png-texture",
+      "input": "mesh_scene/3mf-lib3mf-png-texture.3mf",
+      "kind": "model",
+      "provenance": "Unmodified 3MFConsortium/lib3mf Tests/TestFiles/CPP_UnitTests/Texture.3mf at commit bfb5df00057fae7e306c511fa7c6ff476dfaad28; separately BSD-2-Clause licensed geometry and texture sample. Original archive and complete source license retained as mesh_scene/LIB3MF-LICENSE.txt; exact source hashes and texture details in mesh_scene/README.md. https://github.com/3MFConsortium/lib3mf/blob/bfb5df00057fae7e306c511fa7c6ff476dfaad28/Tests/TestFiles/CPP_UnitTests/Texture.3mf",
+      "title": "3MF Consortium original model with a PNG texture"
+    },
+    {
+      "extension": "3mf",
       "id": "3mf-orca-badge",
       "input": "mesh_scene/3mf-orca-badge.3mf",
       "kind": "model",
@@ -151,6 +175,54 @@
       "kind": "saved-preview",
       "provenance": "Original MIT-licensed carrier fixture. Minimal 17-byte Blender header and TEST RGBA block, without model geometry; exercises new 32-byte block layout.",
       "title": "Blender format-1 thumbnail carrier"
+    },
+    {
+      "extension": "blend",
+      "id": "blend-geometry-cube-278-no-thumbnail",
+      "input": "native_geometry/blend/cube-278-no-thumbnail.blend",
+      "kind": "native-geometry",
+      "provenance": "Fresh geometry render; no saved image is consulted. Licensed fixture provenance and any thumbnail-removal derivation: tests/fixtures/native_geometry/blend/README.md and manifest.json. Original license texts are retained alongside the inputs.",
+      "title": "Blender 2.78 mesh, thumbnail block removed"
+    },
+    {
+      "extension": "blend",
+      "id": "blend-geometry-default-252-no-thumbnail",
+      "input": "native_geometry/blend/default-252-no-thumbnail.blend",
+      "kind": "native-geometry",
+      "provenance": "Fresh geometry render; no saved image is consulted. Licensed fixture provenance and any thumbnail-removal derivation: tests/fixtures/native_geometry/blend/README.md and manifest.json. Original license texts are retained alongside the inputs.",
+      "title": "Blender 2.52 default mesh, originally saved without an image"
+    },
+    {
+      "extension": "blend",
+      "id": "blend-geometry-hierarchy-502-no-thumbnail",
+      "input": "native_geometry/blend/hierarchy-502-no-thumbnail.blend",
+      "kind": "native-geometry",
+      "provenance": "Fresh geometry render; no saved image is consulted. Licensed fixture provenance and any thumbnail-removal derivation: tests/fixtures/native_geometry/blend/README.md and manifest.json. Original license texts are retained alongside the inputs.",
+      "title": "Blender 5.2 hierarchy and collection instances, thumbnail block removed"
+    },
+    {
+      "extension": "blend",
+      "id": "blend-geometry-loose-291-no-thumbnail",
+      "input": "native_geometry/blend/loose-291-no-thumbnail.blend",
+      "kind": "native-geometry",
+      "provenance": "Fresh geometry render; no saved image is consulted. Licensed fixture provenance and any thumbnail-removal derivation: tests/fixtures/native_geometry/blend/README.md and manifest.json. Original license texts are retained alongside the inputs.",
+      "title": "Blender 2.91 loose edges and points, thumbnail block removed"
+    },
+    {
+      "extension": "blend",
+      "id": "blend-geometry-mesh-280-no-thumbnail",
+      "input": "native_geometry/blend/mesh-280-no-thumbnail.blend",
+      "kind": "native-geometry",
+      "provenance": "Fresh geometry render; no saved image is consulted. Licensed fixture provenance and any thumbnail-removal derivation: tests/fixtures/native_geometry/blend/README.md and manifest.json. Original license texts are retained alongside the inputs.",
+      "title": "Blender 2.80 mesh attributes, thumbnail block removed"
+    },
+    {
+      "extension": "blend",
+      "id": "blend-geometry-shared-278-no-thumbnail",
+      "input": "native_geometry/blend/shared-278-no-thumbnail.blend",
+      "kind": "native-geometry",
+      "provenance": "Fresh geometry render; no saved image is consulted. Licensed fixture provenance and any thumbnail-removal derivation: tests/fixtures/native_geometry/blend/README.md and manifest.json. Original license texts are retained alongside the inputs.",
+      "title": "Blender 2.78 shared meshes and placements, thumbnail block removed"
     },
     {
       "extension": "bmp",
@@ -293,7 +365,7 @@
       "id": "dwg-authored-dib-saved-thumbnail",
       "input": "saved_previews/dwg-authored-dib-saved-thumbnail.dwg",
       "kind": "saved-preview",
-      "provenance": "Original MIT-licensed carrier fixture. Minimal AC1032 header with addressed, sentinel-delimited preview table and type-2 palette DIB. Contains no drawing geometry; genuine R13–2018 DWG qualification remains recorded separately in docs/research/blend-dwg-previews.json.",
+      "provenance": "Original MIT-licensed carrier fixture. Minimal AC1032 header with addressed, sentinel-delimited preview table and type-2 palette DIB. Contains no drawing geometry; genuine R13\u20132018 DWG qualification remains recorded separately in docs/research/blend-dwg-previews.json.",
       "title": "DWG palette DIB saved-thumbnail carrier"
     },
     {
@@ -301,8 +373,48 @@
       "id": "dwg-authored-png-saved-thumbnail",
       "input": "saved_previews/dwg-authored-png-saved-thumbnail.dwg",
       "kind": "saved-preview",
-      "provenance": "Original MIT-licensed carrier fixture. Minimal AC1032 header with addressed, sentinel-delimited preview table and type-6 RGBA PNG. Contains no drawing geometry; genuine R13–2018 DWG qualification remains recorded separately in docs/research/blend-dwg-previews.json.",
+      "provenance": "Original MIT-licensed carrier fixture. Minimal AC1032 header with addressed, sentinel-delimited preview table and type-6 RGBA PNG. Contains no drawing geometry; genuine R13\u20132018 DWG qualification remains recorded separately in docs/research/blend-dwg-previews.json.",
       "title": "DWG PNG saved-thumbnail carrier"
+    },
+    {
+      "extension": "dwg",
+      "id": "dwg-geometry-line-2000",
+      "input": "native_geometry/dwg/line-2000.dwg",
+      "kind": "native-geometry",
+      "provenance": "Fresh geometry render; no saved image is consulted. Licensed fixture provenance and any thumbnail-removal derivation: tests/fixtures/native_geometry/dwg/README.md and provenance.json. Original license texts are retained alongside the inputs.",
+      "title": "AutoCAD 2000 native line records"
+    },
+    {
+      "extension": "dwg",
+      "id": "dwg-geometry-line-2004",
+      "input": "native_geometry/dwg/line-2004.dwg",
+      "kind": "native-geometry",
+      "provenance": "Fresh geometry render; no saved image is consulted. Licensed fixture provenance and any thumbnail-removal derivation: tests/fixtures/native_geometry/dwg/README.md and provenance.json. Original license texts are retained alongside the inputs.",
+      "title": "AutoCAD 2004 native line records"
+    },
+    {
+      "extension": "dwg",
+      "id": "dwg-geometry-line-2007",
+      "input": "native_geometry/dwg/line-2007.dwg",
+      "kind": "native-geometry",
+      "provenance": "Fresh geometry render; no saved image is consulted. Licensed fixture provenance and any thumbnail-removal derivation: tests/fixtures/native_geometry/dwg/README.md and provenance.json. Original license texts are retained alongside the inputs.",
+      "title": "AutoCAD 2007 native line records"
+    },
+    {
+      "extension": "dwg",
+      "id": "dwg-geometry-line-2013",
+      "input": "native_geometry/dwg/line-2013.dwg",
+      "kind": "native-geometry",
+      "provenance": "Fresh geometry render; no saved image is consulted. Licensed fixture provenance and any thumbnail-removal derivation: tests/fixtures/native_geometry/dwg/README.md and provenance.json. Original license texts are retained alongside the inputs.",
+      "title": "AutoCAD 2013 native line records"
+    },
+    {
+      "extension": "dwg",
+      "id": "dwg-geometry-line-2018",
+      "input": "native_geometry/dwg/line-2018.dwg",
+      "kind": "native-geometry",
+      "provenance": "Fresh geometry render; no saved image is consulted. Licensed fixture provenance and any thumbnail-removal derivation: tests/fixtures/native_geometry/dwg/README.md and provenance.json. Original license texts are retained alongside the inputs.",
+      "title": "AutoCAD 2018 native line, originally saved without an image"
     },
     {
       "extension": "dxf",
@@ -650,6 +762,14 @@
     },
     {
       "extension": "lbrn",
+      "id": "lightburn-geometry-classic-geometry",
+      "input": "native_geometry/lightburn/classic-geometry.lbrn",
+      "kind": "native-geometry",
+      "provenance": "Fresh geometry render; no saved image is consulted. Licensed fixture provenance and any thumbnail-removal derivation: tests/fixtures/native_geometry/lightburn/README.md and provenance.json. Original license texts are retained alongside the inputs.",
+      "title": "LightBurn classic Beziers and transformed groups, no thumbnail"
+    },
+    {
+      "extension": "lbrn",
       "id": "lightburn-legacy-saved-thumbnail",
       "input": "saved_previews/lightburn-legacy-saved-thumbnail.lbrn",
       "kind": "saved-preview",
@@ -663,6 +783,70 @@
       "kind": "saved-preview",
       "provenance": "Unmodified tscircuit/lbrnts tests/assets/printable_area_jig.lbrn2, commit d21a7b29354cd782cabf533b1b8f0ade6a11c7dd; MIT, Copyright (c) 2025 tscircuit Inc.; license retained in saved_previews/LBRNTS-LICENSE.txt. Extracted saved PNG, not regenerated geometry. https://github.com/tscircuit/lbrnts/blob/d21a7b29354cd782cabf533b1b8f0ade6a11c7dd/tests/assets/printable_area_jig.lbrn2",
       "title": "LightBurn 1.4.03 saved jig thumbnail"
+    },
+    {
+      "extension": "lbrn2",
+      "id": "lightburn-geometry-board-with-soldermask-only",
+      "input": "native_geometry/lightburn/board-with-soldermask-only.lbrn2",
+      "kind": "native-geometry",
+      "provenance": "Fresh geometry render; no saved image is consulted. Licensed fixture provenance and any thumbnail-removal derivation: tests/fixtures/native_geometry/lightburn/README.md and provenance.json. Original license texts are retained alongside the inputs.",
+      "title": "LightBurn generated PCB outlines, no thumbnail"
+    },
+    {
+      "extension": "lbrn2",
+      "id": "lightburn-geometry-butterfly-vectorized",
+      "input": "native_geometry/lightburn/butterfly_vectorized.lbrn2",
+      "kind": "native-geometry",
+      "provenance": "Fresh geometry render; no saved image is consulted. Licensed fixture provenance and any thumbnail-removal derivation: tests/fixtures/native_geometry/lightburn/README.md and provenance.json. Original license texts are retained alongside the inputs.",
+      "title": "LightBurn vectorized butterfly, no thumbnail"
+    },
+    {
+      "extension": "lbrn2",
+      "id": "lightburn-geometry-circle",
+      "input": "native_geometry/lightburn/circle.lbrn2",
+      "kind": "native-geometry",
+      "provenance": "Fresh geometry render; no saved image is consulted. Licensed fixture provenance and any thumbnail-removal derivation: tests/fixtures/native_geometry/lightburn/README.md and provenance.json. Original license texts are retained alongside the inputs.",
+      "title": "LightBurn native ellipse, no thumbnail"
+    },
+    {
+      "extension": "lbrn2",
+      "id": "lightburn-geometry-crucifix",
+      "input": "native_geometry/lightburn/crucifix.lbrn2",
+      "kind": "native-geometry",
+      "provenance": "Fresh geometry render; no saved image is consulted. Licensed fixture provenance and any thumbnail-removal derivation: tests/fixtures/native_geometry/lightburn/README.md and provenance.json. Original license texts are retained alongside the inputs.",
+      "title": "LightBurn four shared curved instances, no thumbnail"
+    },
+    {
+      "extension": "lbrn2",
+      "id": "lightburn-geometry-line",
+      "input": "native_geometry/lightburn/line.lbrn2",
+      "kind": "native-geometry",
+      "provenance": "Fresh geometry render; no saved image is consulted. Licensed fixture provenance and any thumbnail-removal derivation: tests/fixtures/native_geometry/lightburn/README.md and provenance.json. Original license texts are retained alongside the inputs.",
+      "title": "LightBurn native affine line, no thumbnail"
+    },
+    {
+      "extension": "lbrn2",
+      "id": "lightburn-geometry-repro04-motor-controller",
+      "input": "native_geometry/lightburn/repro04-motor-controller.lbrn2",
+      "kind": "native-geometry",
+      "provenance": "Fresh geometry render; no saved image is consulted. Licensed fixture provenance and any thumbnail-removal derivation: tests/fixtures/native_geometry/lightburn/README.md and provenance.json. Original license texts are retained alongside the inputs.",
+      "title": "LightBurn 662-path PCB, no thumbnail"
+    },
+    {
+      "extension": "lbrn2",
+      "id": "lightburn-geometry-rings",
+      "input": "native_geometry/lightburn/rings.lbrn2",
+      "kind": "native-geometry",
+      "provenance": "Fresh geometry render; no saved image is consulted. Licensed fixture provenance and any thumbnail-removal derivation: tests/fixtures/native_geometry/lightburn/README.md and provenance.json. Original license texts are retained alongside the inputs.",
+      "title": "LightBurn shared curved paths and groups, no thumbnail"
+    },
+    {
+      "extension": "lbrn2",
+      "id": "lightburn-geometry-square",
+      "input": "native_geometry/lightburn/square.lbrn2",
+      "kind": "native-geometry",
+      "provenance": "Fresh geometry render; no saved image is consulted. Licensed fixture provenance and any thumbnail-removal derivation: tests/fixtures/native_geometry/lightburn/README.md and provenance.json. Original license texts are retained alongside the inputs.",
+      "title": "LightBurn native rectangle, no thumbnail"
     },
     {
       "extension": "mdl",
