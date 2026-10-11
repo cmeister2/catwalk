@@ -261,7 +261,9 @@ pub(super) fn parse(bytes: &[u8]) -> Result<Scene> {
                 let values = reader.floats(count * 3, ty)?;
                 positions = Some(
                     values
-                        .chunks_exact(3)
+                        .as_chunks::<3>()
+                        .0
+                        .iter()
                         .map(|p| Vec3::new(p[0], p[1], p[2]))
                         .collect::<Vec<_>>(),
                 );

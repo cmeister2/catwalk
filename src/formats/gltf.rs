@@ -430,7 +430,9 @@ fn primitive_data(
         let positions = if let Some(id) = attributes.get("POSITION") {
             decoded_attribute(&geometry, id, accessor.clone())?
                 .values
-                .chunks_exact(3)
+                .as_chunks::<3>()
+                .0
+                .iter()
                 .map(|v| deform::position_vector([v[0], v[1], v[2]], &accessor))
                 .collect()
         } else {
@@ -590,7 +592,7 @@ fn visit(node: ::gltf::Node<'_>, context: &LoadContext<'_, '_>, scene: &mut Scen
                     if indices.len() % 3 != 0 {
                         return Err("glTF triangle index count is not a multiple of three".into());
                     }
-                    for face in indices.chunks_exact(3) {
+                    for face in indices.as_chunks::<3>().0.iter() {
                         add_triangle([face[0], face[1], face[2]])?;
                     }
                 }
@@ -634,7 +636,12 @@ fn visit(node: ::gltf::Node<'_>, context: &LoadContext<'_, '_>, scene: &mut Scen
                             if !indices.len().is_multiple_of(2) {
                                 return Err("glTF line index count is not a multiple of two".into());
                             }
-                            indices.chunks_exact(2).map(|v| [v[0], v[1]]).collect()
+                            indices
+                                .as_chunks::<2>()
+                                .0
+                                .iter()
+                                .map(|v| [v[0], v[1]])
+                                .collect()
                         }
                         _ => {
                             let mut edges: Vec<_> =
@@ -708,7 +715,9 @@ mod tests {
         assert_eq!(scene.triangles.len(), decoded.faces.as_ref().unwrap().len());
         let expected = positions
             .values
-            .chunks_exact(3)
+            .as_chunks::<3>()
+            .0
+            .iter()
             .map(|v| Vec3::new(v[0] + 10., -v[2] - 30., v[1] + 20.))
             .collect::<Vec<_>>();
         assert!(

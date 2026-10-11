@@ -39,8 +39,8 @@ pub(super) fn normalize(data: &[u8], bmp: bool, started: Instant) -> Result<Opti
         } else {
             bytes(header, 40, 16)?
         };
-        for mask in values.chunks_exact(4) {
-            masks.push(u32::from_le_bytes(mask.try_into()?));
+        for mask in values.as_chunks::<4>().0.iter() {
+            masks.push(u32::from_le_bytes(*mask));
         }
     } else if depth == 16 {
         masks = vec![0x7c00, 0x03e0, 0x001f];
@@ -57,7 +57,11 @@ pub(super) fn normalize(data: &[u8], bmp: bool, started: Instant) -> Result<Opti
         if colors == 0 || colors > 1 << depth {
             return Err("invalid Inventor bitmap palette size".into());
         }
-        for color in bytes(data, pixel_offset, colors * 4)?.chunks_exact(4) {
+        for color in bytes(data, pixel_offset, colors * 4)?
+            .as_chunks::<4>()
+            .0
+            .iter()
+        {
             palette.push([color[2], color[1], color[0], 255]);
         }
     } else if colors > data.len().saturating_sub(pixel_offset) / 4 {

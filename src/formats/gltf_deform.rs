@@ -177,7 +177,7 @@ pub(super) fn read_influences(
         {
             let decoded = decoded_attribute(geometry, id, joint_accessor)?;
             let mut joints = Vec::with_capacity(count);
-            for values in decoded.values.chunks_exact(4) {
+            for values in decoded.values.as_chunks::<4>().0.iter() {
                 if values
                     .iter()
                     .any(|v| !v.is_finite() || *v < 0. || *v > u16::MAX as f64 || v.fract() != 0.)
@@ -204,7 +204,9 @@ pub(super) fn read_influences(
             };
             decoded_attribute(geometry, id, weight_accessor)?
                 .values
-                .chunks_exact(4)
+                .as_chunks::<4>()
+                .0
+                .iter()
                 .map(|v| std::array::from_fn(|i| v[i] / scale))
                 .collect()
         } else {
@@ -542,13 +544,17 @@ mod tests {
             if kind == "VEC3" {
                 let minimum: [f32; 3] = std::array::from_fn(|i| {
                     values
-                        .chunks_exact(3)
+                        .as_chunks::<3>()
+                        .0
+                        .iter()
                         .map(|v| v[i])
                         .fold(f32::INFINITY, f32::min)
                 });
                 let maximum: [f32; 3] = std::array::from_fn(|i| {
                     values
-                        .chunks_exact(3)
+                        .as_chunks::<3>()
+                        .0
+                        .iter()
                         .map(|v| v[i])
                         .fold(f32::NEG_INFINITY, f32::max)
                 });

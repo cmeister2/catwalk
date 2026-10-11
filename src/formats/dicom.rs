@@ -88,8 +88,10 @@ fn rle_frame(
         return Err("DICOM RLE segment count differs from pixel layout".into());
     }
     let mut offsets: Vec<usize> = fragment[4..4 + number * 4]
-        .chunks_exact(4)
-        .map(|b| u32::from_le_bytes(b.try_into().unwrap()) as usize)
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|b| u32::from_le_bytes(*b) as usize)
         .collect();
     offsets.push(fragment.len());
     if offsets[0] < 64 || offsets.windows(2).any(|p| p[0] >= p[1]) {

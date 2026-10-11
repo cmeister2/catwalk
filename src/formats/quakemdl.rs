@@ -124,7 +124,9 @@ fn parse(bytes: &[u8]) -> Result<Scene> {
             let frame = input.take(frame_bytes)?;
             if first.is_none() {
                 let positions: Vec<_> = frame[24..]
-                    .chunks_exact(4)
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
                     .map(|v| {
                         Vec3::new(
                             v[0] as f64 * scale.x + origin.x,

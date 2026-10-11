@@ -26,7 +26,8 @@ impl std::fmt::Display for NoSavedPreview {
 impl std::error::Error for NoSavedPreview {}
 
 /// Return the saved image at its original size, or `None` when absent.
-/// Malformed data and unsupported versions return an error.
+/// Inventor also returns `None` for a complete unsupported image carrier,
+/// while malformed data and unsupported document versions return an error.
 pub fn extract(path: &Path) -> Result<Option<RgbaImage>> {
     match formats::extension(path)?.as_str() {
         "ipt" | "iam" => inventor::extract(path),

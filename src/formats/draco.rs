@@ -235,7 +235,9 @@ pub(super) fn decode(bytes: &[u8]) -> Result<Scene> {
     }
     let positions: Vec<_> = positions
         .values
-        .chunks_exact(3)
+        .as_chunks::<3>()
+        .0
+        .iter()
         .map(|v| Vec3::new(v[0], v[1], v[2]))
         .collect();
     let colors = decoded.semantic_attribute(GeometryAttributeType::Color)?;

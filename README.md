@@ -52,7 +52,7 @@ fn main() -> catwalk::Result<()> {
 
 `formats::load` returns triangles, points and line segments in a `scene::Scene`. Applications can supply their own scene to `render::render` without writing a model file. `write_png` accepts any `std::io::Write`, including an in-memory buffer or stdout.
 
-`saved_preview::extract` returns `Result<Option<RgbaImage>>` at the saved image's original dimensions: `None` means an absent preview, while errors identify malformed data or an unsupported carrier/version. `saved_preview::inventor::extract_png` preserves native PNG bit depth and strips ancillary metadata. Normal `thumbnail` output fits the saved image onto an RGBA8 canvas.
+`saved_preview::extract` returns `Result<Option<RgbaImage>>` at the saved image's original dimensions: `None` means no supported saved image. Inventor returns `None` for complete unsupported image encodings; malformed data errors. Other readers reject unsupported document versions and carriers. `saved_preview::inventor::extract_png` preserves native PNG bit depth and strips ancillary metadata. Normal `thumbnail` output fits the saved image onto an RGBA8 canvas.
 
 Saved-preview qualification:
 

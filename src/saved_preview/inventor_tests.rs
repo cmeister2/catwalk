@@ -387,3 +387,73 @@ fn malformed_properties_masks_and_container_limits_fail_without_changing_source(
     }
     assert!(bitmap::normalize(&dib, false, Instant::now()).is_err());
 }
+
+#[test]
+fn original_selected_fat_links_and_declared_lengths_are_validated_before_repair() {
+    let mut properties = property_set(&png(2, 2), NATIVE_SUMMARY, 17, 3);
+    properties.resize(5000, 0);
+    let valid = compound(cfb::Version::V3, &[("/\u{5}summary", &properties)]);
+    assert!(run(&valid, "valid-chain").unwrap().is_some());
+    let fat_start = (u32_le(&valid, 76).unwrap() as usize + 1) * 512;
+    let directory_start = (u32_le(&valid, 48).unwrap() as usize + 1) * 512;
+    let stream_entry = directory_start + 128;
+    let mut id = u32_le(&valid, stream_entry + 116).unwrap();
+    loop {
+        let next = u32_le(&valid, fat_start + id as usize * 4).unwrap();
+        if next == u32::MAX - 1 {
+            break;
+        }
+        id = next;
+    }
+    let mut outside = valid.clone();
+    let invalid = (outside.len() / 512 + 2) as u32;
+    outside[fat_start + id as usize * 4..fat_start + id as usize * 4 + 4]
+        .copy_from_slice(&invalid.to_le_bytes());
+    assert!(
+        run(&outside, "outside-chain")
+            .unwrap_err()
+            .to_string()
+            .contains("outside")
+    );
+    let mut wrong_size = valid.clone();
+    wrong_size[stream_entry + 120..stream_entry + 124].copy_from_slice(&4096_u32.to_le_bytes());
+    assert!(
+        run(&wrong_size, "wrong-chain-size")
+            .unwrap_err()
+            .to_string()
+            .contains("declared size")
+    );
+    for length in 0..4 {
+        let properties = property_set(&vec![0; length], NATIVE_SUMMARY, 17, 3);
+        assert!(
+            run(
+                &compound(cfb::Version::V3, &[("/\u{5}truncated", &properties)]),
+                &format!("short-{length}")
+            )
+            .is_err()
+        );
+    }
+    let properties = property_set(&[0; 4], NATIVE_SUMMARY, 17, 3);
+    assert!(
+        run(
+            &compound(cfb::Version::V3, &[("/\u{5}unknown", &properties)]),
+            "complete-unknown"
+        )
+        .unwrap()
+        .is_none()
+    );
+    let mut other = property_set(&png(2, 2), [0; 16], 17, 3);
+    other.resize(128, 0);
+    let valid = compound(cfb::Version::V3, &[("/\u{5}other", &other)]);
+    assert!(run(&valid, "unknown-valid-mini").unwrap().is_none());
+    let directory = (u32_le(&valid, 48).unwrap() as usize + 1) * 512;
+    let mut inconsistent = valid;
+    inconsistent[directory + 128 + 120..directory + 128 + 124]
+        .copy_from_slice(&64_u32.to_le_bytes());
+    assert!(
+        run(&inconsistent, "unknown-invalid-mini")
+            .unwrap_err()
+            .to_string()
+            .contains("declared size")
+    );
+}

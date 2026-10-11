@@ -269,7 +269,7 @@ impl Canvas {
         let mut pixels = Vec::new();
         pixels.try_reserve_exact(count * 4)?;
         pixels.resize(count * 4, 0);
-        for pixel in pixels.chunks_exact_mut(4) {
+        for pixel in pixels.as_chunks_mut::<4>().0.iter_mut() {
             pixel.copy_from_slice(&background);
         }
         let mut depths = Vec::new();

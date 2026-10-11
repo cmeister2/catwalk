@@ -227,7 +227,7 @@ pub(super) fn triangulate_rings(rings: &[Vec<Vec3>]) -> Result<Vec<[Vec3; 3]>> {
             };
             flat.extend_from_slice(&xy);
         }
-        let xy: Vec<_> = flat[start..].chunks_exact(2).collect();
+        let xy: Vec<_> = flat[start..].as_chunks::<2>().0.iter().collect();
         let area = (0..xy.len())
             .map(|k| xy[k][0] * xy[(k + 1) % xy.len()][1] - xy[k][1] * xy[(k + 1) % xy.len()][0])
             .sum::<f64>()
@@ -250,7 +250,7 @@ pub(super) fn triangulate_rings(rings: &[Vec<Vec3>]) -> Result<Vec<[Vec3; 3]>> {
         .map_err(|e| error(format!("cannot triangulate CityGML polygon: {e}")))?;
     let mut triangles = Vec::new();
     let mut area = 0.;
-    for indices in indices.chunks_exact(3) {
+    for indices in indices.as_chunks::<3>().0.iter() {
         let mut triangle = [
             positions[indices[0]],
             positions[indices[1]],

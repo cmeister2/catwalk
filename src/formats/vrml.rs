@@ -318,7 +318,9 @@ fn vectors(node: &Node, name: &str) -> Result<Vec<Vec3>> {
         return Err(error("VRML vector list needs complete triples"));
     }
     Ok(values
-        .chunks_exact(3)
+        .as_chunks::<3>()
+        .0
+        .iter()
         .map(|p| Vec3::new(p[0], p[1], p[2]))
         .collect())
 }

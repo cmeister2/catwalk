@@ -244,7 +244,9 @@ impl Importer {
             ));
         }
         let cross: Vec<_> = cross
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|v| Vec3::new(v[0], 0., v[1]))
             .collect();
         let spine = if node.fields.contains_key("spine") {
@@ -289,7 +291,9 @@ impl Importer {
             return Err(error("VRML extrusion has too few orientation values"));
         }
         let rotations: Vec<_> = orientations
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .take(if rotation_count == 1 { 1 } else { spine.len() })
             .map(|r| axis_rotation(Vec3::new(r[0], r[1], r[2]), r[3]))
             .collect::<Result<_>>()?;

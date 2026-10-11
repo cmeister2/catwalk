@@ -40,6 +40,9 @@ jobs:
       - name: Test
         if: runner.os != 'Linux'
         run: cargo test --all-targets --locked
+      - name: Build gallery from tested images
+        if: runner.os == 'Linux'
+        run: cargo run --locked --example gallery -- --report target/format-snapshots --output target/gallery
       - name: Retain snapshot comparisons
         if: always()
         uses: actions/upload-artifact@v4
@@ -47,6 +50,13 @@ jobs:
           name: format-snapshots-${{ runner.os }}
           path: target/format-snapshots
           if-no-files-found: warn
+          retention-days: 14
+      - name: Retain gallery preview
+        if: runner.os == 'Linux' && success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: thumbnail-gallery
+          path: target/gallery
           retention-days: 14
 
   gallery:
@@ -56,24 +66,11 @@ jobs:
       contents: read
       pages: read
     steps:
-      - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: catwalk-tests
-      - name: Download tested Linux images
+      - name: Download verified Linux gallery
         uses: actions/download-artifact@v4
-        with:
-          name: format-snapshots-Linux
-          path: target/format-snapshots
-      - name: Build example gallery
-        run: cargo run --locked --example gallery -- --report target/format-snapshots --output target/gallery
-      - name: Retain gallery preview
-        uses: actions/upload-artifact@v4
         with:
           name: thumbnail-gallery
           path: target/gallery
-          retention-days: 14
       - name: Configure GitHub Pages
         if: github.event.repository.private == false && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         uses: actions/configure-pages@v5

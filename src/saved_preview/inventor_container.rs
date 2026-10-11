@@ -1,6 +1,6 @@
 use super::{Result, bytes, check_time, u16_le, u32_le};
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fs::File,
     io::{self, Read, Seek, SeekFrom},
     time::Instant,
@@ -9,6 +9,70 @@ use std::{
 const FREE: u32 = u32::MAX;
 const END: u32 = u32::MAX - 1;
 const MAX_DIRECTORY: usize = 4 * 1024 * 1024;
+
+pub(super) struct Metadata {
+    fat: Vec<u32>,
+    mini_fat: Vec<u32>,
+    streams: HashMap<String, (u32, u64)>,
+    root_start: u32,
+    root_size: u64,
+    sector_size: usize,
+    sector_count: usize,
+}
+
+impl Metadata {
+    fn chain(&self, start: u32, size: u64, mini: bool, limit: u64) -> Result<()> {
+        let unit = if mini { 64 } else { self.sector_size as u64 };
+        let table = if mini { &self.mini_fat } else { &self.fat };
+        let mut seen = HashSet::new();
+        let mut current = start;
+        let mut count = 0_u64;
+        while current != END {
+            if !seen.insert(current) {
+                return Err("cyclic Inventor selected-stream sector chain".into());
+            }
+            count += 1;
+            if count * unit > limit + unit - 1 {
+                return Err("Inventor selected-stream chain exceeds its resource limit".into());
+            }
+            if mini {
+                if (u64::from(current) + 1) * 64 > self.root_size {
+                    return Err("Inventor mini sector lies outside the root mini-stream".into());
+                }
+            } else if current as usize >= self.sector_count {
+                return Err("Inventor selected-stream sector lies outside the source".into());
+            }
+            current = *table
+                .get(current as usize)
+                .ok_or("Inventor selected-stream sector lies outside its FAT")?;
+        }
+        if count != size.div_ceil(unit) {
+            return Err(
+                "Inventor selected-stream chain length does not match its declared size".into(),
+            );
+        }
+        Ok(())
+    }
+
+    pub(super) fn validate_stream(&self, name: &str, size: u64) -> Result<()> {
+        let &(start, original_size) = self
+            .streams
+            .get(name)
+            .ok_or("Inventor summary is absent from original root metadata")?;
+        if original_size != size {
+            return Err("Inventor summary stream metadata changed during parsing".into());
+        }
+        if size == 0 {
+            return Ok(());
+        }
+        if size < 4096 {
+            self.chain(self.root_start, self.root_size, false, 64 * 1024 * 1024)?;
+            self.chain(start, size, true, super::MAX_BYTES as u64)
+        } else {
+            self.chain(start, size, false, super::MAX_BYTES as u64)
+        }
+    }
+}
 
 pub(super) struct BudgetFile {
     source: File,
@@ -59,11 +123,11 @@ fn sector(source: &mut BudgetFile, id: u32, count: usize, size: usize) -> Result
 
 // Bound metadata before cfb allocates its complete FAT/directory tables. It then
 // performs the standard compound-file structural checks during opening.
-pub(super) fn preflight(source: &mut BudgetFile, source_size: u64) -> Result<bool> {
+pub(super) fn preflight(source: &mut BudgetFile, source_size: u64) -> Result<Option<Metadata>> {
     let mut header = [0; 512];
     source.read_exact(&mut header)?;
     if &header[..8] != b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" {
-        return Ok(false);
+        return Ok(None);
     }
     let major = u16_le(&header, 26)?;
     let shift = u16_le(&header, 30)?;
@@ -94,8 +158,10 @@ pub(super) fn preflight(source: &mut BudgetFile, source_size: u64) -> Result<boo
         return Err("Inventor DIFAT or miniFAT exceeds the 4 MiB limit".into());
     }
     let mut fat_sectors = header[76..512]
-        .chunks_exact(4)
-        .map(|value| u32::from_le_bytes(value.try_into().unwrap()))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|value| u32::from_le_bytes(*value))
         .filter(|&id| id != FREE)
         .collect::<Vec<_>>();
     let mut difat = u32_le(&header, 68)?;
@@ -105,8 +171,8 @@ pub(super) fn preflight(source: &mut BudgetFile, source_size: u64) -> Result<boo
             return Err("cyclic Inventor DIFAT".into());
         }
         let data = sector(source, difat, sector_count, sector_size)?;
-        for value in data[..sector_size - 4].chunks_exact(4) {
-            let id = u32::from_le_bytes(value.try_into()?);
+        for value in data[..sector_size - 4].as_chunks::<4>().0.iter() {
+            let id = u32::from_le_bytes(*value);
             if id != FREE {
                 fat_sectors.push(id);
             }
@@ -129,11 +195,16 @@ pub(super) fn preflight(source: &mut BudgetFile, source_size: u64) -> Result<boo
     for id in fat_sectors {
         let data = sector(source, id, sector_count, sector_size)?;
         fat.extend(
-            data.chunks_exact(4)
-                .map(|value| u32::from_le_bytes(value.try_into().unwrap())),
+            data.as_chunks::<4>()
+                .0
+                .iter()
+                .map(|value| u32::from_le_bytes(*value)),
         );
     }
     let mut directory = u32_le(&header, 48)?;
+    let mut directory_bytes = Vec::new();
+    let mut root_start = END;
+    let mut root_size = 0;
     let mut seen = HashSet::new();
     let mut count = 0;
     while directory != END {
@@ -149,7 +220,8 @@ pub(super) fn preflight(source: &mut BudgetFile, source_size: u64) -> Result<boo
             if data[66] != 5 {
                 return Err("Inventor compound file has no root storage".into());
             }
-            let root_size = if major == 3 {
+            root_start = u32_le(&data, 116)?;
+            root_size = if major == 3 {
                 u64::from(u32_le(&data, 120)?)
             } else {
                 u64::from_le_bytes(bytes(&data, 120, 8)?.try_into()?)
@@ -158,6 +230,7 @@ pub(super) fn preflight(source: &mut BudgetFile, source_size: u64) -> Result<boo
                 return Err("Inventor root mini-stream exceeds the 64 MiB limit".into());
             }
         }
+        directory_bytes.extend_from_slice(&data);
         directory = *fat
             .get(directory as usize)
             .ok_or("Inventor directory points outside FAT")?;
@@ -165,6 +238,7 @@ pub(super) fn preflight(source: &mut BudgetFile, source_size: u64) -> Result<boo
     // Permissive cfb opening reads the actual miniFAT chain, independently of
     // its declared length. Bound that chain before its entry vector allocates.
     let mut mini = u32_le(&header, 60)?;
+    let mut mini_fat = Vec::new();
     let mut seen = HashSet::new();
     let mut count = 0;
     while mini != END {
@@ -178,6 +252,13 @@ pub(super) fn preflight(source: &mut BudgetFile, source_size: u64) -> Result<boo
         if mini as usize >= sector_count {
             return Err("Inventor miniFAT points outside the source".into());
         }
+        let data = sector(source, mini, sector_count, sector_size)?;
+        mini_fat.extend(
+            data.as_chunks::<4>()
+                .0
+                .iter()
+                .map(|value| u32::from_le_bytes(*value)),
+        );
         mini = *fat
             .get(mini as usize)
             .ok_or("Inventor miniFAT points outside FAT")?;
@@ -185,5 +266,53 @@ pub(super) fn preflight(source: &mut BudgetFile, source_size: u64) -> Result<boo
     if count != mini_count {
         return Err("Inventor miniFAT chain length does not match its header".into());
     }
-    Ok(true)
+    let mut streams = HashMap::new();
+    let mut pending = vec![u32_le(&directory_bytes, 76)?];
+    let mut seen = HashSet::new();
+    while let Some(id) = pending.pop() {
+        if id == FREE {
+            continue;
+        }
+        if !seen.insert(id) {
+            return Err("cyclic Inventor root directory tree".into());
+        }
+        let entry = bytes(&directory_bytes, id as usize * 128, 128)?;
+        if ![1, 2].contains(&entry[66]) {
+            return Err("invalid Inventor root directory child".into());
+        }
+        pending.push(u32_le(entry, 68)?);
+        pending.push(u32_le(entry, 72)?);
+        if entry[66] != 2 {
+            continue;
+        }
+        let name_size = usize::from(u16_le(entry, 64)?);
+        if !(2..=64).contains(&name_size)
+            || !name_size.is_multiple_of(2)
+            || bytes(entry, name_size - 2, 2)? != [0, 0]
+        {
+            return Err("invalid Inventor directory name".into());
+        }
+        let characters = bytes(entry, 0, name_size - 2)?
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|value| u16::from_le_bytes(*value))
+            .collect::<Vec<_>>();
+        let name = String::from_utf16(&characters)?;
+        let size = if major == 3 {
+            u64::from(u32_le(entry, 120)?)
+        } else {
+            u64::from_le_bytes(bytes(entry, 120, 8)?.try_into()?)
+        };
+        streams.insert(name, (u32_le(entry, 116)?, size));
+    }
+    Ok(Some(Metadata {
+        fat,
+        mini_fat,
+        streams,
+        root_start,
+        root_size,
+        sector_size,
+        sector_count,
+    }))
 }

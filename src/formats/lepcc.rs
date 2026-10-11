@@ -320,15 +320,11 @@ pub(super) fn rgb(data: &[u8], expected: usize) -> Result<Vec<[u8; 3]>> {
     }
     let mut colors = Vec::with_capacity(count);
     if palette_size == 0 {
-        for bytes in reader.take(count * 3)?.chunks_exact(3) {
-            colors.push(bytes.try_into()?);
+        for bytes in reader.take(count * 3)?.as_chunks::<3>().0.iter() {
+            colors.push(*bytes);
         }
     } else {
-        let palette: Vec<[u8; 3]> = reader
-            .take(palette_size * 3)?
-            .chunks_exact(3)
-            .map(|v| v.try_into().map_err(Into::into))
-            .collect::<Result<_>>()?;
+        let palette = reader.take(palette_size * 3)?.as_chunks::<3>().0.to_vec();
         let indices = match method {
             0 => reader.take(count)?.iter().map(|&n| n as usize).collect(),
             1 if palette_size == 1 => vec![0; count],
@@ -364,7 +360,9 @@ mod tests {
         // The reference encoder sorts by row then X; compare to original unsorted
         // double precision points with the published quantization error bounds.
         let expected: Vec<Vec3> = reference[4..4 + count * 24]
-            .chunks_exact(24)
+            .as_chunks::<24>()
+            .0
+            .iter()
             .map(|p| {
                 Vec3::new(
                     f64::from_le_bytes(p[..8].try_into().unwrap()),

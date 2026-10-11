@@ -1661,7 +1661,9 @@ impl ColorLayer {
             return Err("invalid FBX RGBA color array".into());
         }
         let values = colors
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|p| Vec3::new(p[0], p[1], p[2]))
             .collect();
         let indices = layer
@@ -1774,7 +1776,9 @@ fn mesh_positions(node: &Node) -> Result<Vec<Vec3>> {
         return Err("FBX mesh coordinates must be finite triples".into());
     }
     Ok(vertices
-        .chunks_exact(3)
+        .as_chunks::<3>()
+        .0
+        .iter()
         .map(|v| Vec3::new(v[0], v[1], v[2]))
         .collect())
 }

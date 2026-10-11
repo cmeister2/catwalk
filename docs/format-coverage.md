@@ -620,6 +620,10 @@ SLPK supports I3S PointCloud 1.6–1.9/2.0 packages, legacy and node-page hierar
 
 The Rust extractor selects root-document CFB/OLE v3/v4 summary property sets by FMTID, prefer the native Inventor summary over the legacy summary, and validate the PID-17 `VT_CF` image. Saved PNG and supported DIB/BMP forms normalize to PNG; the source design remains untouched. A usable legacy summary can rescue an unusable native summary. This follows the structured-storage thumbnail mechanism described by [Autodesk ADN](https://images.autodesk.com/apac_japan_main/files/3538256_API_Thumbnail.pdf) and [Microsoft typed property values](https://learn.microsoft.com/en-us/openspecs/windows_protocols/MS-OLEPS/f122b9d7-e5cf-4484-8466-83f6fd94b3cc).
 
+The [carrier documentation](research/autodesk-previews.json) records supported encodings and bounds. Portable fixtures exercise saved-image extraction; they do not establish every Inventor release.
+
+Ten Rust tests cover CFB v3/v4 regular/mini streams, native/legacy selection, distractors, PNG precision/transparency, supported bitmap depths, malformed carriers, original FAT chain integrity and limits. Actual legacy DIB/BMP specimens remain unqualified. `extract_png` preserves native PNG bit depth; common thumbnail output uses RGBA8. Rust extraction bounds input at 512 MiB, summary/image payloads and output at 8 MiB, decoded images at 64 MiB and axes at 4096 pixels, with a cooperative five-second budget. Directory and miniFAT metadata are limited to 4 MiB each and the root mini-stream to 64 MiB. Catwalk's original [carrier fixtures](../tests/fixtures/saved-previews/autodesk/README.md) contain saved images without Inventor CAD geometry.
+
 ## LightBurn
 
 **Extensions:** `.lbrn`, `.lbrn2`. **Status:** implemented saved-image extraction; qualified subset.

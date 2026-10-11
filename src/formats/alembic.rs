@@ -882,7 +882,9 @@ fn positions(p: &Property) -> Result<Vec<Vec3>> {
         return Err("Alembic coordinates are not triples".into());
     }
     Ok(values
-        .chunks_exact(3)
+        .as_chunks::<3>()
+        .0
+        .iter()
         .map(|v| Vec3::new(v[0], v[1], v[2]))
         .collect())
 }
@@ -1336,9 +1338,14 @@ mod tests {
                     }
                     if p.name == "P" {
                         let mut second = vec![0; 16];
-                        second.extend(sample.bytes.chunks_exact(8).flat_map(|b| {
-                            (f64::from_le_bytes(b.try_into().unwrap()) + 100.).to_le_bytes()
-                        }));
+                        second.extend(
+                            sample
+                                .bytes
+                                .as_chunks::<8>()
+                                .0
+                                .iter()
+                                .flat_map(|b| (f64::from_le_bytes(*b) + 100.).to_le_bytes()),
+                        );
                         records.push(self.data(&second));
                         if !scalar {
                             records.push(DATA);

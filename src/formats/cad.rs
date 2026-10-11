@@ -348,7 +348,7 @@ fn validate_iges(text: &str) -> Result<()> {
         }
     }
     let mut used = vec![false; parameters.len()];
-    for (i, pair) in directories.chunks_exact(2).enumerate() {
+    for (i, pair) in directories.as_chunks::<2>().0.iter().enumerate() {
         if parse_usize(&pair[0][..8])? != parse_usize(&pair[1][..8])? {
             return Err("IGES paired directory types differ".into());
         }
@@ -1179,7 +1179,7 @@ mod tests {
         let mut lines: Vec<String> = text.lines().map(str::to_owned).collect();
         let mut counts = [0usize; 4];
         for line in &lines {
-            if let Some(index) = [b'S', b'G', b'D', b'P']
+            if let Some(index) = b"SGDP"
                 .iter()
                 .position(|section| *section == line.as_bytes()[72])
             {

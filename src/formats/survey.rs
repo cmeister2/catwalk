@@ -646,7 +646,7 @@ mod tests {
             b.extend(v.to_le_bytes());
         }
         b.extend([0; 48]);
-        for label in [b'X', b'Y', b'Z'] {
+        for label in *b"XYZ" {
             b.push(label);
             b.extend([0; 31]);
         }

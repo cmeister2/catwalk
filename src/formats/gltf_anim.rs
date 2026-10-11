@@ -386,9 +386,9 @@ pub(super) fn first_pose(
             "weights" => pose.weights = Some(values[first..first + components].to_vec()),
             "rotation" => {
                 let mut selected = None;
-                for (i, key) in values.chunks_exact(4).enumerate() {
+                for (i, key) in values.as_chunks::<4>().0.iter().enumerate() {
                     if !cubic || i % 3 == 1 {
-                        let rotation = quaternion(key.try_into()?, output.data_type())?;
+                        let rotation = quaternion(*key, output.data_type())?;
                         if selected.is_none() {
                             selected = Some(rotation);
                         }

@@ -53,9 +53,9 @@ pub fn extract_png(path: &Path) -> Result<Option<Vec<u8>>> {
         return Err("Inventor source exceeds the 512 MiB extraction limit".into());
     }
     let mut source = container::BudgetFile::new(file, size, started);
-    if !container::preflight(&mut source, size)? {
+    let Some(metadata) = container::preflight(&mut source, size)? else {
         return Ok(None);
-    }
+    };
     source.seek(SeekFrom::Start(0))?;
     let mut compound = cfb::CompoundFile::open(source)?;
     let mut candidates = Vec::new();
@@ -66,6 +66,16 @@ pub fn extract_png(path: &Path) -> Result<Option<Vec<u8>>> {
         .collect::<Vec<_>>();
     for (path, size) in root_properties {
         check_time(started)?;
+        // Validate the complete mini-stream chain even when only its prefix
+        // is read to identify an unrelated property set.
+        if size < 4096 {
+            metadata.validate_stream(
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .ok_or("invalid Inventor property path")?,
+                size,
+            )?;
+        }
         let mut prefix = Vec::new();
         compound
             .open_stream(&path)?
@@ -83,6 +93,12 @@ pub fn extract_png(path: &Path) -> Result<Option<Vec<u8>>> {
             if size > MAX_BYTES as u64 {
                 return Err("Inventor summary stream exceeds the 8 MiB extraction limit".into());
             }
+            metadata.validate_stream(
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .ok_or("invalid Inventor summary path")?,
+                size,
+            )?;
             let mut data = Vec::new();
             compound
                 .open_stream(&path)?
@@ -234,7 +250,7 @@ fn normalize(clipboard: &[u8], started: Instant) -> Result<Option<Vec<u8>>> {
         normalize_png(data, started)?
     } else if data.starts_with(b"BM") {
         bitmap::normalize(data, true, started)?
-    } else if data.len() >= 4 && [40, 108, 124].contains(&u32_le(data, 0)?) {
+    } else if [40, 108, 124].contains(&u32_le(data, 0)?) {
         bitmap::normalize(data, false, started)?
     } else {
         return Ok(None);

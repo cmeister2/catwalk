@@ -233,7 +233,7 @@ fn stl(bytes: &[u8]) -> Result<Scene> {
                 return Err(err("too many STL triangles"));
             }
             let mut scene = Scene::default();
-            for record in bytes[84..].chunks_exact(50) {
+            for record in bytes[84..].as_chunks::<50>().0.iter() {
                 let mut vertices = [Vec3::default(); 3];
                 for (i, p) in vertices.iter_mut().enumerate() {
                     let offset = 12 + i * 12;
@@ -996,7 +996,7 @@ fn splat(bytes: &[u8]) -> Result<Scene> {
         return Err(err("invalid splat file length (expected 32-byte records)"));
     }
     let mut points = Vec::with_capacity(bytes.len() / 32);
-    for record in bytes.chunks_exact(32) {
+    for record in bytes.as_chunks::<32>().0.iter() {
         let position = Vec3::from(std::array::from_fn(|i| {
             let j = i * 4;
             f32::from_le_bytes([record[j], record[j + 1], record[j + 2], record[j + 3]])
