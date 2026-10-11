@@ -1,0 +1,4 @@
+# Preserve model assets and original license notices byte-for-byte on every platform.
+tests/fixtures/** -text
+# Snapshot baselines are exact image artifacts.
+tests/snapshots/** -text
