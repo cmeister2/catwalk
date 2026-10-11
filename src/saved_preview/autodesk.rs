@@ -1,4 +1,4 @@
-//! Qualified saved-preview research, deliberately separate from the model registry.
+//! Extract saved thumbnails from supported Fusion archive carriers.
 //!
 //! Fusion archive layout is observational rather than a published specification.
 //! Only the active design's exact preview carrier is selected; simulation assets,
@@ -31,7 +31,7 @@ const ACTIVE_MANIFEST: &str = "FusionAssetName[Active]/Manifest.dat";
 /// Qualified containers are single-disk ZIP32 with manifest tag `3-2-0-0`, an
 /// active Fusion asset manifest, and stored, Deflate, or Zstandard members.
 /// `None` denotes an absent active-design preview. Unsupported or malformed
-/// carriers return an error; this research API does not implement rendering.
+/// carriers return an error.
 ///
 /// # Errors
 ///
@@ -42,7 +42,7 @@ pub fn extract_fusion(path: &Path) -> Result<Option<RgbaImage>> {
     let mut source = File::open(path)?;
     let source_size = source.metadata()?.len();
     if source_size > MAX_SOURCE {
-        return Err("Fusion source exceeds the 512 MiB research limit".into());
+        return Err("Fusion source exceeds the 512 MiB size limit".into());
     }
     let expected_entries = check_directory(&mut source, source_size)?;
     source.seek(SeekFrom::Start(0))?;
@@ -157,7 +157,7 @@ fn check_directory(source: &mut File, source_size: u64) -> Result<usize> {
         return Err("ZIP64 Fusion archives are unqualified".into());
     }
     if usize::from(total_count) > MAX_ENTRIES || directory_size > MAX_DIRECTORY {
-        return Err("Fusion ZIP directory exceeds the research limits".into());
+        return Err("Fusion ZIP directory exceeds the extraction limits".into());
     }
     if directory_offset + directory_size != source_size - tail_size + end as u64 {
         return Err("Fusion ZIP directory has an invalid range".into());
@@ -199,7 +199,7 @@ fn bounded_read(mut reader: impl Read, started: Instant) -> Result<Vec<u8>> {
             return Ok(output);
         }
         if output.len() as u64 + received as u64 > MAX_MEMBER {
-            return Err("Fusion selected member exceeds the 8 MiB research limit".into());
+            return Err("Fusion selected member exceeds the 8 MiB size limit".into());
         }
         output.extend_from_slice(&buffer[..received]);
     }
@@ -216,7 +216,7 @@ fn read_member(
         return Err("encrypted Fusion preview carriers are unqualified".into());
     }
     if entry.size() > MAX_MEMBER || entry.compressed_size() > MAX_MEMBER {
-        return Err("Fusion selected member exceeds the 8 MiB research limit".into());
+        return Err("Fusion selected member exceeds the 8 MiB size limit".into());
     }
     let expected_size = entry.size();
     let expected_crc = entry.crc32();
@@ -356,7 +356,7 @@ mod tests {
 
     fn run(bytes: &[u8], suffix: &str) -> Result<Option<RgbaImage>> {
         let path = std::env::temp_dir().join(format!(
-            "catwalk-fusion-research-{}-{suffix}.f3d",
+            "catwalk-fusion-preview-{}-{suffix}.f3d",
             std::process::id()
         ));
         std::fs::write(&path, bytes)?;
@@ -457,7 +457,7 @@ mod tests {
     #[test]
     fn source_directory_and_image_limits_are_checked() {
         let path = std::env::temp_dir().join(format!(
-            "catwalk-fusion-research-{}-oversized.f3d",
+            "catwalk-fusion-preview-{}-oversized.f3d",
             std::process::id()
         ));
         File::create(&path)

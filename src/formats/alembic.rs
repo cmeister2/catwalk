@@ -2,12 +2,15 @@
 //! Storage and transform conventions follow the primary Alembic sources:
 //! <https://github.com/alembic/alembic/tree/master/lib/Alembic/AbcCoreOgawa>
 //! <https://github.com/alembic/alembic/tree/master/lib/Alembic/AbcGeom>
-use super::{MAX_INPUT_BYTES, mesh::triangulate_polygon, read_file, transform::Transform};
+use super::{
+    MAX_INPUT_BYTES, hdf5_owned::Hdf5File, mesh::triangulate_polygon, read_file,
+    transform::Transform,
+};
 use crate::{
     Result,
     scene::{Line, Point, Scene, Triangle, Vec3},
 };
-use hdf5_reader::{Attribute, ByteOrder, Datatype, Hdf5File, group::Group};
+use hdf5_reader::{Attribute, ByteOrder, Datatype, group::Group};
 use std::{
     collections::{HashMap, HashSet},
     path::Path,
@@ -605,6 +608,7 @@ fn hdf_archive(bytes: Vec<u8>) -> Result<Object> {
         return Err("unsupported Alembic HDF5 storage version".into());
     }
     hdf_object(
+        &file,
         &file.group("/ABC")?,
         "/".to_owned(),
         &mut Budget::default(),
@@ -619,12 +623,19 @@ fn hdf_meta(attributes: &[Attribute], name: &str) -> Result<Metadata> {
     }
 }
 /// Decode an HDF5 object group and its child object and property groups.
-fn hdf_object(group: &Group, path: String, budget: &mut Budget, depth: usize) -> Result<Object> {
+fn hdf_object(
+    file: &Hdf5File,
+    group: &Group,
+    path: String,
+    budget: &mut Budget,
+    depth: usize,
+) -> Result<Object> {
     budget.node(depth)?;
     let attrs = group.attributes()?;
     let metadata = hdf_meta(&attrs, ".prop.meta")?;
     let properties = if group.group(".prop").is_ok() {
         hdf_compound(
+            file,
             &group.group(".prop")?,
             String::new(),
             Metadata::new(),
@@ -645,6 +656,7 @@ fn hdf_object(group: &Group, path: String, budget: &mut Budget, depth: usize) ->
             continue;
         }
         children.push(hdf_object(
+            file,
             &child,
             format!("{}/{name}", path.trim_end_matches('/')),
             budget,
@@ -674,6 +686,7 @@ fn byte_order(dtype: &Datatype) -> Result<bool> {
     reason = "The Alembic .info suffix is a case-sensitive HDF5 attribute name, not a filename extension."
 )]
 fn hdf_compound(
+    file: &Hdf5File,
     group: &Group,
     name: String,
     md: Metadata,
@@ -694,7 +707,7 @@ fn hdf_compound(
         let kind = bits & 3;
         let prop = if kind == 0 {
             match group.group(&name) {
-                Ok(child) => hdf_compound(&child, name, md, budget, depth + 1)?,
+                Ok(child) => hdf_compound(file, &child, name, md, budget, depth + 1)?,
                 Err(_) => Property {
                     name,
                     metadata: md,
@@ -734,6 +747,7 @@ fn hdf_compound(
                     })
                     .transpose()?
             } else if let Ok(dataset) = group.dataset(&sample_name) {
+                let dataset = file.adapt_dataset(dataset);
                 let element = hdf5_reader::datatype_api::dtype_element_size(dataset.dtype())?;
                 let total = usize::try_from(dataset.num_elements()?)?
                     .checked_mul(element)
@@ -1856,5 +1870,122 @@ mod tests {
                 .contains("cyclic")
         );
         assert!(super::xform(&xform(&[16.], &[1.], true)).is_err());
+    }
+
+    #[test]
+    fn filtered_hdf_properties_render_geometry_and_decode_fixed_and_vlen_strings() {
+        use hdf5_writer::{AttributeBuilder, DatasetBuilder, Hdf5Builder, WriteOptions};
+        let positions: Vec<f32> = (0..171)
+            .flat_map(|index| {
+                [
+                    f32::from(i16::try_from(index - 80).unwrap()),
+                    f32::from(i16::try_from(index * 7 % 13).unwrap()),
+                    f32::from(i16::try_from(index / 11).unwrap()),
+                ]
+            })
+            .collect();
+        let text = format!("{}λ", "a".repeat(510));
+        let points = DatasetBuilder::typed_data("ABC/.prop/.geom/P.smp0", vec![171, 3], &positions)
+            .unwrap()
+            .chunked(vec![128, 1]);
+        let fixed = DatasetBuilder::fixed_string_data("ABC/.prop/fixed.smp0", vec![1], &[&text])
+            .unwrap()
+            .max_shape(vec![u64::MAX])
+            .chunked(vec![1]);
+        let variable =
+            DatasetBuilder::vlen_string_data("ABC/.prop/variable.smp0", vec![1], &[&text])
+                .unwrap()
+                .max_shape(vec![u64::MAX])
+                .chunked(vec![32]);
+        let mut builder = Hdf5Builder::new()
+            .attribute(AttributeBuilder::scalar("abc_version", -8i32).unwrap())
+            .group_attribute(
+                "ABC",
+                AttributeBuilder::fixed_string(".prop.meta", "schema=AbcGeom_Points_v1"),
+            )
+            .group_attribute(
+                "ABC/.prop",
+                AttributeBuilder::vector(".geom.info", &[0u32]).unwrap(),
+            )
+            .group_attribute(
+                "ABC/.prop/.geom",
+                AttributeBuilder::vector("P.info", &[2u32 | (10 << 2) | (3 << 8)]).unwrap(),
+            );
+        for name in ["fixed", "variable"] {
+            builder = builder.group_attribute(
+                "ABC/.prop",
+                AttributeBuilder::vector(format!("{name}.info"), &[2u32 | (12 << 2) | (1 << 8)])
+                    .unwrap(),
+            );
+        }
+        for dataset in [points, fixed, variable] {
+            builder = builder.dataset(hdf_compressed(dataset));
+        }
+        let bytes = builder
+            .into_plan()
+            .unwrap()
+            .encode(WriteOptions::default())
+            .unwrap();
+        let unmodified = hdf5_reader::Hdf5File::from_bytes(&bytes).unwrap();
+        for path in [
+            "ABC/.prop/.geom/P.smp0",
+            "ABC/.prop/fixed.smp0",
+            "ABC/.prop/variable.smp0",
+        ] {
+            assert!(unmodified.dataset(path).unwrap().read_raw_bytes().is_err());
+        }
+        let archive = hdf_archive(bytes).unwrap();
+        for name in ["fixed", "variable"] {
+            assert_eq!(
+                archive.properties.required(name).unwrap().text().unwrap(),
+                text
+            );
+        }
+        let actual = build_scene(&archive).unwrap();
+        let expected = Scene {
+            points: positions
+                .as_chunks::<3>()
+                .0
+                .iter()
+                .map(|point| Point {
+                    position: Vec3::new(
+                        f64::from(point[0]),
+                        f64::from(point[1]),
+                        f64::from(point[2]),
+                    ),
+                    color: None,
+                })
+                .collect(),
+            ..Scene::default()
+        };
+        assert_eq!(actual.points.len(), 171);
+        for (actual, expected) in actual.points.iter().zip(&expected.points) {
+            assert_eq!(actual.position, expected.position);
+        }
+        let options = crate::render::RenderOptions {
+            width: 64,
+            height: 64,
+            transparent: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            crate::render::render(&actual, &options).unwrap(),
+            crate::render::render(&expected, &options).unwrap()
+        );
+    }
+
+    /// Apply independent writer codecs to force the filtered Alembic dataset path.
+    fn hdf_compressed(dataset: hdf5_writer::DatasetBuilder) -> hdf5_writer::DatasetBuilder {
+        dataset
+            .filter(hdf5_writer::FilterDescription {
+                id: 1,
+                name: None,
+                client_data: vec![6],
+            })
+            .filter(hdf5_writer::FilterDescription {
+                id: 3,
+                name: None,
+                client_data: vec![],
+            })
     }
 }

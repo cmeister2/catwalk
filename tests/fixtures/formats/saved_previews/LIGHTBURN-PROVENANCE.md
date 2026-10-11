@@ -16,6 +16,5 @@ Source SHA-256: a13336c9c1af59c1e229cb4d9f2387e45a4ac84c06a067d079f14f1fad30f784
 Recorded AppVersion 1.4.03 / FormatVersion 1.
 
 Original files and exact embedded expected PNGs are retained in
-tests/fixtures/saved-previews/lightburn. Detailed qualification evidence:
-docs/research/lightburn-preview.json. Reviewed thumbnail snapshots are
+tests/fixtures/saved-previews/lightburn. Reviewed thumbnail snapshots are
 managed separately from fixture generation.

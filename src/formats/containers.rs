@@ -2,13 +2,14 @@
 //! Schemas: <https://docs.vtk.org/en/latest/vtk_file_formats/vtkhdf_file_format/vtkhdf_specifications.html>
 //! Exodus storage: <https://sandialabs.github.io/seacas-docs/html/exodusII__int_8h_source.html>
 //! NetCDF coordinates: <https://docs.unidata.ucar.edu/netcdf-c/current/attribute_conventions.html>
-use super::{extension, read_file, scientific, volume};
+use super::{extension, hdf5_owned as hdf, read_file, scientific, volume};
 use crate::{
     Result,
     scene::{Line, Scene, Triangle, Vec3},
 };
-use hdf5_reader::{Attribute, Dataset, Datatype, Hdf5File};
-use netcdf_reader::{NcFile, NcSliceInfo, NcSliceInfoElem, NcType, NcVariable};
+use hdf::{Dataset, Hdf5File, NcFile};
+use hdf5_reader::{Attribute, Datatype};
+use netcdf_reader::{NcSliceInfo, NcSliceInfoElem, NcType, NcVariable};
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::Path,
@@ -96,7 +97,7 @@ impl HdfSource<'_> {
     }
     /// Open a rebased HDF5 dataset.
     fn dataset(&self, path: &str) -> Result<Dataset> {
-        Ok(self.file.dataset(&self.path(path)?)?)
+        self.file.dataset(&self.path(path)?)
     }
     /// Open a rebased HDF5 group.
     fn group(&self, path: &str) -> Result<hdf5_reader::group::Group> {
@@ -242,14 +243,7 @@ fn hdf_attribute_values(attr: &Attribute) -> Result<Vec<f64>> {
 
 /// Open an in-memory HDF5 file and decode its root VTKHDF dataset.
 fn vtkhdf(bytes: &[u8]) -> Result<Scene> {
-    let file = Hdf5File::from_bytes_with_options(
-        bytes,
-        hdf5_reader::OpenOptions {
-            chunk_cache_bytes: 8 * 1024 * 1024,
-            chunk_cache_slots: 257,
-            ..Default::default()
-        },
-    )?;
+    let file = Hdf5File::from_bytes(bytes)?;
     hdf_source(
         &HdfSource {
             file: &file,
@@ -795,14 +789,14 @@ fn hdf_structured(file: &HdfSource, kind: &str, budget: &mut Budget) -> Result<S
 
 /// Open an in-memory classic or HDF5-backed `NetCDF` file.
 fn open_netcdf(bytes: &[u8]) -> Result<NcFile> {
-    Ok(NcFile::from_bytes_with_options(
+    NcFile::from_bytes_with_options(
         bytes,
         netcdf_reader::NcOpenOptions {
             chunk_cache_bytes: 8 * 1024 * 1024,
             chunk_cache_slots: 257,
             ..Default::default()
         },
-    )?)
+    )
 }
 
 /// Read a bounded `NetCDF` numeric variable as scalar values.
@@ -1381,7 +1375,7 @@ mod tests {
         clippy::cast_sign_loss,
         reason = "The authored chunk fixture uses small nonnegative array positions for its byte-count records."
     )]
-    fn hdf_filtered_512_byte_chunks_use_variable_size_fields_in_all_indexes() {
+    fn hdf_filtered_512_byte_chunks_use_variable_size_fields_in_fixed_and_tree_indexes() {
         let values: Vec<u8> = (0..4096).map(|i| (i % 251) as u8).collect();
         for max_shape in [
             vec![16, 16, 16],
@@ -1815,6 +1809,7 @@ mod tests {
                         eprintln!("GROUP {} {:?}", group.name(), group.attributes().unwrap());
                     }
                     for ds in f.group("VTKHDF").unwrap().datasets().unwrap() {
+                        let ds = f.adapt_dataset(ds);
                         let values = if ds.num_elements().unwrap_or(u64::MAX) < 100 {
                             hdf_values(&ds).ok()
                         } else {

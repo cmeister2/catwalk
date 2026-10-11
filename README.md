@@ -6,7 +6,7 @@ Catwalk has Rust thumbnail readers for all 76 extension aliases in F3D 3.5's pub
 
 It also extracts saved thumbnails from Inventor `.ipt`/`.iam`, `LightBurn` `.lbrn`/`.lbrn2`, Blender `.blend`, Fusion `.f3d` and `AutoCAD` `.dwg`. These seven additional extensions use qualified image carriers. A saved image may be absent, blank or stale; extracting it does not regenerate model geometry.
 
-Catwalk additionally renders stored Blender mesh scenes, `LightBurn` vector drawings and a qualified DWG drawing subset when their saved image is missing or unreadable. `--render-geometry` forces a fresh preview even when a saved image exists. [Native geometry evidence and limitations](docs/research/native-geometry.md) describe these readers and the separate experimental Inventor/Fusion solid bridge.
+Catwalk additionally renders stored Blender mesh scenes, `LightBurn` vector drawings and a DWG drawing subset when their saved image is missing or unreadable. `--render-geometry` forces a fresh preview even when a saved image exists. The [coverage matrix](docs/format-coverage.md#autodesk-inventor) describes these document readers and their limits. Geometry rendering for `.ipt`, `.iam` and `.f3d` is unsupported in Catwalk.
 
 ## Build and use
 
@@ -59,15 +59,15 @@ fn main() -> catwalk::Result<()> {
 
 `saved_preview::extract` returns `Result<Option<RgbaImage>>` at the saved image's original dimensions: `None` means no supported saved image. Inventor returns `None` for complete unsupported image encodings; malformed data errors. Other readers reject unsupported document versions and carriers. `saved_preview::inventor::extract_png` preserves native PNG bit depth and strips ancillary metadata. Normal `thumbnail` output fits the saved image onto an RGBA8 canvas.
 
-Saved-preview qualification:
+Saved-preview support:
 
-| Family | Qualified carrier | Evidence and limits |
+| Family | Supported carrier | Limits and regression fixtures |
 | --- | --- | --- |
-| Inventor | Root CFBv3/v4 property sets, native summary FMTID/PID17 `VT_CF`, legacy summary fallback; PNG/DIB/BMP | Generated CFBv3/v4 carriers exercise PNG and supported bitmap extraction. Blank images remain valid; full application-release compatibility remains unqualified. [Evidence](docs/research/autodesk-previews.json). |
-| `LightBurn` | Direct XML `Thumbnail Source` base64 PNG; `FormatVersion` 0/1 | 43 distinct files: 21 previews extracted, 22 absent. Saved-preview producers range from 0.9.16 to 2.0.05; newer template/multipage layouts are unqualified. [Evidence](docs/research/lightburn-preview.json). |
-| Blender | Early `TEST` RGBA block, vertically flipped; legacy and format-1 block layouts; raw/gzip/seekable Zstandard | Real scenes qualify both header generations and compressed carriers. Big-endian files and versions before 2.50 are unsupported. [Evidence](docs/research/blend-dwg-previews.json). |
-| Fusion | ZIP32 manifest tag `3-2-0-0`, exact active-design `Previews/small.png`; Stored/Deflate/Zstandard method 93 | Five genuine designs including a Zstandard assembly. Container tag is not an application release number. ZIP64/split/encrypted archives remain unqualified. [Evidence](docs/research/autodesk-previews.json). |
-| DWG | Declared preview address, validated sentinels and typed entry ranges; type-2 DIB/type-6 PNG | Real R13, R14, 2000, 2004, 2007, 2010, 2013 and 2018 layouts qualify. Earlier formats, encrypted sections and WMF-only previews are unsupported. [Evidence](docs/research/blend-dwg-previews.json). |
+| Inventor | Root CFBv3/v4 property sets, native summary FMTID/PID17 `VT_CF`, legacy summary fallback; PNG/DIB/BMP | Blank images remain valid. Full application-release compatibility remains unqualified. [Carrier fixture details](tests/fixtures/saved-previews/autodesk/README.md). |
+| `LightBurn` | Direct XML `Thumbnail Source` base64 PNG; `FormatVersion` 0/1 | Newer template/multipage layouts and other carriers remain unqualified. [Fixture details](tests/fixtures/saved-previews/lightburn/README.md). |
+| Blender | Early `TEST` RGBA block, vertically flipped; legacy and format-1 block layouts; raw/gzip/seekable Zstandard | Big-endian files and versions before 2.50 are unsupported. [Fixture details](tests/fixtures/saved-previews/blend_dwg/README.md). |
+| Fusion | ZIP32 manifest tag `3-2-0-0`, exact active-design `Previews/small.png`; Stored/Deflate/Zstandard method 93 | Container tag is not an application release number. ZIP64/split/encrypted archives are unsupported. [Reader limits](docs/format-coverage.md#autodesk-fusion). |
+| DWG | R13/R14/2000/2004/2007/2010/2013/2018 signatures; declared preview address, validated sentinels and typed entry ranges; type-2 DIB/type-6 PNG | Earlier formats, encrypted previews and WMF-only previews are unsupported. [Carrier fixture details](tests/fixtures/saved-previews/blend_dwg/README.md). |
 
 ## Validation
 
@@ -81,11 +81,11 @@ Tests cover depth and winding, centering and aspect ratio, transparent edges, te
 
 The [format corpus](tests/fixtures/formats/manifest.json) supplies an encoded input for every advertised extension, plus additional encoding and scene examples. Saved-preview cases include licensed original projects and clearly identified authored carrier fixtures; minimal carriers contain no CAD geometry. `cargo test --locked --test format_snapshots` renders every case through the CLI and compares decoded RGBA pixels with [committed PNG snapshots](tests/snapshots/formats). Missing fixtures, missing snapshots, decoding failures and visual changes fail CI. Transparent pixels are compared in premultiplied RGBA; each channel may differ by at most 2/255 for platform rounding. PNG compression bytes are not compared.
 
-CI retains actual, expected and amplified diff images as downloadable artifacts on every platform. Successful runs publish the same tested images to the [GitHub Pages gallery](https://cmeister2.github.io/catwalk/), with format search, model/image filters and an interactive snapshot comparison. Deployment waits for formatting, strict Clippy, documentation, all three operating-system test jobs and the separate experimental solid-geometry checks. Pull requests produce a gallery artifact for review.
+CI retains actual, expected and amplified diff images as downloadable artifacts on every platform. Successful runs publish the same tested images to the [GitHub Pages gallery](https://cmeister2.github.io/catwalk/), with format search, model/image filters and an interactive snapshot comparison. Deployment waits for formatting, strict Clippy, documentation and all three operating-system test jobs. Pull requests produce a gallery artifact for review.
 
 To regenerate authored inputs, run `cargo run --locked --example generate_fixtures`. To explicitly update baselines and inspect the resulting gallery, run `cargo run --locked --example gallery -- --update-snapshots`. Review the images and commit the changed PNGs; normal tests never update them. For a local gallery from an existing test run, use `cargo run --locked --example gallery -- --report target/format-snapshots`, then serve `target/gallery` with a static HTTP server. These snapshots establish regression coverage for their fixtures, while the broader valid-file limitations in the coverage matrix still apply.
 
-Input and referenced resources are limited to 512 MiB each. Raster image decoding is limited to 256 MiB. Importers apply format-specific count limits, and scene expansion is bounded for formats with instances. The DWG record ceiling is checked after decoding; additional upstream section and allocation bounds remain [unfinished](docs/research/native-geometry.md). CLI output dimensions are 1–4096 pixels per axis; model rendering additionally allows at most 16 million supersampled pixels, so very large thumbnails may need `--samples 1`. Decode failures occur before an output file is opened.
+Input and referenced resources are limited to 512 MiB each. Raster image decoding is limited to 256 MiB. Importers apply format-specific count limits, and scene expansion is bounded for formats with instances. The DWG record ceiling is checked after decoding; additional upstream section and allocation bounds remain [unfinished](docs/format-coverage.md#autocad-drawings). CLI output dimensions are 1–4096 pixels per axis; model rendering additionally allows at most 16 million supersampled pixels, so very large thumbnails may need `--samples 1`. Decode failures occur before an output file is opened.
 
 ## Implementation
 
@@ -96,6 +96,8 @@ Rust importers produce a common triangle, point and line scene. The software ren
 Material and vertex colors are used where implemented; glTF and supported FBX skins/morphs are evaluated in the first pose. Full physically based materials, normal/emissive/occlusion maps, textures outside glTF/3MF, Gaussian splatting and additional deformation variants remain tracked limitations. Scalar volumes use a coarse density surface; DICOM and raster images use a fitted image preview.
 
 Compression and image codecs use Rust backends. The supported Linux, Windows and macOS dependency graphs do not contain native geometry or codec libraries. Rust's standard library and platform bindings still use normal operating-system facilities.
+
+Dependencies are published crates without local patches. Owned adapters decode the affected HDF5 chunk indexes into upstream arrays, restore authored BREP frames through geometry builders, and construct independent IGES preview faces through public topology APIs.
 
 ## License
 

@@ -281,6 +281,7 @@ dependencies = [
  "image",
  "las",
  "lz4_flex 0.11.6",
+ "ndarray",
  "netcdf-reader",
  "netcdf-writer",
  "ogeom-algo",
@@ -998,6 +999,8 @@ dependencies = [
 [[package]]
 name = "hdf5-reader"
 version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4926d5e2cae25a7a46db06cf03da6c3208d3d181badac5fa28dccc49871907f9"
 dependencies = [
  "flate2",
  "hdf5-core",
@@ -1647,6 +1650,8 @@ dependencies = [
 [[package]]
 name = "ogeom-io"
 version = "0.9.16"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "97242fba40c7f2ea0862d519ed0437db44654b62a7123602e323261cfd0e0277"
 dependencies = [
  "ogeom-algo",
  "ogeom-bool",

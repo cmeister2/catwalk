@@ -23,6 +23,8 @@ mod dxf;
 mod fbx;
 /// glTF/GLB scenes, appearances, deformations and supported extensions.
 mod gltf;
+/// Owned filtered HDF5 index reads using upstream metadata, codec and numeric APIs.
+mod hdf5_owned;
 /// IFC placements, representation geometry and bounded solid operations.
 mod ifc;
 /// COLLADA indexed geometry, materials and node transforms.

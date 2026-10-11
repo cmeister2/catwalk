@@ -16,6 +16,14 @@ use std::{
 #[path = "cad_carriers.rs"]
 mod carriers;
 
+/// Keep independent IGES trimmed faces intact through public kernel APIs.
+#[path = "iges_preview.rs"]
+mod iges_preview;
+
+/// Preserve authored analytic frames while using the upstream BREP topology reader.
+#[path = "brep_frames.rs"]
+mod brep_frames;
+
 /// Standard millimetre-scale numerical tolerances for the Rust CAD kernel.
 const TOLERANCES: Tolerances = Tolerances::millimetres();
 /// Maximum decoded CAD exchange payload size accepted for previews.
@@ -67,7 +75,7 @@ fn parse(bytes: &[u8], extension: &str) -> Result<Scene> {
             validate_iges(text)?;
             let normalized = promote_iges_group_surfaces(text)?;
             let tolerances = iges_tolerances(&normalized)?;
-            let imported = ogeom_io::read_iges_unsewn(&normalized, tolerances)?;
+            let imported = iges_preview::read(&normalized, tolerances)?;
             for warning in &imported.report.warnings {
                 if !warning.contains("annotation not drawn")
                     && !warning.contains("level names no levels property")
@@ -108,7 +116,7 @@ fn parse(bytes: &[u8], extension: &str) -> Result<Scene> {
                     .into());
                 }
             }
-            let model = imported.document.model();
+            let model = &imported.model;
             if imported.solids.len() + imported.sheets.len() > 1024 {
                 return Err("IGES exceeds 1024 preview bodies".into());
             }
@@ -120,7 +128,7 @@ fn parse(bytes: &[u8], extension: &str) -> Result<Scene> {
             validate_brep(text)?;
             let normalized = normalize_brep_caches(text)?;
             let carriers = carriers::Metadata::parse(&normalized)?;
-            let (mut model, root) = ogeom_io::brep::read(&normalized, TOLERANCES)?;
+            let (mut model, root) = brep_frames::read(&normalized, TOLERANCES)?;
             validate_topology(&model, &root)?;
             carriers.restore(&mut model, &root, TOLERANCES)?;
             append_shape(&mut scene, &model, &root)?;
@@ -718,12 +726,21 @@ fn normalize_brep_caches(text: &str) -> Result<String> {
 
 /// The upstream reader has recursive trimmed/offset geometry records.
 /// Walk their numeric schema before calling it, bounding nesting, spline
-/// grids and multiplicities independently of the file's top-level counts.
+/// grids and multiplicities independently of the file's top-level counts,
+/// retaining each record's analytic frame for the owned BREP adapter.
+///
+/// # Errors
+///
+/// Geometry is unsupported, truncated, exceeds recursion/spline limits or
+/// contains invalid authored analytic coordinate frames.
 #[allow(
     clippy::too_many_lines,
     reason = "Keep the format record dispatch, validation and its resource checks together without changing geometry evaluation."
 )]
-fn validate_geometry_table(tokens: &[&str], dimension: u8) -> Result<()> {
+fn validate_geometry_table(
+    tokens: &[&str],
+    dimension: u8,
+) -> Result<Vec<Option<ogeom_math::Frame>>> {
     /// Bounds-checked cursor for recursive BREP geometry-token schemas.
     struct Cursor<'a> {
         /// Token payload for one native geometry table.
@@ -764,6 +781,49 @@ fn validate_geometry_table(tokens: &[&str], dimension: u8) -> Result<()> {
             }
             Ok(())
         }
+        /// Consume one finite coordinate from an analytic frame.
+        ///
+        /// # Errors
+        ///
+        /// A coordinate is missing, nonnumeric or non-finite.
+        fn coordinate(&mut self) -> Result<f64> {
+            let value = self
+                .tokens
+                .get(self.at)
+                .ok_or("truncated BREP analytic frame")?
+                .parse::<f64>()?;
+            self.at += 1;
+            if !value.is_finite() {
+                return Err("non-finite BREP analytic frame".into());
+            }
+            Ok(value)
+        }
+        /// Consume and normalize one authored analytic-frame direction.
+        ///
+        /// # Errors
+        ///
+        /// Coordinates are invalid or do not define a nonzero direction.
+        fn direction(&mut self) -> Result<ogeom_math::Direction> {
+            Ok(ogeom_math::Direction::new(
+                ogeom_math::Vector::new(self.coordinate()?, self.coordinate()?, self.coordinate()?),
+                TOLERANCES,
+            )?)
+        }
+        /// Build an analytic frame from all four authored triples, including its Y axis.
+        ///
+        /// # Errors
+        ///
+        /// Coordinates, directions or the orthogonal frame are invalid.
+        fn frame(&mut self) -> Result<ogeom_math::Frame> {
+            let origin =
+                ogeom_math::Point::new(self.coordinate()?, self.coordinate()?, self.coordinate()?);
+            let normal = self.direction()?;
+            let x = self.direction()?;
+            let y = self.direction()?;
+            Ok(ogeom_math::Frame::from_axes(
+                origin, x, y, normal, TOLERANCES,
+            )?)
+        }
         /// Consume a BREP geometry boolean encoded as zero or one.
         ///
         /// # Errors
@@ -803,21 +863,25 @@ fn validate_geometry_table(tokens: &[&str], dimension: u8) -> Result<()> {
         /// # Errors
         ///
         /// The schema is unsupported, truncated or exceeds nesting/spline limits.
-        fn geometry(&mut self, dimension: u8, depth: usize) -> Result<()> {
+        fn geometry(&mut self, dimension: u8, depth: usize) -> Result<Option<ogeom_math::Frame>> {
             if depth > 64 {
                 return Err("BREP trimmed/offset geometry exceeds 64 levels".into());
             }
             let kind = self.count()?;
+            let mut frame = None;
             if dimension == 0 {
                 match kind {
-                    1..=5 => self.skip(12 + [0, 0, 1, 2, 1, 2][kind])?,
+                    1..=5 => {
+                        frame = Some(self.frame()?);
+                        self.skip([0, 0, 1, 2, 1, 2][kind])?;
+                    }
                     6 => {
                         self.skip(3)?;
-                        self.geometry(3, depth + 1)?;
+                        frame = self.geometry(3, depth + 1)?;
                     }
                     7 => {
                         self.skip(6)?;
-                        self.geometry(3, depth + 1)?;
+                        frame = self.geometry(3, depth + 1)?;
                     }
                     9 => {
                         let rational = self.flag()? + self.flag()? > 0;
@@ -841,22 +905,24 @@ fn validate_geometry_table(tokens: &[&str], dimension: u8) -> Result<()> {
                     }
                     10 => {
                         self.skip(4)?;
-                        self.geometry(0, depth + 1)?;
+                        frame = self.geometry(0, depth + 1)?;
                     }
                     11 => {
                         self.skip(1)?;
-                        self.geometry(0, depth + 1)?;
+                        frame = self.geometry(0, depth + 1)?;
                     }
                     _ => return Err(format!("unsupported BREP surface record {kind}").into()),
                 }
             } else {
-                let d = dimension as usize;
+                let d = usize::from(dimension);
                 match kind {
                     1 => self.skip(2 * d)?,
-                    2 => self.skip(if d == 2 { 7 } else { 13 })?,
-                    3 => self.skip(if d == 2 { 8 } else { 14 })?,
-                    4 if d == 3 => self.skip(13)?,
-                    5 if d == 3 => self.skip(14)?,
+                    2..=5 if d == 3 => {
+                        frame = Some(self.frame()?);
+                        self.skip(usize::from(kind == 3 || kind == 5) + 1)?;
+                    }
+                    2 => self.skip(7)?,
+                    3 => self.skip(8)?,
                     7 => {
                         let rational = self.flag()?;
                         self.flag()?;
@@ -868,27 +934,28 @@ fn validate_geometry_table(tokens: &[&str], dimension: u8) -> Result<()> {
                     }
                     8 => {
                         self.skip(2)?;
-                        self.geometry(dimension, depth + 1)?;
+                        frame = self.geometry(dimension, depth + 1)?;
                     }
                     9 => {
                         self.skip(if d == 2 { 1 } else { 4 })?;
-                        self.geometry(dimension, depth + 1)?;
+                        frame = self.geometry(dimension, depth + 1)?;
                     }
                     _ => return Err(format!("unsupported BREP curve record {kind}").into()),
                 }
             }
-            Ok(())
+            Ok(frame)
         }
     }
     let mut cursor = Cursor { tokens, at: 0 };
     let records = cursor.count()?;
+    let mut frames = Vec::with_capacity(records);
     for _ in 0..records {
-        cursor.geometry(dimension, 0)?;
+        frames.push(cursor.geometry(dimension, 0)?);
     }
     if cursor.at != tokens.len() {
         return Err("BREP geometry table has trailing or mismatched data".into());
     }
-    Ok(())
+    Ok(frames)
 }
 
 /// Check cached polygon or triangulation payloads before discarding them.
@@ -1799,7 +1866,7 @@ mod tests {
             .unwrap();
         let root = model.add_compound(&[face, edge]).unwrap();
         let source = ogeom_io::brep::write(&model, &root, TOLERANCES).unwrap();
-        let (imported, shape) = ogeom_io::brep::read(&source, TOLERANCES).unwrap();
+        let (imported, shape) = brep_frames::read(&source, TOLERANCES).unwrap();
         let surface = explore(&imported, &shape, Filter::OfType(ShapeType::Face))
             .unwrap()
             .into_iter()
@@ -1881,9 +1948,9 @@ mod tests {
             .count()
             / 2;
         assert_eq!(authored_faces, 2);
-        let imported = ogeom_io::read_iges_unsewn(&source, TOLERANCES).unwrap();
+        let imported = iges_preview::read(&source, TOLERANCES).unwrap();
         assert_eq!(imported.report.warnings, [] as [std::string::String; 0]);
-        let model = imported.document.model();
+        let model = &imported.model;
         let imported_faces: usize = imported
             .sheets
             .iter()

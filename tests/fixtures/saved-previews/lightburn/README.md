@@ -30,8 +30,5 @@ Run the extraction and robustness tests with:
 cargo test --locked --lib saved_preview::lightburn
 ```
 
-The larger qualification corpus is documented in
-[`docs/research/lightburn-preview.json`](../../../../docs/research/lightburn-preview.json).
-Those local checks are separate from the two retained CI fixtures. Most absent
-cases are deliberately minimal third-party parser fixtures, so their count is
-not an estimate of how often authoring-application saves contain a preview.
+Supported carriers and limitations are documented in the
+[format coverage matrix](../../../../docs/format-coverage.md).

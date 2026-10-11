@@ -1,7 +1,7 @@
 //! Saved images extracted from document containers without opening model geometry.
 //!
-//! These readers support the carriers and versions recorded in the research
-//! evidence. A document can be valid while containing no saved preview.
+//! Supported carriers and versions are documented in `docs/format-coverage.md`.
+//! A document can be valid while containing no saved preview.
 /// Saved PNG extraction from Autodesk Fusion archives.
 pub mod autodesk;
 /// Addressed thumbnail extraction from Blender and AutoCAD containers.

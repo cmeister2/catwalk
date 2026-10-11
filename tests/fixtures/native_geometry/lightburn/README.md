@@ -44,7 +44,7 @@ document `MirrorX`/`MirrorY` flags are applied before converting screen Y to
 the renderer's upward Y axis. Beziers are subdivided adaptively, including
 collinear overshoots and closed curves.
 
-Producer explanations and original implementation research:
+Format references:
 
 - [LightBurn staff explanation of classic V/P cubic geometry](https://forum.lightburnsoftware.com/t/lbrn-or-lbrn2-xml-file-docuumentation/42317).
 - [LightBurn staff explanation of affine matrix order and origin mirroring](https://forum.lightburnsoftware.com/t/lbrn2-file-documentation/52174).

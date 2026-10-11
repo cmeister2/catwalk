@@ -141,7 +141,7 @@
       "id": "blend-280-saved-thumbnail",
       "input": "saved_previews/blend-280-saved-thumbnail.blend",
       "kind": "saved-preview",
-      "provenance": "Unmodified Khronos glTF-Blender-IO fixture, commit ccc2cc6ea93f7618df42b56f6001538a8366f41c; Apache-2.0, license retained as saved_previews/LICENSE-Khronos.txt. Actual scene with its saved thumbnail; provenance in docs/research/blend-dwg-previews.json.",
+      "provenance": "Unmodified Khronos glTF-Blender-IO fixture, commit ccc2cc6ea93f7618df42b56f6001538a8366f41c; Apache-2.0, license retained as saved_previews/LICENSE-Khronos.txt. Actual scene with its saved thumbnail.",
       "title": "Blender 2.80 saved scene thumbnail"
     },
     {
@@ -149,7 +149,7 @@
       "id": "blend-502-zstd-saved-thumbnail",
       "input": "saved_previews/blend-502-zstd-saved-thumbnail.blend",
       "kind": "saved-preview",
-      "provenance": "Unmodified Khronos glTF-Blender-IO fixture, commit ccc2cc6ea93f7618df42b56f6001538a8366f41c; Apache-2.0, license retained as saved_previews/LICENSE-Khronos.txt. Actual format-1 scene with saved TEST thumbnail; provenance in docs/research/blend-dwg-previews.json.",
+      "provenance": "Unmodified Khronos glTF-Blender-IO fixture, commit ccc2cc6ea93f7618df42b56f6001538a8366f41c; Apache-2.0, license retained as saved_previews/LICENSE-Khronos.txt. Actual format-1 scene with saved TEST thumbnail.",
       "title": "Blender 5.2 saved thumbnail (seekable Zstandard)"
     },
     {
@@ -365,7 +365,7 @@
       "id": "dwg-authored-dib-saved-thumbnail",
       "input": "saved_previews/dwg-authored-dib-saved-thumbnail.dwg",
       "kind": "saved-preview",
-      "provenance": "Original MIT-licensed carrier fixture. Minimal AC1032 header with addressed, sentinel-delimited preview table and type-2 palette DIB. Contains no drawing geometry; genuine R13\u20132018 DWG qualification remains recorded separately in docs/research/blend-dwg-previews.json.",
+      "provenance": "Original MIT-licensed carrier fixture. Minimal AC1032 header with addressed, sentinel-delimited preview table and type-2 palette DIB. Contains no drawing geometry.",
       "title": "DWG palette DIB saved-thumbnail carrier"
     },
     {
@@ -373,7 +373,7 @@
       "id": "dwg-authored-png-saved-thumbnail",
       "input": "saved_previews/dwg-authored-png-saved-thumbnail.dwg",
       "kind": "saved-preview",
-      "provenance": "Original MIT-licensed carrier fixture. Minimal AC1032 header with addressed, sentinel-delimited preview table and type-6 RGBA PNG. Contains no drawing geometry; genuine R13\u20132018 DWG qualification remains recorded separately in docs/research/blend-dwg-previews.json.",
+      "provenance": "Original MIT-licensed carrier fixture. Minimal AC1032 header with addressed, sentinel-delimited preview table and type-6 RGBA PNG. Contains no drawing geometry.",
       "title": "DWG PNG saved-thumbnail carrier"
     },
     {
@@ -477,7 +477,7 @@
       "id": "fusion-authored-deflate-preview",
       "input": "saved_previews/fusion-authored-deflate-preview.f3d",
       "kind": "saved-preview",
-      "provenance": "Original MIT-licensed carrier fixture. ZIP32, qualified 3-2-0-0 manifest and exact active-design PNG; deliberately different simulation image tests selection. Contains no Fusion geometry. Real design/archive qualification, including ZIP method93 Zstandard, is recorded separately in docs/research/autodesk-previews.json.",
+      "provenance": "Original MIT-licensed carrier fixture. ZIP32, qualified 3-2-0-0 manifest and exact active-design PNG; deliberately different simulation image tests selection. Contains no Fusion geometry.",
       "title": "Fusion active-design saved-thumbnail carrier"
     },
     {
@@ -485,7 +485,7 @@
       "id": "fusion-authored-stored-preview",
       "input": "saved_previews/fusion-authored-stored-preview.f3d",
       "kind": "saved-preview",
-      "provenance": "Original MIT-licensed carrier fixture. ZIP32, qualified 3-2-0-0 manifest and exact active-design PNG; deliberately different simulation image tests selection. Contains no Fusion geometry. Real design/archive qualification, including ZIP method93 Zstandard, is recorded separately in docs/research/autodesk-previews.json.",
+      "provenance": "Original MIT-licensed carrier fixture. ZIP32, qualified 3-2-0-0 manifest and exact active-design PNG; deliberately different simulation image tests selection. Contains no Fusion geometry.",
       "title": "Fusion active-design saved-thumbnail carrier"
     },
     {
@@ -693,7 +693,7 @@
       "id": "inventor-v4-assembly-saved-thumbnail",
       "input": "saved_previews/inventor-v4-assembly-saved-thumbnail.iam",
       "kind": "saved-preview",
-      "provenance": "Original MIT-licensed CFB/OLEPS thumbnail-carrier fixture. Native Inventor summary FMTID and PID17 VT_CF wrap a saved PNG of Catwalk's authored gear; no Inventor CAD geometry. Supported carriers and resource bounds are documented in docs/research/autodesk-previews.json.",
+      "provenance": "Original MIT-licensed CFB/OLEPS thumbnail-carrier fixture. Native Inventor summary FMTID and PID17 VT_CF wrap a saved PNG of Catwalk's authored gear; no Inventor CAD geometry. Supported carriers and resource bounds are documented in docs/format-coverage.md.",
       "title": "Inventor CFBv4 assembly thumbnail carrier"
     },
     {
@@ -725,7 +725,7 @@
       "id": "inventor-v3-part-saved-thumbnail",
       "input": "saved_previews/inventor-v3-part-saved-thumbnail.ipt",
       "kind": "saved-preview",
-      "provenance": "Original MIT-licensed CFB/OLEPS thumbnail-carrier fixture. Native Inventor summary FMTID and PID17 VT_CF wrap a saved PNG of Catwalk's authored gear; no Inventor CAD geometry. Supported carriers and resource bounds are documented in docs/research/autodesk-previews.json.",
+      "provenance": "Original MIT-licensed CFB/OLEPS thumbnail-carrier fixture. Native Inventor summary FMTID and PID17 VT_CF wrap a saved PNG of Catwalk's authored gear; no Inventor CAD geometry. Supported carriers and resource bounds are documented in docs/format-coverage.md.",
       "title": "Inventor CFBv3 part thumbnail carrier"
     },
     {

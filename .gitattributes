@@ -2,6 +2,3 @@
 tests/fixtures/** -text
 # Snapshot baselines are exact image artifacts.
 tests/snapshots/** -text
-# Qualified experimental fixtures and patches also retain exact upstream bytes.
-tools/autodesk_geometry/evidence/fixtures/** -text
-tools/autodesk_geometry/patches/** -text

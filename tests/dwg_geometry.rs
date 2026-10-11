@@ -4,7 +4,7 @@ use catwalk::{formats, render::RenderOptions, saved_preview, scene::Vec3};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 
-/// Resolve a retained DWG fixture or its independent provenance evidence.
+/// Resolve a retained DWG fixture or its independent reference data.
 fn fixture(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/native_geometry/dwg")

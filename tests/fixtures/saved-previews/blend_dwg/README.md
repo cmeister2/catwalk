@@ -13,6 +13,6 @@ The `authored-*` files and their PNGs are original MIT-licensed fixtures. They c
 - `authored-png.dwg`: the same preview table with type 6 RGBA PNG.
 - `authored-no-preview.blend` and `authored-no-preview.dwg`: recognized containers without saved thumbnail carriers. `authored-metadata-only.dwg` has a valid preview section with type 1 metadata and no image.
 
-[manifest.json](manifest.json) records every input and image hash. [Research evidence](../../../../docs/research/blend-dwg-previews.json) also records the real files checked outside the repository, exact decoded dimensions and limitations. External DWG and newer Blender Export 3DM examples stay in `/tmp` because their asset redistribution permission has not been separately established.
+[manifest.json](manifest.json) records every input and image hash. Supported carriers and limitations are documented in the [format coverage matrix](../../../../docs/format-coverage.md).
 
 The committed images are exact decoded-pixel baselines. Updating them requires intentional review; the tests do not overwrite them. No Blender, AutoCAD, native DWG library or native image converter runs during extraction or comparison.

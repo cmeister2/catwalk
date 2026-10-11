@@ -55,7 +55,7 @@ pub fn generate_inventor(root: &Path) -> Result<Vec<crate::Fixture>> {
         catwalk::render::write_png(&image, &mut png)?;
         let input = format!("{DIR}/{id}.{extension}");
         inventor::write(&root.join(&input), version, &png)?;
-        cases.push(crate::fixture(id, extension, title, &input, "saved-preview", "Original MIT-licensed CFB/OLEPS thumbnail-carrier fixture. Native Inventor summary FMTID and PID17 VT_CF wrap a saved PNG of Catwalk's authored gear; no Inventor CAD geometry. Supported carriers and resource bounds are documented in docs/research/autodesk-previews.json."));
+        cases.push(crate::fixture(id, extension, title, &input, "saved-preview", "Original MIT-licensed CFB/OLEPS thumbnail-carrier fixture. Native Inventor summary FMTID and PID17 VT_CF wrap a saved PNG of Catwalk's authored gear; no Inventor CAD geometry. Supported carriers and resource bounds are documented in docs/format-coverage.md."));
     }
     Ok(cases)
 }
@@ -104,8 +104,7 @@ pub fn generate_lightburn(root: &Path) -> Result<Vec<crate::Fixture>> {
          Source SHA-256: a13336c9c1af59c1e229cb4d9f2387e45a4ac84c06a067d079f14f1fad30f784.\n\
          Recorded AppVersion 1.4.03 / FormatVersion 1.\n\n\
          Original files and exact embedded expected PNGs are retained in\n\
-         tests/fixtures/saved-previews/lightburn. Detailed qualification evidence:\n\
-         docs/research/lightburn-preview.json. Reviewed thumbnail snapshots are\n\
+         tests/fixtures/saved-previews/lightburn. Reviewed thumbnail snapshots are\n\
          managed separately from fixture generation.\n",
     )?;
     let cases = vec![
@@ -174,14 +173,14 @@ pub fn generate_blend_dwg(root: &Path) -> Result<Vec<crate::Fixture>> {
             "blend",
             "Blender 2.80 saved scene thumbnail",
             "blend-280.blend",
-            "Unmodified Khronos glTF-Blender-IO fixture, commit ccc2cc6ea93f7618df42b56f6001538a8366f41c; Apache-2.0, license retained as saved_previews/LICENSE-Khronos.txt. Actual scene with its saved thumbnail; provenance in docs/research/blend-dwg-previews.json.",
+            "Unmodified Khronos glTF-Blender-IO fixture, commit ccc2cc6ea93f7618df42b56f6001538a8366f41c; Apache-2.0, license retained as saved_previews/LICENSE-Khronos.txt. Actual scene with its saved thumbnail.",
         ),
         (
             "blend-502-zstd-saved-thumbnail",
             "blend",
             "Blender 5.2 saved thumbnail (seekable Zstandard)",
             "blend-extras.blend",
-            "Unmodified Khronos glTF-Blender-IO fixture, commit ccc2cc6ea93f7618df42b56f6001538a8366f41c; Apache-2.0, license retained as saved_previews/LICENSE-Khronos.txt. Actual format-1 scene with saved TEST thumbnail; provenance in docs/research/blend-dwg-previews.json.",
+            "Unmodified Khronos glTF-Blender-IO fixture, commit ccc2cc6ea93f7618df42b56f6001538a8366f41c; Apache-2.0, license retained as saved_previews/LICENSE-Khronos.txt. Actual format-1 scene with saved TEST thumbnail.",
         ),
         (
             "blend-authored-32-saved-thumbnail",
@@ -209,14 +208,14 @@ pub fn generate_blend_dwg(root: &Path) -> Result<Vec<crate::Fixture>> {
             "dwg",
             "DWG palette DIB saved-thumbnail carrier",
             "authored-dib.dwg",
-            "Original MIT-licensed carrier fixture. Minimal AC1032 header with addressed, sentinel-delimited preview table and type-2 palette DIB. Contains no drawing geometry; genuine R13–2018 DWG qualification remains recorded separately in docs/research/blend-dwg-previews.json.",
+            "Original MIT-licensed carrier fixture. Minimal AC1032 header with addressed, sentinel-delimited preview table and type-2 palette DIB. Contains no drawing geometry.",
         ),
         (
             "dwg-authored-png-saved-thumbnail",
             "dwg",
             "DWG PNG saved-thumbnail carrier",
             "authored-png.dwg",
-            "Original MIT-licensed carrier fixture. Minimal AC1032 header with addressed, sentinel-delimited preview table and type-6 RGBA PNG. Contains no drawing geometry; genuine R13–2018 DWG qualification remains recorded separately in docs/research/blend-dwg-previews.json.",
+            "Original MIT-licensed carrier fixture. Minimal AC1032 header with addressed, sentinel-delimited preview table and type-6 RGBA PNG. Contains no drawing geometry.",
         ),
     ] {
         let input = format!("{DIR}/{id}.{extension}");
@@ -291,7 +290,7 @@ pub fn generate_fusion(root: &Path) -> Result<Vec<crate::Fixture>> {
         }
         let input = format!("{DIR}/{id}.f3d");
         fs::write(root.join(&input), archive.finish()?.into_inner())?;
-        cases.push(crate::fixture(id, "f3d", "Fusion active-design saved-thumbnail carrier", &input, "saved-preview", "Original MIT-licensed carrier fixture. ZIP32, qualified 3-2-0-0 manifest and exact active-design PNG; deliberately different simulation image tests selection. Contains no Fusion geometry. Real design/archive qualification, including ZIP method93 Zstandard, is recorded separately in docs/research/autodesk-previews.json."));
+        cases.push(crate::fixture(id, "f3d", "Fusion active-design saved-thumbnail carrier", &input, "saved-preview", "Original MIT-licensed carrier fixture. ZIP32, qualified 3-2-0-0 manifest and exact active-design PNG; deliberately different simulation image tests selection. Contains no Fusion geometry."));
     }
     Ok(cases)
 }

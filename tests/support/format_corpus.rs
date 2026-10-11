@@ -118,7 +118,7 @@ pub fn verification_context(workspace: &Path) -> Result<Value> {
         "schema": 1,
         "corpus_sha256": fingerprint(workspace, &["tests/fixtures/formats"] )?,
         "baselines_sha256": fingerprint(workspace, &["tests/snapshots/formats"] )?,
-        "renderer_sha256": fingerprint(workspace, &["src", "vendor", "Cargo.toml", "Cargo.lock", "tests/support/format_corpus.rs"] )?,
+        "renderer_sha256": fingerprint(workspace, &["src", "Cargo.toml", "Cargo.lock", "tests/support/format_corpus.rs"] )?,
     }))
 }
 
@@ -581,7 +581,6 @@ mod report_reuse_tests {
                 "tests/fixtures/formats",
                 "tests/snapshots/formats",
                 "src",
-                "vendor",
                 "report/images",
             ] {
                 std::fs::create_dir_all(workspace.0.join(directory))?;
