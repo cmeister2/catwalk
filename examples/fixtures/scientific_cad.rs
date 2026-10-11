@@ -1,4 +1,4 @@
-//! Deterministic, author-created scientific/CAD fixtures. No native writers.
+//! Authored scientific/CAD fixtures and retained, licensed exporter examples.
 use base64::{Engine, engine::general_purpose::STANDARD};
 use catwalk::{Result, scene::Vec3};
 use flate2::{
@@ -17,6 +17,15 @@ use truck_stepio::out::{CompleteStepDisplay, StepHeaderDescriptor, StepModel};
 const PROVENANCE: &str =
     "Author-created deterministic Rust fixture; MIT, matching the project license";
 const DIR: &str = "scientific_cad";
+const CADQUERY: &str = "Unmodified CadQuery tests/testdata/red_cube_blue_cylinder.step; Apache-2.0; https://github.com/CadQuery/cadquery/blob/5f5bc62b255f62e3512105740025361b6c31eddd/tests/testdata/red_cube_blue_cylinder.step; SHA-256 1fd5c7d9325bcfb9863365faf84554f89e7e7a5e86760a0fc8d5db00619d9ef5; original license and provenance retained in scientific_cad/step-cadquery-LICENSE and step-cadquery-NOTICE.txt";
+const README: &str = r"# Scientific and CAD fixtures
+
+Authored examples are generated deterministically by `examples/fixtures/scientific_cad.rs` and are MIT licensed with Catwalk. The STEP assembly examples use actual B-rep surfaces, repeated product occurrences and nested representation mappings, with nonzero source-frame origins and rotated/translated components. Geometry checks compare their placed vertices independently; PNG snapshots check the resulting thumbnails.
+
+`step-cadquery-placed-bodies.step` is an unmodified upstream test asset, renamed only for the corpus, from [CadQuery at commit 5f5bc62b255f62e3512105740025361b6c31eddd](https://github.com/CadQuery/cadquery/blob/5f5bc62b255f62e3512105740025361b6c31eddd/tests/testdata/red_cube_blue_cylinder.step). It retains its Apache-2.0 license in `step-cadquery-LICENSE`; source provenance and the exact SHA-256 are recorded in `step-cadquery-NOTICE.txt`. The file contains two placed bodies and a conversion-based metre context. It checks curved surfaces and millimeter unit conversion, without claiming an independently exported assembly hierarchy. STEP material colors are not currently rendered.
+
+Regeneration uses Rust and retained fixture bytes; no CAD application, native writer or network is required. The separately licensed upstream asset is not relabeled as an authored fixture.
+";
 
 struct Fixtures<'a> {
     root: &'a Path,
@@ -30,13 +39,16 @@ impl Fixtures<'_> {
     fn add(&mut self, id: &str, extension: &str, title: &str, bytes: &[u8]) -> Result<()> {
         let name = format!("{id}.{extension}");
         self.resource(&name, bytes)?;
-        let input = format!("{DIR}/{name}");
+        self.register(id, extension, title, PROVENANCE)
+    }
+    fn register(&mut self, id: &str, extension: &str, title: &str, provenance: &str) -> Result<()> {
+        let input = format!("{DIR}/{id}.{extension}");
         let scene = catwalk::formats::load(&self.root.join(&input))?;
         if scene.triangles.is_empty() && scene.points.is_empty() && scene.lines.is_empty() {
             return Err(format!("generated {input} has no geometry").into());
         }
         self.cases.push(crate::fixture(
-            id, extension, title, &input, "model", PROVENANCE,
+            id, extension, title, &input, "model", provenance,
         ));
         Ok(())
     }
@@ -76,6 +88,7 @@ pub fn generate(root: &Path) -> Result<Vec<crate::Fixture>> {
         "XBF colored face with genuine carrier and instance placement",
         &xbf()?,
     )?;
+    f.resource("README.md", README.as_bytes())?;
     Ok(f.cases)
 }
 
@@ -454,6 +467,85 @@ fn step_cylinder() -> Result<String> {
     )
     .to_string())
 }
+
+fn step_assembly(occurrences: bool) -> Result<String> {
+    let mut source = step_box([2., 3., 4.]);
+    let entities = if occurrences {
+        // Include the source frame in the part representation, matching the
+        // item-defined transformation references used by assembly exporters.
+        let items = "(#16), #11";
+        if !source.contains(items) {
+            return Err("STEP fixture writer changed its representation layout".into());
+        }
+        source = source.replace(items, "(#16, #1003), #11");
+        r"
+#1000=CARTESIAN_POINT('',(2.,3.,4.));
+#1001=DIRECTION('',(0.,0.,1.));
+#1002=DIRECTION('',(1.,0.,0.));
+#1003=AXIS2_PLACEMENT_3D('',#1000,#1001,#1002);
+#1010=CARTESIAN_POINT('',(10.,20.,30.));
+#1011=DIRECTION('',(0.,1.,0.));
+#1012=AXIS2_PLACEMENT_3D('',#1010,#1001,#1011);
+#1020=CARTESIAN_POINT('',(-10.,-20.,-30.));
+#1022=AXIS2_PLACEMENT_3D('',#1020,#1001,#1002);
+#1100=SHAPE_REPRESENTATION('parent',(#1012,#1022),#11);
+#1101=SHAPE_DEFINITION_REPRESENTATION(#1102,#1100);
+#1102=PRODUCT_DEFINITION_SHAPE('','',#1103);
+#1103=PRODUCT_DEFINITION('assembly','',#1104,#9);
+#1104=PRODUCT_DEFINITION_FORMATION('','',#1105);
+#1105=PRODUCT('assembly','','',(#8));
+#1110=(REPRESENTATION_RELATIONSHIP('','',#10,#1100) REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION(#1111) SHAPE_REPRESENTATION_RELATIONSHIP());
+#1111=ITEM_DEFINED_TRANSFORMATION('','',#1003,#1012);
+#1112=CONTEXT_DEPENDENT_SHAPE_REPRESENTATION(#1110,#1113);
+#1113=PRODUCT_DEFINITION_SHAPE('','',#1114);
+#1114=NEXT_ASSEMBLY_USAGE_OCCURRENCE('first','','',#1103,#5,$);
+#1120=(REPRESENTATION_RELATIONSHIP('','',#10,#1100) REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION(#1121) SHAPE_REPRESENTATION_RELATIONSHIP());
+#1121=ITEM_DEFINED_TRANSFORMATION('','',#1003,#1022);
+#1122=CONTEXT_DEPENDENT_SHAPE_REPRESENTATION(#1120,#1123);
+#1123=PRODUCT_DEFINITION_SHAPE('','',#1124);
+#1124=NEXT_ASSEMBLY_USAGE_OCCURRENCE('second','','',#1103,#5,$);
+"
+    } else {
+        // Four instances reuse one asymmetric solid through two mapping
+        // levels. Nonzero map origins must be subtracted before placement.
+        r"
+#1000=CARTESIAN_POINT('',(2.,3.,4.));
+#1001=DIRECTION('',(0.,0.,1.));
+#1002=DIRECTION('',(1.,0.,0.));
+#1003=AXIS2_PLACEMENT_3D('',#1000,#1001,#1002);
+#1004=REPRESENTATION_MAP(#1003,#10);
+#1010=CARTESIAN_POINT('',(10.,0.,0.));
+#1011=DIRECTION('',(0.,1.,0.));
+#1012=AXIS2_PLACEMENT_3D('',#1010,#1001,#1011);
+#1013=MAPPED_ITEM('',#1004,#1012);
+#1020=CARTESIAN_POINT('',(0.,8.,1.));
+#1021=DIRECTION('',(0.,0.,-1.));
+#1022=AXIS2_PLACEMENT_3D('',#1020,#1021,#1002);
+#1023=MAPPED_ITEM('',#1004,#1022);
+#1030=SHAPE_REPRESENTATION('repeated asymmetric parts',(#1013,#1023),#11);
+#1031=CARTESIAN_POINT('',(5.,2.,1.));
+#1032=AXIS2_PLACEMENT_3D('',#1031,#1001,#1002);
+#1033=REPRESENTATION_MAP(#1032,#1030);
+#1040=CARTESIAN_POINT('',(0.,0.,0.));
+#1041=AXIS2_PLACEMENT_3D('',#1040,#1001,#1002);
+#1042=MAPPED_ITEM('',#1033,#1041);
+#1050=CARTESIAN_POINT('',(0.,20.,5.));
+#1051=AXIS2_PLACEMENT_3D('',#1050,#1001,#1011);
+#1052=MAPPED_ITEM('',#1033,#1051);
+#1060=SHAPE_REPRESENTATION('nested repeated assembly',(#1042,#1052),#11);
+#1070=SHAPE_DEFINITION_REPRESENTATION(#1071,#1060);
+#1071=PRODUCT_DEFINITION_SHAPE('','',#1072);
+#1072=PRODUCT_DEFINITION('assembly','',#1073,#9);
+#1073=PRODUCT_DEFINITION_FORMATION('','',#1074);
+#1074=PRODUCT('nested mapped assembly','','',(#8));
+"
+    };
+    let end = source
+        .rfind("ENDSEC;")
+        .ok_or("STEP fixture has no DATA end")?;
+    Ok(format!("{}{entities}\n{}", &source[..end], &source[end..]))
+}
+
 fn cad_body(kind: &str) -> Result<(Model, Shape)> {
     let mut model = Model::new();
     let tol = Tolerances::millimetres();
@@ -480,6 +572,30 @@ fn cad(f: &mut Fixtures<'_>) -> Result<()> {
         "stp",
         "STEP exact cylindrical solid tessellation",
         step_cylinder()?.as_bytes(),
+    )?;
+    f.add(
+        "step-nested-mapped-assembly",
+        "step",
+        "STEP nested mappings with four placed part instances",
+        step_assembly(false)?.as_bytes(),
+    )?;
+    f.add(
+        "step-repeated-product-assembly",
+        "step",
+        "STEP repeated product occurrences with rotation and translation",
+        step_assembly(true)?.as_bytes(),
+    )?;
+    f.resource(
+        "step-cadquery-placed-bodies.step",
+        include_bytes!(
+            "../../tests/fixtures/formats/scientific_cad/step-cadquery-placed-bodies.step"
+        ),
+    )?;
+    f.register(
+        "step-cadquery-placed-bodies",
+        "step",
+        "STEP independently exported cube and cylinder with metre units",
+        CADQUERY,
     )?;
     for (ext, kind) in [("iges", "box"), ("igs", "cylinder")] {
         let (model, root) = cad_body(kind)?;

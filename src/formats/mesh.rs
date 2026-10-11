@@ -2,7 +2,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use crate::scene::{Point, Scene, Triangle, Vec3};
+use crate::scene::{Line, Point, Scene, Triangle, Vec3};
 use crate::{Error, Result};
 
 // Limit declared counts before allocating. This is deliberately much larger than
@@ -294,6 +294,36 @@ fn stl(bytes: &[u8]) -> Result<Scene> {
     Ok(scene)
 }
 
+fn obj_vertex_index(word: &str, vertex_count: usize) -> Result<usize> {
+    let index: i64 = word.split('/').next().unwrap_or("").parse()?;
+    let index = if index > 0 {
+        index - 1
+    } else if index < 0 {
+        vertex_count as i64 + index
+    } else {
+        return Err(err("OBJ indices are one-based; zero is invalid"));
+    };
+    if index < 0 || index as usize >= vertex_count {
+        return Err(err("OBJ index out of bounds"));
+    }
+    Ok(index as usize)
+}
+
+fn indexed_color(indices: &[usize], colors: &[Option<[u8; 3]>]) -> Option<[u8; 3]> {
+    let mut sum = [0_u64; 3];
+    let mut count = 0_u64;
+    for color in indices
+        .iter()
+        .filter_map(|&i| colors.get(i).copied().flatten())
+    {
+        count += 1;
+        for (channel, value) in color.into_iter().enumerate() {
+            sum[channel] += u64::from(value);
+        }
+    }
+    (count != 0).then(|| sum.map(|value| (value / count) as u8))
+}
+
 fn obj(source: &str, directory: &Path) -> Result<Scene> {
     let mut vertices = Vec::new();
     let mut colors = Vec::new();
@@ -333,54 +363,49 @@ fn obj(source: &str, directory: &Path) -> Result<Scene> {
                 Some("f") => {
                     let indices = words[1..]
                         .iter()
-                        .map(|w| {
-                            let index: i64 = w.split('/').next().unwrap_or("").parse()?;
-                            let index = if index > 0 {
-                                index - 1
-                            } else if index < 0 {
-                                vertices.len() as i64 + index
-                            } else {
-                                return Err(err("OBJ indices are one-based; zero is invalid"));
-                            };
-                            if index < 0 || index as usize >= vertices.len() {
-                                return Err(err("OBJ index out of bounds"));
-                            }
-                            Ok(index as usize)
-                        })
+                        .map(|w| obj_vertex_index(w, vertices.len()))
                         .collect::<Result<Vec<_>>>()?;
                     let color = material
                         .as_ref()
                         .and_then(|name| materials.get(name))
                         .copied()
-                        .or_else(|| {
-                            let cs: Vec<_> = indices.iter().filter_map(|&i| colors[i]).collect();
-                            if cs.is_empty() {
-                                None
-                            } else {
-                                Some(std::array::from_fn(|i| {
-                                    (cs.iter().map(|c| c[i] as u64).sum::<u64>() / cs.len() as u64)
-                                        as u8
-                                }))
-                            }
-                        });
+                        .or_else(|| indexed_color(&indices, &colors));
                     add_face(&mut scene, &indices, &vertices, color)?;
                 }
+                Some("l") => {
+                    if words.len() < 3 {
+                        return Err(err("OBJ polyline requires at least two vertices"));
+                    }
+                    let indices = words[1..]
+                        .iter()
+                        .map(|word| obj_vertex_index(word, vertices.len()))
+                        .collect::<Result<Vec<_>>>()?;
+                    if scene.lines.len().saturating_add(indices.len() - 1) > MAX_ITEMS {
+                        return Err(err("too much OBJ line geometry"));
+                    }
+                    let material_color = material
+                        .as_ref()
+                        .and_then(|name| materials.get(name))
+                        .copied();
+                    scene.lines.extend(indices.windows(2).map(|edge| Line {
+                        vertices: [vertices[edge[0]], vertices[edge[1]]],
+                        color: material_color.or_else(|| indexed_color(edge, &colors)),
+                    }));
+                }
                 Some("p") => {
+                    if words.len() < 2 {
+                        return Err(err("OBJ point element requires a vertex"));
+                    }
                     for word in &words[1..] {
-                        let index: i64 = word.parse()?;
-                        let index = if index > 0 {
-                            index - 1
-                        } else {
-                            vertices.len() as i64 + index
-                        };
-                        let p = vertices
-                            .get(index as usize)
-                            .ok_or_else(|| err("OBJ point index out of bounds"))?;
+                        let index = obj_vertex_index(word, vertices.len())?;
                         scene.points.push(Point {
-                            position: *p,
-                            color: colors[index as usize],
+                            position: vertices[index],
+                            color: colors[index],
                         });
                     }
+                }
+                Some("curv" | "curv2" | "surf") => {
+                    return Err(err("OBJ free-form curves and surfaces are not implemented"));
                 }
                 Some("usemtl") => material = words.get(1).map(|s| s.to_string()),
                 Some("mtllib") => {
@@ -413,14 +438,17 @@ fn obj(source: &str, directory: &Path) -> Result<Scene> {
                 }
                 _ => {}
             }
-            if vertices.len() > MAX_ITEMS || scene.triangles.len() > MAX_ITEMS {
+            if vertices.len() > MAX_ITEMS
+                || scene.triangles.len() > MAX_ITEMS
+                || scene.points.len() > MAX_ITEMS
+            {
                 return Err(err("too much OBJ geometry"));
             }
             Ok(())
         })();
         result.map_err(|e| err(format!("OBJ line {}: {e}", line_no + 1)))?;
     }
-    if scene.triangles.is_empty() && scene.points.is_empty() {
+    if scene.triangles.is_empty() && scene.points.is_empty() && scene.lines.is_empty() {
         scene.points = vertices
             .into_iter()
             .zip(colors)
@@ -758,6 +786,7 @@ fn ply(bytes: &[u8]) -> Result<Scene> {
     let mut vertices = Vec::new();
     let mut colors = Vec::new();
     let mut faces = Vec::new();
+    let mut edges = Vec::new();
     for element in elements {
         if element.name == "vertex" {
             for axis in ["x", "y", "z"] {
@@ -773,10 +802,26 @@ fn ply(bytes: &[u8]) -> Result<Scene> {
         if element.properties.is_empty() && element.count != 0 {
             return Err(err("PLY element has no properties"));
         }
+        if element.name == "edge" && element.count != 0 {
+            for endpoint in ["vertex1", "vertex2"] {
+                let mut properties = element
+                    .properties
+                    .iter()
+                    .filter(|property| property.name == endpoint);
+                let property = properties.next();
+                if properties.next().is_some()
+                    || property
+                        .is_none_or(|property| property.count.is_some() || property.item.floating())
+                {
+                    return Err(err(format!("PLY edge requires one integer {endpoint}")));
+                }
+            }
+        }
         for _ in 0..element.count {
             let mut position = Vec3::default();
             let mut color = [None; 3];
             let mut indices = None;
+            let mut endpoints = [None; 2];
             for property in &element.properties {
                 if let Some(kind) = property.count {
                     let n = values.list_count(kind)?;
@@ -810,14 +855,27 @@ fn ply(bytes: &[u8]) -> Result<Scene> {
                             _ => {}
                         }
                     }
+                    if element.name == "edge" {
+                        let endpoint = match property.name.as_str() {
+                            "vertex1" => Some(0),
+                            "vertex2" => Some(1),
+                            _ => None,
+                        };
+                        if let Some(endpoint) = endpoint {
+                            if property.item.floating() || value < 0.0 || value > MAX_ITEMS as f64 {
+                                return Err(err("invalid PLY edge index"));
+                            }
+                            endpoints[endpoint] = Some(value as usize);
+                        }
+                    }
                     let channel = match property.name.as_str() {
                         "red" | "r" | "diffuse_red" => Some(0),
                         "green" | "g" | "diffuse_green" => Some(1),
                         "blue" | "b" | "diffuse_blue" => Some(2),
                         _ => None,
                     };
-                    if let Some(channel) =
-                        channel.filter(|_| matches!(element.name.as_str(), "vertex" | "face"))
+                    if let Some(channel) = channel
+                        .filter(|_| matches!(element.name.as_str(), "vertex" | "face" | "edge"))
                     {
                         if !value.is_finite() {
                             return Err(err("non-finite PLY color"));
@@ -849,27 +907,29 @@ fn ply(bytes: &[u8]) -> Result<Scene> {
                     indices.ok_or_else(|| err("PLY face lacks vertex indices"))?,
                     color,
                 ));
+            } else if element.name == "edge" {
+                let [Some(first), Some(second)] = endpoints else {
+                    return Err(err("PLY edge lacks vertex indices"));
+                };
+                edges.push(([first, second], color));
             }
         }
     }
     let mut scene = Scene::default();
     for (indices, color) in faces {
-        let color = color.or_else(|| {
-            let cs: Vec<_> = indices
-                .iter()
-                .filter_map(|&i| colors.get(i).copied().flatten())
-                .collect();
-            if cs.is_empty() {
-                None
-            } else {
-                Some(std::array::from_fn(|i| {
-                    (cs.iter().map(|c| c[i] as u64).sum::<u64>() / cs.len() as u64) as u8
-                }))
-            }
-        });
+        let color = color.or_else(|| indexed_color(&indices, &colors));
         add_face(&mut scene, &indices, &vertices, color)?;
     }
-    if scene.triangles.is_empty() {
+    for (indices, color) in edges {
+        let [Some(first), Some(second)] = indices.map(|index| vertices.get(index).copied()) else {
+            return Err(err("PLY edge references a missing vertex"));
+        };
+        scene.lines.push(Line {
+            vertices: [first, second],
+            color: color.or_else(|| indexed_color(&indices, &colors)),
+        });
+    }
+    if scene.triangles.is_empty() && scene.lines.is_empty() {
         scene.points = vertices
             .into_iter()
             .zip(colors)
@@ -1448,6 +1508,61 @@ mod tests {
     }
 
     #[test]
+    fn obj_polylines_keep_segments_colors_and_explicit_geometry() {
+        let vertices = "v 0 0 0 1 0 0\nv 2 0 0 0 1 0\nv 2 1 1 0 0 1\nv 1000 1000 1000\n";
+        let source = format!("{vertices}vt 0 0\nvt 1 0\nvt 1 1\nl 1/1 2/2 3/3\n");
+        let scene = obj(&source, Path::new(".")).unwrap();
+        assert!(scene.points.is_empty());
+        assert!(scene.triangles.is_empty());
+        assert_eq!(scene.lines.len(), 2);
+        assert_eq!(
+            scene.lines[0].vertices,
+            [Vec3::new(0., 0., 0.), Vec3::new(2., 0., 0.)]
+        );
+        assert_eq!(
+            scene.lines[1].vertices,
+            [Vec3::new(2., 0., 0.), Vec3::new(2., 1., 1.)]
+        );
+        assert_eq!(scene.lines[0].color, Some([127, 127, 0]));
+        assert_eq!(scene.lines[1].color, Some([0, 127, 127]));
+        assert!(scene.positions().all(|v| v.x < 1000.));
+        let mixed = obj(
+            &format!("{vertices}l -4 -3 -2\nf 1 2 3\np -4\n"),
+            Path::new("."),
+        )
+        .unwrap();
+        assert_eq!(mixed.lines.len(), 2);
+        assert_eq!(mixed.triangles.len(), 1);
+        assert_eq!(mixed.points.len(), 1);
+        assert_eq!(mixed.lines[1].vertices, scene.lines[1].vertices);
+    }
+
+    #[test]
+    fn obj_lines_use_materials_and_reject_invalid_or_unimplemented_geometry() {
+        let directory =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/formats/mesh_scene");
+        let scene = obj(
+            "mtllib obj-palette.mtl\nv 0 0 0 0 1 0\nv 1 0 0 0 1 0\nusemtl face0\nl 1 2\n",
+            &directory,
+        )
+        .unwrap();
+        assert_eq!(scene.lines[0].color, Some([230, 105, 55]));
+        for element in [
+            "l",
+            "l 1",
+            "l 0 1",
+            "l -3 -1",
+            "l 1 3",
+            "p 0",
+            "curv 0 1 1 2",
+            "surf 0 1 0 1 1 2",
+        ] {
+            let source = format!("v 0 0 0\nv 1 0 0\n{element}\n");
+            assert!(obj(&source, Path::new(".")).is_err(), "{element}");
+        }
+    }
+
+    #[test]
     fn off_counts_colors_and_truncation() {
         let scene =
             off("COFF\n3 1 0\n0 0 0 255 0 0 255\n1 0 0 255 0 0 255\n0 1 0 255 0 0 255\n3 0 1 2\n")
@@ -1497,6 +1612,81 @@ mod tests {
             let scene = ply(&bytes).unwrap();
             assert_eq!(scene.triangles.len(), 1);
             assert_eq!(scene.triangles[0].color, Some([10, 20, 30]));
+            assert!(ply(&bytes[..bytes.len() - 1]).is_err());
+        }
+    }
+
+    #[test]
+    fn ply_edges_preserve_wire_geometry_before_vertices_and_with_faces() {
+        let source = "ply\nformat ascii 1.0\nelement edge 2\nproperty int vertex1\nproperty int vertex2\nproperty uchar red\nproperty uchar green\nproperty uchar blue\nelement vertex 3\nproperty float x\nproperty float y\nproperty float z\nend_header\n0 1 230 105 55\n1 2 55 150 220\n0 0 0\n2 0 0\n2 1 1\n";
+        let scene = ply(source.as_bytes()).unwrap();
+        assert!(scene.points.is_empty());
+        assert_eq!(scene.lines.len(), 2);
+        assert_eq!(
+            scene.lines[0].vertices,
+            [Vec3::new(0., 0., 0.), Vec3::new(2., 0., 0.)]
+        );
+        assert_eq!(
+            scene.lines[1].vertices,
+            [Vec3::new(2., 0., 0.), Vec3::new(2., 1., 1.)]
+        );
+        assert_eq!(scene.lines[1].color, Some([55, 150, 220]));
+        let mixed = source.replace(
+            "end_header",
+            "element face 1\nproperty list uchar int vertex_indices\nend_header",
+        ) + "3 0 1 2\n";
+        let scene = ply(mixed.as_bytes()).unwrap();
+        assert_eq!(scene.triangles.len(), 1);
+        assert_eq!(scene.lines.len(), 2);
+        assert!(scene.points.is_empty());
+        for invalid in [
+            source.replace("0 1 230", "0 3 230"),
+            source.replace("0 1 230", "-1 1 230"),
+            source.replace("property int vertex1", "property float vertex1"),
+            source.replace("property int vertex1", "property int absent"),
+            source.replace(
+                "property int vertex1",
+                "property int vertex1\nproperty list uchar int vertex1",
+            ),
+        ] {
+            assert!(ply(invalid.as_bytes()).is_err());
+        }
+    }
+
+    #[test]
+    fn ply_binary_edges_use_vertex_colors_in_both_byte_orders() {
+        for little in [true, false] {
+            let format = if little {
+                "binary_little_endian"
+            } else {
+                "binary_big_endian"
+            };
+            let mut bytes = format!("ply\nformat {format} 1.0\nelement vertex 2\nproperty double x\nproperty double y\nproperty double z\nproperty uchar red\nproperty uchar green\nproperty uchar blue\nelement edge 1\nproperty int vertex1\nproperty uint vertex2\nend_header\n").into_bytes();
+            for (vertex, color) in [([0_f64, 0., 0.], [255, 0, 0]), ([2., 1., 1.], [0, 0, 255])] {
+                for value in vertex {
+                    bytes.extend(if little {
+                        value.to_le_bytes()
+                    } else {
+                        value.to_be_bytes()
+                    });
+                }
+                bytes.extend(color);
+            }
+            for index in [0_i32, 1] {
+                bytes.extend(if little {
+                    index.to_le_bytes()
+                } else {
+                    index.to_be_bytes()
+                });
+            }
+            let scene = ply(&bytes).unwrap();
+            assert_eq!(scene.lines.len(), 1);
+            assert!(scene.points.is_empty());
+            assert_eq!(
+                scene.lines[0].vertices,
+                [Vec3::new(0., 0., 0.), Vec3::new(2., 1., 1.)]
+            );
+            assert_eq!(scene.lines[0].color, Some([127, 0, 127]));
             assert!(ply(&bytes[..bytes.len() - 1]).is_err());
         }
     }

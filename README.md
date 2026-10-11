@@ -90,4 +90,4 @@ Compression and image codecs use Rust backends. The supported Linux, Windows and
 
 ## License
 
-MIT. Catwalk is an independent thumbnail implementation; no F3D source code is included.
+Catwalk's code and authored fixtures are MIT licensed. Retained upstream test assets keep their separately documented licenses and notices, including the AGPL-3.0 slicer examples. Catwalk is an independent thumbnail implementation; no F3D source code is included.

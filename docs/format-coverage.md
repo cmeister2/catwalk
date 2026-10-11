@@ -22,7 +22,7 @@ These seven extension aliases are additional saved-image formats, outside the pu
 | [VTKHDF](#vtkhdf) | `.vtkhdf` | Subset: static polygon/linear-cell/convex-polyhedron meshes, structured grids, scalar images and local composite assemblies. |
 | [ExodusII](#exodus-ii) | `.e`, `.ex2`, `.exo`, `.g` | Subset: CDF1/2/5 and NetCDF4 undeformed linear element-block boundary geometry. |
 | [NetCDF](#netcdf) | `.nc`, `.cdf`, `.ncdf` | Subset: rectilinear 2D scalar sheets, 3D scalar density and first time sample; Exodus schema detection. |
-| [PLYReader](#ply) | `.ply` | Subset: ASCII/binary polygon and point geometry with RGB. |
+| [PLYReader](#ply) | `.ply` | Subset: ASCII/binary polygons, standard edges and point geometry with RGB. |
 | [STL](#stl) | `.stl` | Implemented: ASCII and binary triangle geometry. |
 | [DICOM](#dicom) | `.dcm` | Subset: first scalar/RGB image frame with native, deflated, JPEG or RLE pixel decoding. |
 | [Nrrd](#nrrd) | `.nrrd`, `.nhdr` | Subset: raw/ASCII/hex/gzip scalar density, attached or one detached payload. |
@@ -38,12 +38,12 @@ These seven extension aliases are additional saved-image formats, outside the pu
 | [QuakeMDL](#quake-mdl) | `.mdl` | Subset: Quake IDPO v6 triangle geometry, first frame, grouped frames. |
 | [CityGML](#citygml) | `.gml` | Subset: highest feature LoD planar surfaces, holes, local XLinks and diffuse appearances. |
 | [PTS](#pts) | `.pts` | Implemented: point positions and optional RGB. |
-| [STEP](#step) | `.step`, `.stp`, `.stpnc`, `.p21`, `.210` | Subset: supported Part 21 B-rep shells tessellated in Rust; no assemblies. |
+| [STEP](#step) | `.step`, `.stp`, `.stpnc`, `.p21`, `.210` | Subset: supported Part 21 B-rep shells, axis-based assemblies/mappings and length contexts tessellated in Rust. |
 | [IGES](#iges) | `.iges`, `.igs` | Subset: supported manifold/constructive solids and independent trimmed/bounded sheets, curved surface tessellation. |
 | [BREP](#brep) | `.brep` | Subset: Open CASCADE ASCII topology, supported analytic/NURBS geometry, occurrence placements and curved tessellation. |
 | [XBF](#xbf) | `.xbf` | Subset: native binary XCAF static B-rep geometry, free shapes, instance placements and diffuse colors. |
 | [Alembic](#alembic) | `.abc` | Subset: Ogawa/HDF5 first-sample meshes, subdivision cages, points, sampled curves, transforms, instances and RGB. |
-| [OBJ](#obj) | `.obj` | Subset: static polygons, vertex RGB and local MTL diffuse colors. |
+| [OBJ](#obj) | `.obj` | Subset: static polygons, polylines and points, vertex RGB and local MTL diffuse colors. |
 | [GLTF, GLTFDraco](#gltf) | `.gltf` | Subset: triangle/point/line scenes, first animation pose, weighted skins, morphs, colors and Rust Draco/quantized decoding. |
 | [GLB, GLBDraco](#glb) | `.glb` | Subset: triangle/point/line scenes, first animation pose, weighted skins, morphs, colors and Rust Draco/quantized decoding. |
 | [Draco](#draco) | `.drc` | Subset: sequential/Edgebreaker meshes and sequential/kd-tree point clouds, positions and colors. |
@@ -54,7 +54,7 @@ These seven extension aliases are additional saved-image formats, outside the pu
 | [OFF](#off) | `.off` | Subset: polygon geometry and colors. |
 | [DXF](#dxf) | `.dxf` | Subset: ASCII/binary drawing faces, points, lines, sampled curves/splines, meshes and nested block instances. |
 | [DirectX](#directx) | `.x` | Subset: text/binary/MSZIP mesh scenes, static frames, bind geometry and colors. |
-| [3MF](#3mf) | `.3mf` | Subset: core mesh/components/build transforms and base/color-group colors. |
+| [3MF](#3mf) | `.3mf` | Subset: core and production multipart meshes/components/build transforms, units and base/color-group colors. |
 | [USD](#usd) | `.usd`, `.usda`, `.usdc`, `.usdz` | Subset: local composed stages, static meshes/primitives/points/curves, instances, transforms and diffuse colors. |
 | [VDB](#vdb) | `.vdb` | Subset: scalar sparse 5/4/3 trees, half-float values, density/level-set surfaces and affine transforms. |
 | [IFC](#ifc) | `.ifc` | Subset: Part 21 product placements, mapped/faceted/tessellated shapes, extruded/revolved profiles, primitives and bounded solid operations/openings. |
@@ -208,9 +208,9 @@ See [HDF5 and NetCDF backends](#hdf5-and-netcdf-backends) for codecs, validation
 
 **Extensions:** `.ply`.
 
-**Coverage:** Subset: ASCII/binary polygon and point geometry with RGB.
+**Coverage:** Subset: ASCII/binary polygons, standard edges and point geometry with RGB.
 
-PLY accepts ASCII, little-endian binary and big-endian binary arrays and standard polygon indices. Additional PLY properties can be skipped, but Gaussian fields are not evaluated.
+PLY accepts ASCII, little-endian binary and big-endian binary arrays, standard polygon indices and the `edge` records described in the [original PLY specification](https://gamma-web.iacs.umd.edu/POWERPLANT/papers/ply.pdf). Edges require integer `vertex1`/`vertex2` references and preserve optional RGB; missing edge colors use available endpoint colors. Edges may precede vertices, and mesh faces and edges render together. Wire-only inputs retain their edges without adding all vertices as points. Additional PLY properties can be skipped, but Gaussian fields are not evaluated.
 
 ## STL
 
@@ -346,9 +346,15 @@ PTS previews render stored point positions and optional RGB. The reader supports
 
 **Extensions:** `.step`, `.stp`, `.stpnc`, `.p21`, `.210`.
 
-**Coverage:** Subset: supported Part 21 B-rep shells tessellated in Rust; no assemblies.
+**Coverage:** Subset: supported Part 21 B-rep shells, axis-based assemblies/mappings and length contexts tessellated in Rust.
 
-STEP uses `truck-stepio` 0.3 and Truck's robust constrained surface tessellation. Supported open/closed B-rep shells become actual triangles, including supported curved surfaces; arbitrary control points are never substituted for CAD geometry. Full spheres and ring tori with vertex-loop bounds use direct analytic surface evaluation, retaining placement and checking that the loop vertex lies on the surface. The reader checks resolved topology, face/boundary preservation and per-face tessellation so incomplete geometry fails explicitly. Tests generate a translated rectangular solid, cylinder, sphere and torus, verify surface areas/bounds, render a thumbnail and exercise all five extension aliases. A wide, thin cylinder checks that boundary-curve extent controls tessellation density. Pinned upstream [OCCT cube, cone, cylinder, sphere and torus fixtures](https://github.com/ricosjp/resources4truck/tree/9bf9de1426c5fc2f2b8d63f501dca0d3c53ebd91/step) also render successfully. Assembly placement/mapped instances, unsupported entities, faceted schemas outside Truck's supported topology, unsupported/mixed vertex-loop topology, horn/spindle tori, wire-only files and non-geometric STEP-NC/AP210 contents remain unsupported. Materials and unit-context conversion are not evaluated. Constrained tessellation uses 0.3% of each shell's estimated diameter from vertices and sampled boundary curves, with a kernel-tolerance floor; full analytic sphere/torus surfaces use a 64-by-64 parameter grid. Entity count, topology depth, face and output triangle limits apply. Alias recognition does not establish full schema parity.
+STEP uses `truck-stepio` 0.3 and Truck's robust constrained surface tessellation. Supported open/closed B-rep shells become actual triangles, including supported curved surfaces. Full spheres and ring tori with vertex-loop bounds use direct analytic surface evaluation, retaining placement and checking that the loop vertex lies on the surface. The reader checks resolved topology, face/boundary preservation and per-face tessellation so incomplete geometry fails explicitly. Constrained tessellation uses 0.3% of each shell's estimated diameter from vertices and sampled boundary curves, with a kernel-tolerance floor; full analytic sphere/torus surfaces use a 64-by-64 parameter grid.
+
+Supported shape representations retain nested `REPRESENTATION_MAP`/`MAPPED_ITEM` instances with 3D axis frames, and assembly occurrences linked through `NEXT_ASSEMBLY_USAGE_OCCURRENCE`, `CONTEXT_DEPENDENT_SHAPE_REPRESENTATION` and axis-based `ITEM_DEFINED_TRANSFORMATION` relationships. Product ownership determines transformed relationship direction; plain shape relationships group equivalent representations in either endpoint order and reject ambiguous links between different products. Nonzero mapping origins are subtracted before rotation and translation. Shell meshes are cached and reused for each placed occurrence. Representation length contexts, including SI prefixes and supported simple/complex conversion-based units, normalize geometry and frame translations to millimeters. Bare shells without representation contexts retain the existing coordinate convention. Unowned shells, missing placements, unsupported required representation items, cycles and excessive hierarchy expansion fail explicitly.
+
+Tests generate a translated rectangular solid, cylinder, sphere and torus, verify surface areas/bounds, render a thumbnail and exercise all five extension aliases. Assembly regressions independently compare every placed vertex for repeated and nested parts, reversed relationship direction, mixed metre/millimeter contexts and inch conversion. [Authored assembly snapshots and a retained Apache-2.0 CadQuery export](../tests/fixtures/formats/scientific_cad/README.md) provide portable image comparisons. The independent export contains two placed bodies with curved geometry and conversion-based metre units; it does not establish real-exporter assembly hierarchy coverage. A wide, thin cylinder checks that boundary-curve extent controls tessellation density. Pinned upstream [OCCT cube, cone, cylinder, sphere and torus fixtures](https://github.com/ricosjp/resources4truck/tree/9bf9de1426c5fc2f2b8d63f501dca0d3c53ebd91/step) also render successfully.
+
+Plain context-dependent identity occurrences without transformed relationships, additional transformation operators, unsupported entities, faceted schemas outside Truck's supported topology, unsupported/mixed vertex-loop topology, horn/spindle tori, wire-only files and non-geometric STEP-NC/AP210 contents remain unsupported. Materials and angular-unit conversion are not evaluated. Entity count, topology/representation depth, face and output triangle limits apply. Alias recognition does not establish full schema parity.
 
 ## IGES
 
@@ -394,9 +400,9 @@ Alembic reads Ogawa version-1 archives and supported HDF5 archives in Rust, sele
 
 **Extensions:** `.obj`.
 
-**Coverage:** Subset: static polygons, vertex RGB and local MTL diffuse colors.
+**Coverage:** Subset: static polygons, polylines and points, vertex RGB and local MTL diffuse colors.
 
-OBJ loads static positions, faces and point-only input, with concave-aware triangulation. Vertex RGB and optional local MTL diffuse `Kd` colors influence the thumbnail; texture coordinates, texture images and imported normals do not.
+OBJ loads static positions, faces, polylines and explicit points, with concave-aware triangulation. Positive and negative polyline indices, including vertex/texture-coordinate references, retain each consecutive segment. Unreferenced vertices are not added to a mesh or wire preview. Vertex RGB and optional local MTL diffuse `Kd` colors influence the thumbnail; texture coordinates, texture images and imported normals do not. Free-form curve and surface declarations fail explicitly rather than substituting their control points for geometry.
 
 ## glTF
 
@@ -488,9 +494,13 @@ DirectX X accepts text, binary 32/64-bit and MSZIP-compressed streams, including
 
 **Extensions:** `.3mf`.
 
-**Coverage:** Subset: core mesh/components/build transforms and base/color-group colors.
+**Coverage:** Subset: core and production multipart meshes/components/build transforms, units and base/color-group colors.
 
-The 3MF subset includes core meshes, component instances, build transforms, base materials and optional material color groups. Textures, composite materials, external model parts and the production extension remain unsupported.
+3MF loads core meshes, nested component instances, build transforms, base materials and optional material color groups. The [Production Extension 1.1.2](https://3mf.io/spec/production-v1-1-2/) permits the root model's components and build items to reference other model parts inside the package. These namespace-qualified `p:path` references are resolved through OPC model relationships; object IDs and material palettes stay local to each model part. Only the selected root build contributes geometry. Child builds are ignored, and child component references remain local as required by the extension. The six core length units normalize to millimeters, including translations in each referencing part's units; nested rotations and dimensionless scales are preserved.
+
+Authored multipart fixtures exercise colliding IDs and palettes, nested placement, direct cross-part build references and mixed inch/centimeter units. Unchanged [Bambu Studio, OrcaSlicer and PrusaSlicer packages](../tests/fixtures/formats/mesh_scene/README.md) add real exporter examples, with independent triangle-count, bounds, area and source-hash checks. Tests reject missing relationships/parts/objects, ambiguous duplicate entries, malformed namespaces, cycles and excessive expansion. Limits cover 256 model parts, 512 MiB of aggregate consumed XML, five million source vertices/triangles and output triangles, 100,000 resources/archive entries, one million references/instances and 256 levels of component nesting.
+
+Textures, composite materials and unknown required extensions remain unsupported. Remote model resources are rejected. UUID traceability and slicer settings do not affect preview geometry; this subset does not validate full manufacturing or print conformance.
 
 ## USD
 
@@ -670,8 +680,8 @@ The reader does not parse geometry, verify whole-file CRCs or recover previews t
 
 ## Remaining compatibility work
 
-1. Broaden CAD compatibility against independent files. Remaining cases include missing face pcurves, difficult trimming/tessellation, STEP assemblies and additional Open CASCADE document versions and cached geometry. Preserve genuine topology, placement and curved geometry when adding these variants.
-2. Broaden implemented encodings and geometry. Priorities include additional compression codecs, partial structured pieces, blanking, additional VTKHDF/Exodus/NetCDF schemas, broader CAD trimming and STEP assemblies, further USD/FBX/VRML/CityGML scene constructs, and supported scalar/DICOM/image codecs. Existing density and first-frame policies can stay fixed while missing valid encodings and geometry are added. Lidar schema/CRS coverage and CAD units also need corpus checks.
+1. Broaden CAD compatibility against independent files. Remaining cases include missing face pcurves, difficult trimming/tessellation, additional STEP assembly operators and independent exporter coverage, and additional Open CASCADE document versions and cached geometry. Preserve genuine topology, placement and curved geometry when adding these variants.
+2. Broaden implemented encodings and geometry. Priorities include additional compression codecs, partial structured pieces, blanking, additional VTKHDF/Exodus/NetCDF schemas, broader CAD trimming and assembly operators, further USD/FBX/VRML/CityGML scene constructs, and supported scalar/DICOM/image codecs. Existing density and first-frame policies can stay fixed while missing valid encodings and geometry are added. Lidar schema/CRS coverage and CAD units also need corpus checks.
 3. Establish parity with a pinned F3D build and corpus. Record its reader list, gather valid examples for every reader and encoding, and compare geometry bounds, supported first-frame content and reference thumbnails. Include malformed/truncated files, external resources, transforms, holes/concave polygons, mixed blocks, large inputs and compressed variants. Current generated regression tests and independent reference files establish the documented subsets; they do not establish universal valid-file equivalence.
 
 Matching all 76 aliases is necessary but insufficient for F3D file compatibility. Remaining work covers valid encodings and geometry outside the documented subsets. The implementation uses no subprocess converters or C/C++ model/codec bindings.

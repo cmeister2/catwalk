@@ -1,0 +1,13 @@
+Retained fixture: step-cadquery-placed-bodies.step
+Original filename: tests/testdata/red_cube_blue_cylinder.step
+Project: CadQuery
+Source commit: 5f5bc62b255f62e3512105740025361b6c31eddd
+Source URL: https://github.com/CadQuery/cadquery/blob/5f5bc62b255f62e3512105740025361b6c31eddd/tests/testdata/red_cube_blue_cylinder.step
+License: Apache License, Version 2.0; original LICENSE retained as step-cadquery-LICENSE.
+SHA-256: 1fd5c7d9325bcfb9863365faf84554f89e7e7a5e86760a0fc8d5db00619d9ef5
+
+Copied byte-for-byte. This is an independent exported two-body STEP fixture:
+a cube and cylinder with authored placements and a conversion-based metre
+representation context. It qualifies curved geometry and length-unit handling;
+it does not contain an assembly hierarchy. Authored colors are retained in the
+input, but Catwalk's STEP importer currently renders its default surface color.

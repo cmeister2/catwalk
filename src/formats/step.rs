@@ -1,9 +1,10 @@
 //! STEP Part 21 boundary-representation tessellation through the Rust Truck kernel.
+use super::transform::Transform;
 use crate::Result;
 use crate::scene::{Scene, Triangle, Vec3};
 use ruststep::ast::{EntityInstance, Name, Parameter, Record};
 use ruststep::tables::EntityTable;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 use truck_meshalgo::prelude::*;
 use truck_stepio::r#in::{
@@ -324,6 +325,744 @@ fn closed_analytic_shell(
     Ok(Some(scene))
 }
 
+fn field(record: &Record, index: usize) -> Result<&Parameter> {
+    list(&record.parameter)?
+        .get(index)
+        .ok_or_else(|| "truncated STEP assembly entity".into())
+}
+
+fn named_record<'a>(
+    entities: &HashMap<u64, &'a EntityInstance>,
+    id: u64,
+    name: &str,
+) -> Result<Option<&'a Record>> {
+    let entity = entities
+        .get(&id)
+        .ok_or_else(|| format!("STEP references missing entity #{id}"))?;
+    Ok(records(entity)
+        .1
+        .iter()
+        .find(|record| record.name.as_str() == name))
+}
+
+fn number(parameter: &Parameter) -> Result<f64> {
+    let value = match parameter {
+        Parameter::Real(value) => *value,
+        Parameter::Integer(value) => *value as f64,
+        Parameter::Typed { parameter, .. } => return number(parameter),
+        _ => return Err("STEP assembly requires a numeric value".into()),
+    };
+    if !value.is_finite() {
+        return Err("STEP assembly numeric value is non-finite".into());
+    }
+    Ok(value)
+}
+
+fn unit_factor(entities: &HashMap<u64, &EntityInstance>, id: u64, depth: usize) -> Result<f64> {
+    if depth > 32 {
+        return Err("STEP unit definitions are cyclic or too deep".into());
+    }
+    let factor = if let Some(unit) = named_record(entities, id, "SI_UNIT")? {
+        if !matches!(field(unit, 1)?, Parameter::Enumeration(name) if name == "METRE") {
+            return Err("STEP assembly length unit must be a supported metre unit".into());
+        }
+        let exponent = match field(unit, 0)? {
+            Parameter::NotProvided => 0,
+            Parameter::Enumeration(prefix) => match prefix.as_str() {
+                "EXA" => 18,
+                "PETA" => 15,
+                "TERA" => 12,
+                "GIGA" => 9,
+                "MEGA" => 6,
+                "KILO" => 3,
+                "HECTO" => 2,
+                "DECA" => 1,
+                "DECI" => -1,
+                "CENTI" => -2,
+                "MILLI" => -3,
+                "MICRO" => -6,
+                "NANO" => -9,
+                "PICO" => -12,
+                "FEMTO" => -15,
+                "ATTO" => -18,
+                _ => return Err("unsupported STEP SI length prefix".into()),
+            },
+            _ => return Err("invalid STEP SI length prefix".into()),
+        };
+        1000. * 10f64.powi(exponent)
+    } else if let Some(unit) = named_record(entities, id, "CONVERSION_BASED_UNIT")? {
+        let value_id = reference(field(unit, 1)?)?;
+        // Complex STEP instances put inherited values in MEASURE_WITH_UNIT;
+        // LENGTH_MEASURE_WITH_UNIT() is only an empty subtype marker there.
+        let value = named_record(entities, value_id, "MEASURE_WITH_UNIT")?
+            .or(named_record(
+                entities,
+                value_id,
+                "LENGTH_MEASURE_WITH_UNIT",
+            )?)
+            .ok_or("unsupported STEP conversion-based length measure")?;
+        number(field(value, 0)?)? * unit_factor(entities, reference(field(value, 1)?)?, depth + 1)?
+    } else {
+        return Err("unsupported STEP assembly length unit".into());
+    };
+    if !factor.is_finite() || factor <= 0. {
+        return Err("invalid STEP assembly unit scale".into());
+    }
+    Ok(factor)
+}
+
+fn context_factor(entities: &HashMap<u64, &EntityInstance>, id: u64) -> Result<f64> {
+    if let Some(context) = named_record(entities, id, "GEOMETRIC_REPRESENTATION_CONTEXT")?
+        && number(field(context, 0)?)? != 3.
+    {
+        return Err("STEP assembly requires 3D representation contexts".into());
+    }
+    let Some(units) = named_record(entities, id, "GLOBAL_UNIT_ASSIGNED_CONTEXT")? else {
+        return Ok(1.);
+    };
+    let mut scale = None;
+    for unit in list(field(units, 0)?)? {
+        let unit = reference(unit)?;
+        if named_record(entities, unit, "LENGTH_UNIT")?.is_some() {
+            if scale.is_some() {
+                return Err("STEP context has multiple length units".into());
+            }
+            scale = Some(unit_factor(entities, unit, 0)?);
+        }
+    }
+    scale.ok_or_else(|| "STEP unit context lacks a supported length unit".into())
+}
+
+fn coordinate(entities: &HashMap<u64, &EntityInstance>, id: u64, kind: &str) -> Result<Vec3> {
+    let record = named_record(entities, id, kind)?
+        .ok_or_else(|| format!("STEP placement requires {kind}"))?;
+    let values = list(field(record, 1)?)?;
+    if values.len() != 3 {
+        return Err("STEP placement coordinates must be three-dimensional".into());
+    }
+    Ok(Vec3::new(
+        number(&values[0])?,
+        number(&values[1])?,
+        number(&values[2])?,
+    ))
+}
+
+fn direction(
+    entities: &HashMap<u64, &EntityInstance>,
+    parameter: &Parameter,
+    default: Vec3,
+) -> Result<Vec3> {
+    let value = if matches!(parameter, Parameter::NotProvided) {
+        default
+    } else {
+        coordinate(entities, reference(parameter)?, "DIRECTION")?
+    };
+    let length = value.length();
+    if !length.is_finite() || length <= 0. {
+        return Err("STEP placement has an invalid direction".into());
+    }
+    Ok(value / length)
+}
+
+fn axis_frame(entities: &HashMap<u64, &EntityInstance>, id: u64, scale: f64) -> Result<Transform> {
+    let record = named_record(entities, id, "AXIS2_PLACEMENT_3D")?
+        .ok_or("STEP assembly supports 3D axis placements only")?;
+    let origin = coordinate(entities, reference(field(record, 1)?)?, "CARTESIAN_POINT")? * scale;
+    let z = direction(entities, field(record, 2)?, Vec3::new(0., 0., 1.))?;
+    let default_x = if z.cross(Vec3::new(1., 0., 0.)).length() > 1e-12 {
+        Vec3::new(1., 0., 0.)
+    } else {
+        Vec3::new(0., 1., 0.)
+    };
+    let reference = direction(entities, field(record, 3)?, default_x)?;
+    let x = reference - z * reference.dot(z);
+    if x.length() < 1e-12 {
+        return Err("STEP placement axis and reference direction are parallel".into());
+    }
+    let x = x / x.length();
+    let y = z.cross(x);
+    let transform = Transform([
+        [x.x, x.y, x.z, 0.],
+        [y.x, y.y, y.z, 0.],
+        [z.x, z.y, z.z, 0.],
+        [origin.x, origin.y, origin.z, 1.],
+    ]);
+    if transform.0.iter().flatten().any(|v| !v.is_finite()) {
+        return Err("STEP placement is non-finite".into());
+    }
+    Ok(transform)
+}
+
+/// Frames are orthonormal, so inverse rotation is its transpose.
+fn inverse_frame(transform: Transform) -> Transform {
+    let mut inverse = Transform::IDENTITY;
+    for column in 0..3 {
+        for row in 0..3 {
+            inverse.0[column][row] = transform.0[row][column];
+        }
+    }
+    let origin = Vec3::new(transform.0[3][0], transform.0[3][1], transform.0[3][2]);
+    let origin = inverse.apply(origin) * -1.;
+    inverse.0[3] = [origin.x, origin.y, origin.z, 1.];
+    inverse
+}
+
+fn is_shape_representation(name: &str) -> bool {
+    name.ends_with("SHAPE_REPRESENTATION") && name != "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION"
+}
+
+struct Representation {
+    items: Vec<u64>,
+    scale: f64,
+}
+#[derive(Clone, Copy)]
+struct Placement {
+    occurrence: u64,
+    child: u64,
+    transform: Transform,
+}
+struct Assembly<'a> {
+    entities: &'a HashMap<u64, &'a EntityInstance>,
+    representations: BTreeMap<u64, Representation>,
+    children: HashMap<u64, Vec<Placement>>,
+    groups: BTreeMap<u64, Vec<u64>>,
+    roots: Vec<u64>,
+}
+struct Expansion<'a> {
+    meshes: &'a HashMap<u64, Scene>,
+    scene: Scene,
+    visiting: HashSet<u64>,
+    used: HashSet<u64>,
+    work: usize,
+}
+
+impl<'a> Assembly<'a> {
+    fn representation(&self, id: u64) -> Result<&Representation> {
+        self.representations.get(&id).ok_or_else(|| {
+            format!("STEP assembly references unsupported shape representation #{id}").into()
+        })
+    }
+    fn new(entities: &'a HashMap<u64, &'a EntityInstance>) -> Result<Self> {
+        let mut assembly = Self {
+            entities,
+            representations: BTreeMap::new(),
+            children: HashMap::new(),
+            groups: BTreeMap::new(),
+            roots: Vec::new(),
+        };
+        let mut items_count = 0usize;
+        for (&id, entity) in entities {
+            let entity_records = records(entity).1;
+            if !entity_records
+                .iter()
+                .any(|r| is_shape_representation(r.name.as_str()))
+            {
+                continue;
+            }
+            let record = match entity {
+                EntityInstance::Simple { record, .. } => record,
+                EntityInstance::Complex { .. } => entity_records
+                    .iter()
+                    .find(|r| r.name.as_str() == "REPRESENTATION")
+                    .ok_or("unsupported complex STEP shape representation")?,
+            };
+            let items = list(field(record, 1)?)?
+                .iter()
+                .map(reference)
+                .collect::<Result<Vec<_>>>()?;
+            items_count = items_count
+                .checked_add(items.len())
+                .ok_or("STEP assembly item count overflow")?;
+            if items_count > MAX_ENTITIES {
+                return Err("STEP assembly exceeds representation-item limit".into());
+            }
+            assembly.representations.insert(
+                id,
+                Representation {
+                    items,
+                    scale: context_factor(entities, reference(field(record, 2)?)?)?,
+                },
+            );
+        }
+        if assembly.representations.is_empty() {
+            return Err("STEP assembly has no supported shape representations".into());
+        }
+        let mut owners = HashMap::new();
+        let mut relationships = BTreeMap::new();
+        for (&id, entity) in entities {
+            for record in records(entity).1 {
+                if record.name.as_str() == "SHAPE_DEFINITION_REPRESENTATION" {
+                    let rep = reference(field(record, 1)?)?;
+                    let definition = reference(field(record, 0)?)?;
+                    if let Some(shape) =
+                        named_record(entities, definition, "PRODUCT_DEFINITION_SHAPE")?
+                    {
+                        let product = reference(field(shape, 2)?)?;
+                        if named_record(entities, product, "PRODUCT_DEFINITION")?.is_some() {
+                            assembly.representation(rep)?;
+                            if owners.insert(rep, product).is_some_and(|p| p != product) {
+                                return Err(
+                                    "STEP representation has ambiguous product ownership".into()
+                                );
+                            }
+                        }
+                    }
+                }
+                if record.name.as_str() == "REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION" {
+                    let relationship = named_record(entities, id, "REPRESENTATION_RELATIONSHIP")?
+                        .unwrap_or(record);
+                    let parameters = list(&record.parameter)?;
+                    let operator = if parameters.len() == 1 {
+                        reference(&parameters[0])?
+                    } else {
+                        reference(field(record, 4)?)?
+                    };
+                    let first = reference(field(relationship, 2)?)?;
+                    let second = reference(field(relationship, 3)?)?;
+                    assembly.representation(first)?;
+                    assembly.representation(second)?;
+                    let transform = assembly.relationship_transform(operator, first, second)?;
+                    relationships.insert(id, (first, second, transform));
+                }
+            }
+        }
+        let mut equivalent = Vec::new();
+        for &id in entities.keys() {
+            if !relationships.contains_key(&id)
+                && let Some(record) =
+                    named_record(entities, id, "SHAPE_REPRESENTATION_RELATIONSHIP")?
+            {
+                let record =
+                    named_record(entities, id, "REPRESENTATION_RELATIONSHIP")?.unwrap_or(record);
+                let first = reference(field(record, 2)?)?;
+                let second = reference(field(record, 3)?)?;
+                assembly.representation(first)?;
+                assembly.representation(second)?;
+                equivalent.push((first, second));
+            }
+        }
+        // A producer may attach an occurrence to the B-rep representation,
+        // while the product owner is attached to its equivalent axis-only
+        // representation. Propagate ownership before resolving occurrences.
+        assembly.group_equivalent_representations(&equivalent, &mut owners)?;
+        for (&anchor, members) in &assembly.groups {
+            if let Some(&owner) = owners.get(&anchor) {
+                for &member in members {
+                    owners.insert(member, owner);
+                }
+            }
+        }
+        let mut usages = HashSet::new();
+        let mut consumed_relationships = HashSet::new();
+        // Product ownership determines direction even when a producer reverses
+        // the relationship. See STEPConstruct_Assembly::CheckSRRReversesNAUO.
+        for entity in entities.values() {
+            for record in records(entity).1 {
+                if record.name.as_str() != "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION" {
+                    continue;
+                }
+                let relationship = reference(field(record, 0)?)?;
+                let &(first, second, transform) = relationships.get(&relationship).ok_or(
+                    "STEP assembly occurrence lacks a supported relationship transformation",
+                )?;
+                let shape_id = reference(field(record, 1)?)?;
+                let shape = named_record(entities, shape_id, "PRODUCT_DEFINITION_SHAPE")?
+                    .ok_or("STEP assembly occurrence lacks a product-definition shape")?;
+                let usage_id = reference(field(shape, 2)?)?;
+                let usage = named_record(entities, usage_id, "NEXT_ASSEMBLY_USAGE_OCCURRENCE")?
+                    .ok_or("unsupported STEP assembly usage relationship")?;
+                let parent = reference(field(usage, 3)?)?;
+                let child = reference(field(usage, 4)?)?;
+                let first_owner = owners
+                    .get(&first)
+                    .ok_or("STEP assembly representation lacks product ownership")?;
+                let second_owner = owners
+                    .get(&second)
+                    .ok_or("STEP assembly representation lacks product ownership")?;
+                let (parent_rep, placement) = if *first_owner == child && *second_owner == parent {
+                    (
+                        second,
+                        Placement {
+                            occurrence: records(entity).0,
+                            child: first,
+                            transform,
+                        },
+                    )
+                } else if *first_owner == parent && *second_owner == child {
+                    (
+                        first,
+                        Placement {
+                            occurrence: records(entity).0,
+                            child: second,
+                            transform: inverse_frame(transform),
+                        },
+                    )
+                } else {
+                    return Err("STEP representation relationship disagrees with assembly product ownership".into());
+                };
+                assembly
+                    .children
+                    .entry(parent_rep)
+                    .or_default()
+                    .push(placement);
+                usages.insert(usage_id);
+                consumed_relationships.insert(relationship);
+            }
+        }
+        for (&id, (first, second, transform)) in &relationships {
+            if !consumed_relationships.contains(&id) {
+                assembly
+                    .children
+                    .entry(*second)
+                    .or_default()
+                    .push(Placement {
+                        occurrence: id,
+                        child: *first,
+                        transform: *transform,
+                    });
+            }
+        }
+        for (&id, entity) in entities {
+            for record in records(entity).1 {
+                match record.name.as_str() {
+                    "NEXT_ASSEMBLY_USAGE_OCCURRENCE" if !usages.contains(&id) => {
+                        return Err(
+                            "STEP assembly usage has no supported component placement".into()
+                        );
+                    }
+                    _ => {}
+                }
+            }
+        }
+        // Mapping-origin subtraction matters when the referenced part is not
+        // authored at the origin. Frames and geometry use each context's units.
+        let mut mapped_owners = HashMap::<u64, Vec<u64>>::new();
+        for (&parent, representation) in &assembly.representations {
+            for &item in &representation.items {
+                if named_record(entities, item, "MAPPED_ITEM")?.is_some() {
+                    mapped_owners.entry(item).or_default().push(parent);
+                }
+            }
+        }
+        for (&id, entity) in entities {
+            if records(entity)
+                .1
+                .iter()
+                .any(|r| r.name.as_str() == "MAPPED_ITEM")
+                && !mapped_owners.contains_key(&id)
+            {
+                return Err("STEP mapped item has no owning shape representation".into());
+            }
+        }
+        for (item, parents) in mapped_owners {
+            let record = named_record(entities, item, "MAPPED_ITEM")?.unwrap();
+            let mapping = reference(field(record, 1)?)?;
+            let mapping = named_record(entities, mapping, "REPRESENTATION_MAP")?
+                .ok_or("STEP mapped item lacks a representation map")?;
+            let origin = reference(field(mapping, 0)?)?;
+            let child = reference(field(mapping, 1)?)?;
+            let source = axis_frame(entities, origin, assembly.representation(child)?.scale)?;
+            for parent in parents {
+                let target = axis_frame(
+                    entities,
+                    reference(field(record, 2)?)?,
+                    assembly.representation(parent)?.scale,
+                )?;
+                assembly
+                    .children
+                    .entry(parent)
+                    .or_default()
+                    .push(Placement {
+                        occurrence: item,
+                        child,
+                        transform: target.then(inverse_frame(source)),
+                    });
+            }
+        }
+        assembly.group_equivalent_representations(&equivalent, &mut owners)?;
+        // Check every representation, including disconnected cycles, before
+        // instance expansion. Shared parts are legal; cyclic maps are not.
+        let representation_graph: HashMap<_, _> = assembly
+            .groups
+            .keys()
+            .map(|&id| {
+                (
+                    id,
+                    assembly
+                        .children
+                        .get(&id)
+                        .map(|children| children.iter().map(|p| p.child).collect())
+                        .unwrap_or_default(),
+                )
+            })
+            .collect();
+        let mut checked = HashMap::new();
+        for &id in assembly.groups.keys() {
+            check_graph(
+                id,
+                &representation_graph,
+                &mut HashSet::new(),
+                &mut checked,
+                0,
+            )?;
+        }
+        let incoming: HashSet<_> = assembly
+            .children
+            .values()
+            .flatten()
+            .map(|p| p.child)
+            .collect();
+        assembly.roots = assembly
+            .groups
+            .keys()
+            .filter(|id| !incoming.contains(id) && (owners.is_empty() || owners.contains_key(id)))
+            .copied()
+            .collect();
+        if assembly.roots.is_empty() {
+            return Err("STEP assembly has no roots or contains a cycle".into());
+        }
+        // Deterministic hierarchy order makes repeated instances stable across
+        // platforms while keeping separate coincident authored occurrences.
+        for children in assembly.children.values_mut() {
+            children.sort_by(|a, b| {
+                a.child.cmp(&b.child).then_with(|| {
+                    a.transform
+                        .0
+                        .iter()
+                        .flatten()
+                        .zip(b.transform.0.iter().flatten())
+                        .find_map(|(a, b)| {
+                            let order = a.total_cmp(b);
+                            (!order.is_eq()).then_some(order)
+                        })
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+            });
+        }
+        Ok(assembly)
+    }
+    /// Plain shape relationships link equivalent representations, with no
+    /// directional occurrence transform. Both endpoint orders occur in AP203
+    /// exporters. Preserve every member's context while grouping the geometry.
+    fn group_equivalent_representations(
+        &mut self,
+        equivalent: &[(u64, u64)],
+        owners: &mut HashMap<u64, u64>,
+    ) -> Result<()> {
+        self.groups.clear();
+        let mut adjacency = HashMap::<u64, Vec<u64>>::new();
+        for &(first, second) in equivalent {
+            adjacency.entry(first).or_default().push(second);
+            adjacency.entry(second).or_default().push(first);
+        }
+        let mut aliases = HashMap::new();
+        let mut grouped_owners = HashMap::new();
+        for &id in self.representations.keys() {
+            if aliases.contains_key(&id) {
+                continue;
+            }
+            let mut pending = vec![id];
+            let mut members = Vec::new();
+            // Mark on insertion, so redundant undirected links remain bounded.
+            aliases.insert(id, id);
+            while let Some(next) = pending.pop() {
+                members.push(next);
+                for &neighbor in adjacency.get(&next).into_iter().flatten() {
+                    if let std::collections::hash_map::Entry::Vacant(entry) =
+                        aliases.entry(neighbor)
+                    {
+                        entry.insert(id);
+                        pending.push(neighbor);
+                    }
+                }
+            }
+            members.sort_unstable();
+            let owned: Vec<_> = members
+                .iter()
+                .filter_map(|id| owners.get(id).map(|&owner| (*id, owner)))
+                .collect();
+            if owned.iter().any(|&(_, owner)| owner != owned[0].1) {
+                return Err(
+                    "STEP plain shape relationship ambiguously links different products".into(),
+                );
+            }
+            let anchor = owned.first().map_or(members[0], |&(id, _)| id);
+            if let Some(&(_, owner)) = owned.first() {
+                grouped_owners.insert(anchor, owner);
+            }
+            for &member in &members {
+                aliases.insert(member, anchor);
+            }
+            self.groups.insert(anchor, members);
+        }
+        let mut grouped_children = HashMap::<u64, Vec<Placement>>::new();
+        // A mapped item shared by equivalent representations denotes the same
+        // occurrence. Distinct authored occurrence IDs remain distinct even
+        // when their placements coincide.
+        let mut occurrences = HashMap::<(u64, u64), Placement>::new();
+        for (parent, children) in std::mem::take(&mut self.children) {
+            let parent = aliases[&parent];
+            for mut child in children {
+                child.child = aliases[&child.child];
+                if let Some(previous) = occurrences.insert((parent, child.occurrence), child) {
+                    if previous.child != child.child || previous.transform.0 != child.transform.0 {
+                        return Err(
+                            "STEP equivalent representations disagree on occurrence placement"
+                                .into(),
+                        );
+                    }
+                    continue;
+                }
+                grouped_children.entry(parent).or_default().push(child);
+            }
+        }
+        self.children = grouped_children;
+        *owners = grouped_owners;
+        Ok(())
+    }
+    fn relationship_transform(&self, operator: u64, first: u64, second: u64) -> Result<Transform> {
+        let record = named_record(self.entities, operator, "ITEM_DEFINED_TRANSFORMATION")?
+            .ok_or("STEP supports axis-based item-defined assembly transformations only")?;
+        let mut origin = reference(field(record, 2)?)?;
+        let mut target = reference(field(record, 3)?)?;
+        let source_rep = self.representation(first)?;
+        let target_rep = self.representation(second)?;
+        if !source_rep.items.contains(&origin)
+            && source_rep.items.contains(&target)
+            && target_rep.items.contains(&origin)
+            && !target_rep.items.contains(&target)
+        {
+            std::mem::swap(&mut origin, &mut target);
+        }
+        let origin = axis_frame(self.entities, origin, source_rep.scale)?;
+        let target = axis_frame(self.entities, target, target_rep.scale)?;
+        // OCCT STEPControl_ActorRead::ComputeTransformation converts both
+        // frames to common units before mapping the source frame to target.
+        Ok(target.then(inverse_frame(origin)))
+    }
+    fn render(&self, meshes: &HashMap<u64, Scene>) -> Result<Scene> {
+        let mut expansion = Expansion {
+            meshes,
+            scene: Scene::default(),
+            visiting: HashSet::new(),
+            used: HashSet::new(),
+            work: 0,
+        };
+        for &root in &self.roots {
+            self.expand(root, Transform::IDENTITY, 0, &mut expansion)?;
+        }
+        if meshes.keys().any(|id| !expansion.used.contains(id)) {
+            return Err("STEP assembly contains unowned or unsupported required shells".into());
+        }
+        expansion.scene.validate()?;
+        Ok(expansion.scene)
+    }
+    fn expand(
+        &self,
+        id: u64,
+        transform: Transform,
+        depth: usize,
+        expansion: &mut Expansion<'_>,
+    ) -> Result<()> {
+        expansion.work += 1;
+        if depth > MAX_REFERENCE_DEPTH || expansion.work > MAX_ENTITIES {
+            return Err("STEP assembly exceeds hierarchy depth or expansion limit".into());
+        }
+        if !expansion.visiting.insert(id) {
+            return Err("STEP assembly contains a representation cycle".into());
+        }
+        let mut included = HashSet::new();
+        for &member in self
+            .groups
+            .get(&id)
+            .ok_or("missing STEP representation group")?
+        {
+            let representation = self.representation(member)?;
+            let mut scale = Transform::IDENTITY;
+            for i in 0..3 {
+                scale.0[i][i] = representation.scale;
+            }
+            let geometry_transform = transform.then(scale);
+            if geometry_transform
+                .0
+                .iter()
+                .flatten()
+                .any(|v| !v.is_finite())
+            {
+                return Err("STEP assembled placement is non-finite".into());
+            }
+            for &item in &representation.items {
+                if included.insert((item, representation.scale.to_bits())) {
+                    self.append_item(item, geometry_transform, 0, expansion)?;
+                }
+            }
+        }
+        if let Some(children) = self.children.get(&id) {
+            for child in children {
+                self.expand(
+                    child.child,
+                    transform.then(child.transform),
+                    depth + 1,
+                    expansion,
+                )?;
+            }
+        }
+        expansion.visiting.remove(&id);
+        Ok(())
+    }
+    fn append_item(
+        &self,
+        id: u64,
+        transform: Transform,
+        depth: usize,
+        expansion: &mut Expansion<'_>,
+    ) -> Result<()> {
+        expansion.work += 1;
+        if depth > MAX_REFERENCE_DEPTH || expansion.work > MAX_ENTITIES {
+            return Err("STEP assembly exceeds geometry-item expansion limit".into());
+        }
+        let record = simple_record(self.entities, id)?;
+        match record.name.as_str() {
+            "AXIS2_PLACEMENT_3D" | "MAPPED_ITEM" => {}
+            "MANIFOLD_SOLID_BREP" => self.append_item(
+                reference(field(record, 1)?)?,
+                transform,
+                depth + 1,
+                expansion,
+            )?,
+            "SHELL_BASED_SURFACE_MODEL" => {
+                for child in list(field(record, 1)?)? {
+                    self.append_item(reference(child)?, transform, depth + 1, expansion)?;
+                }
+            }
+            "OPEN_SHELL" | "CLOSED_SHELL" => {
+                let mesh = expansion
+                    .meshes
+                    .get(&id)
+                    .ok_or("STEP component references an unsupported shell")?;
+                if expansion.scene.triangles.len() + mesh.triangles.len() > MAX_TRIANGLES {
+                    return Err("STEP assembled preview exceeds triangle limit".into());
+                }
+                for triangle in &mesh.triangles {
+                    expansion.scene.triangles.push(Triangle {
+                        vertices: triangle.vertices.map(|p| transform.apply(p)),
+                        color: triangle.color,
+                    });
+                }
+                expansion.used.insert(id);
+            }
+            _ => {
+                return Err(format!(
+                    "unsupported required STEP assembly geometry {} (#{id})",
+                    record.name.as_str()
+                )
+                .into());
+            }
+        }
+        Ok(())
+    }
+}
+
 fn parse(text: &str) -> Result<Scene> {
     check_nesting(text)?;
     let exchange =
@@ -341,19 +1080,6 @@ fn parse(text: &str) -> Result<Scene> {
         let (id, records) = records(entity);
         let mut references = Vec::new();
         for record in records {
-            let name = record.name.as_str();
-            if matches!(
-                name,
-                "MAPPED_ITEM"
-                    | "REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION"
-                    | "ITEM_DEFINED_TRANSFORMATION"
-                    | "NEXT_ASSEMBLY_USAGE_OCCURRENCE"
-                    | "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION"
-            ) {
-                return Err(
-                    "STEP assemblies and mapped shape instances are not implemented".into(),
-                );
-            }
             collect_references(&record.parameter, &mut references)?;
         }
         if graph.insert(id, references).is_some() {
@@ -373,15 +1099,19 @@ fn parse(text: &str) -> Result<Scene> {
     }
     let mut shells: Vec<_> = table.shell.iter().collect();
     shells.sort_unstable_by_key(|&(id, _)| *id);
-    let mut scene = Scene::default();
+    let mut meshes = HashMap::new();
+    let mut total_triangles = 0usize;
     let mut done = HashMap::new();
-    for (&id, shell_holder) in shells {
+    for &(id, shell_holder) in &shells {
+        let id = *id;
+        let mut scene = Scene::default();
         check_graph(id, &graph, &mut HashSet::new(), &mut done, 0)?;
         if let Some(analytic) = closed_analytic_shell(id, &entities, &table)? {
-            if scene.triangles.len() + analytic.triangles.len() > MAX_TRIANGLES {
+            if total_triangles + analytic.triangles.len() > MAX_TRIANGLES {
                 return Err("STEP tessellation exceeds triangle limit".into());
             }
-            scene.triangles.extend(analytic.triangles);
+            total_triangles += analytic.triangles.len();
+            meshes.insert(id, analytic);
             continue;
         }
         let owned_shell = <Table as EntityTable<ShellHolder>>::get_owned(&table, id)
@@ -482,6 +1212,31 @@ fn parse(text: &str) -> Result<Scene> {
                 });
             }
         }
+        total_triangles += scene.triangles.len();
+        if total_triangles > MAX_TRIANGLES {
+            return Err("STEP tessellation exceeds triangle limit".into());
+        }
+        meshes.insert(id, scene);
+    }
+    if entities.values().any(|entity| {
+        records(entity).1.iter().any(|record| {
+            record.name.as_str().ends_with("SHAPE_REPRESENTATION")
+                || matches!(
+                    record.name.as_str(),
+                    "MAPPED_ITEM"
+                        | "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION"
+                        | "REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION"
+                        | "NEXT_ASSEMBLY_USAGE_OCCURRENCE"
+                )
+        })
+    }) {
+        return Assembly::new(&entities)?.render(&meshes);
+    }
+    let mut scene = Scene::default();
+    for (&id, _) in shells {
+        scene
+            .triangles
+            .extend(meshes.remove(&id).unwrap().triangles);
     }
     scene.validate()?;
     Ok(scene)

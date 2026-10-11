@@ -18,11 +18,51 @@
     },
     {
       "extension": "3mf",
+      "id": "3mf-bambu-pa-pattern",
+      "input": "mesh_scene/3mf-bambu-pa-pattern.3mf",
+      "kind": "model",
+      "provenance": "Unmodified BambuStudio resources/calib/pressure_advance/pa_pattern.3mf at commit 47a13eeb1d9af65ef2371e361c856e21d4f6ca72; Application=BambuStudio-01.07.03.04. Actual production-extension root and child model package; renders its mesh, not its stored thumbnail. Separately AGPL-3.0 licensed upstream test asset; complete original license retained as mesh_scene/BAMBU-STUDIO-LICENSE. Exact source/hash in mesh_scene/README.md. https://github.com/bambulab/BambuStudio/blob/47a13eeb1d9af65ef2371e361c856e21d4f6ca72/resources/calib/pressure_advance/pa_pattern.3mf",
+      "title": "Bambu Studio exported split-part calibration cube"
+    },
+    {
+      "extension": "3mf",
       "id": "3mf-component-colors",
       "input": "mesh_scene/3mf-component-colors.3mf",
       "kind": "model",
       "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
       "title": "3MF material palette and component placement"
+    },
+    {
+      "extension": "3mf",
+      "id": "3mf-orca-badge",
+      "input": "mesh_scene/3mf-orca-badge.3mf",
+      "kind": "model",
+      "provenance": "Unmodified OrcaSlicer resources/handy_models/OrcaBadge.3mf at commit 52eeb0f228d31f8779e98761e2cd41aed2337061; OrcaSlicer=2.5.0-dev, Application=BambuStudio-02.06.00.51. Actual production package with three model parts, local ID collisions and placed components. Separately AGPL-3.0 licensed upstream resource; complete original license retained as mesh_scene/ORCA-SLICER-LICENSE. Exact source/hash in mesh_scene/README.md. https://github.com/OrcaSlicer/OrcaSlicer/blob/52eeb0f228d31f8779e98761e2cd41aed2337061/resources/handy_models/OrcaBadge.3mf",
+      "title": "OrcaSlicer exported three-part badge project"
+    },
+    {
+      "extension": "3mf",
+      "id": "3mf-production-colliding-ids",
+      "input": "mesh_scene/3mf-production-colliding-ids.3mf",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "3MF split-part IDs, local hierarchy and colors"
+    },
+    {
+      "extension": "3mf",
+      "id": "3mf-production-mixed-units",
+      "input": "mesh_scene/3mf-production-mixed-units.3mf",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "3MF cross-part build, nested transforms and mixed units"
+    },
+    {
+      "extension": "3mf",
+      "id": "3mf-prusa-roundtrip",
+      "input": "mesh_scene/3mf-prusa-roundtrip.3mf",
+      "kind": "model",
+      "provenance": "Unmodified PrusaSlicer src/slic3r-shared/test/data/fdm_roundtrip1.3mf at commit 30ef59195e0f3ee6f270b185bb5f9fb5f349f81f; Application=PrusaSlicer-2.9.6. Standard core model with real meshes and slicer settings. Separately AGPL-3.0 licensed upstream test asset; complete original license retained as mesh_scene/PRUSA-SLICER-LICENSE. Exact source/hash in mesh_scene/README.md. https://github.com/prusa3d/PrusaSlicer/blob/30ef59195e0f3ee6f270b185bb5f9fb5f349f81f/src/slic3r-shared/test/data/fdm_roundtrip1.3mf",
+      "title": "PrusaSlicer exported standard FDM project"
     },
     {
       "extension": "abc",
@@ -578,6 +618,14 @@
     },
     {
       "extension": "obj",
+      "id": "obj-colored-polyline",
+      "input": "mesh_scene/obj-colored-polyline.obj",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "OBJ colored 3D polylines and negative indices"
+    },
+    {
+      "extension": "obj",
       "id": "obj-material-palette",
       "input": "mesh_scene/obj-material-palette.obj",
       "kind": "model",
@@ -626,6 +674,14 @@
     },
     {
       "extension": "ply",
+      "id": "ply-ascii-colored-wireframe",
+      "input": "mesh_scene/ply-ascii-colored-wireframe.ply",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "PLY ASCII colored edge wireframe"
+    },
+    {
+      "extension": "ply",
       "id": "ply-ascii-colors",
       "input": "mesh_scene/ply-ascii-colors.ply",
       "kind": "model",
@@ -639,6 +695,14 @@
       "kind": "model",
       "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
       "title": "PLY binary big endian colored mesh"
+    },
+    {
+      "extension": "ply",
+      "id": "ply-binary-colored-wireframe",
+      "input": "mesh_scene/ply-binary-colored-wireframe.ply",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "PLY binary colored edge wireframe"
     },
     {
       "extension": "ply",
@@ -759,6 +823,30 @@
       "kind": "model",
       "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
       "title": "SPZ v4 Zstandard colored centers"
+    },
+    {
+      "extension": "step",
+      "id": "step-cadquery-placed-bodies",
+      "input": "scientific_cad/step-cadquery-placed-bodies.step",
+      "kind": "model",
+      "provenance": "Unmodified CadQuery tests/testdata/red_cube_blue_cylinder.step; Apache-2.0; https://github.com/CadQuery/cadquery/blob/5f5bc62b255f62e3512105740025361b6c31eddd/tests/testdata/red_cube_blue_cylinder.step; SHA-256 1fd5c7d9325bcfb9863365faf84554f89e7e7a5e86760a0fc8d5db00619d9ef5; original license and provenance retained in scientific_cad/step-cadquery-LICENSE and step-cadquery-NOTICE.txt",
+      "title": "STEP independently exported cube and cylinder with metre units"
+    },
+    {
+      "extension": "step",
+      "id": "step-nested-mapped-assembly",
+      "input": "scientific_cad/step-nested-mapped-assembly.step",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "STEP nested mappings with four placed part instances"
+    },
+    {
+      "extension": "step",
+      "id": "step-repeated-product-assembly",
+      "input": "scientific_cad/step-repeated-product-assembly.step",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "STEP repeated product occurrences with rotation and translation"
     },
     {
       "extension": "step",
