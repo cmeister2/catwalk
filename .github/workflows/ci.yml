@@ -26,10 +26,23 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
         run: cargo doc --no-deps --document-private-items --locked
+      - uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+          cache: npm
+      - run: npm ci --ignore-scripts
       - name: Verify publishable crate
+        shell: bash
         run: |
           cargo package --locked
-          python3 -c 'from pathlib import Path; archive = next(Path("target/package").glob("catwalk3d-*.crate")); assert archive.stat().st_size < 10_000_000, "Crate exceeds the registry upload limit"'
+          archive="target/package/$(cargo metadata --format-version 1 --no-deps --locked | jq -r '.packages[] | select(.name == "catwalk3d") | "\(.name)-\(.version).crate"')"
+          test "$(stat --format=%s "$archive")" -lt 10000000
+          tar -tzf "$archive" > target/package/contents.txt
+          if rg -v '^catwalk3d-[^/]+/(src/|docs/|examples/|tests/|README\.md$|LICENSE$|Cargo\.toml(\.orig)?$|Cargo\.lock$|\.cargo_vcs_info\.json$)' target/package/contents.txt \
+            || rg '/(node_modules|\.env(\.[^/]+)?)(/|$)' target/package/contents.txt; then
+            echo 'Unexpected files in the crate archive.' >&2
+            exit 1
+          fi
       - name: Check runtime geometry and compression backends
         shell: bash
         run: |
@@ -78,6 +91,22 @@ jobs:
           path: target/gallery
           retention-days: 14
 
+  success:
+    name: Success
+    if: always()
+    needs: [checks, tests, gallery]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require all checks to pass
+        env:
+          CHECKS_RESULT: ${{ needs.checks.result }}
+          TESTS_RESULT: ${{ needs.tests.result }}
+          GALLERY_RESULT: ${{ needs.gallery.result }}
+        run: |
+          test "$CHECKS_RESULT" = success
+          test "$TESTS_RESULT" = success
+          test "$GALLERY_RESULT" = success
+
   gallery:
     needs: [checks, tests]
     runs-on: ubuntu-latest
@@ -119,7 +148,7 @@ jobs:
 
   release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [checks, tests]
+    needs: success
     runs-on: ubuntu-latest
     permissions:
       contents: write
