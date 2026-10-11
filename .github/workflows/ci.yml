@@ -31,6 +31,8 @@ jobs:
           node-version: lts/*
           cache: npm
       - run: npm ci --ignore-scripts
+      - name: Test release configuration
+        run: npm run test:release
       - name: Verify publishable crate
         shell: bash
         run: |

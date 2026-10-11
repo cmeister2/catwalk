@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "release": "semantic-release"
+    "release": "semantic-release",
+    "test:release": "node --test tests/release-config.test.js"
   },
   "devDependencies": {
     "@semantic-release-cargo/semantic-release-cargo": "2.4.84",
