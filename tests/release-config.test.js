@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
+import { Writable } from 'node:stream';
 import test from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import config from '../release.config.js';
@@ -52,4 +53,21 @@ test('configured notes generator renders the Conventional Commits preset', async
   assert.match(notes, /1\.0\.1/);
   assert.match(notes, /preserve model normals/);
   assert.ok(notes.includes('https://github.com/cmeister2/catwalk3d/compare/1.0.0...1.0.1'));
+});
+
+test('configured asset guard stops preparation before an incomplete release can be tagged', async () => {
+  const [plugin, options] = await configuredPlugin('@semantic-release/exec');
+  const guardIndex = config.plugins.findIndex((entry) => entry[0] === '@semantic-release/exec');
+  const cargoIndex = config.plugins.indexOf('@semantic-release-cargo/semantic-release-cargo');
+  assert.ok(guardIndex >= 0 && guardIndex < cargoIndex);
+  assert.equal(options.publishCmd, undefined);
+  const quiet = () => new Writable({ write(_chunk, _encoding, done) { done(); } });
+  await assert.rejects(plugin.prepare(options, {
+    cwd,
+    env: process.env,
+    nextRelease: { version: '9999.0.0', gitHead: 'c'.repeat(40) },
+    logger: { log() {} },
+    stdout: quiet(),
+    stderr: quiet(),
+  }), (error) => /ENOENT[^\n]*release-assets|Release assets must contain exactly every configured target/.test(error.stderr ?? ''));
 });

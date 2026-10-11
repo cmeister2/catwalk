@@ -1,0 +1,71 @@
+# Binary notices cover the normal dependency graph for every release target.
+# Apache-2.0 is preferred where upstream explicitly offers a license choice. Mandatory
+# AND terms remain included by cargo-about's SPDX expression evaluation.
+accepted = [
+    "Apache-2.0", "MIT", "BSD-2-Clause", "BSD-3-Clause", "ISC", "Zlib",
+    "CC0-1.0", "IJG", "Unicode-3.0", "MPL-2.0",
+]
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-unknown-linux-musl",
+    "aarch64-unknown-linux-musl",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+]
+ignore-dev-dependencies = true
+ignore-build-dependencies = true
+ignore-transitive-dependencies = false
+
+# These files have real copyright text that SPDX synthesis did not preserve.
+# Packaged files are preferred; git is used only for files omitted by upstream.
+[Inflector.clarify]
+license = "BSD-2-Clause"
+[[Inflector.clarify.git]]
+path = "LICENSE.md"
+checksum = "03d1bd5bfbee8d44651e7f57faf9e5b4eda4233f0d4eda36a716f2f0533d230b"
+
+[exr.clarify]
+license = "BSD-3-Clause"
+[[exr.clarify.files]]
+path = "LICENSE.md"
+checksum = "97e4d3aa7a9e8ac31979c16ca8bb2b628a9cb72c3362185ad2bf4ad77f43551f"
+
+[jpeg-encoder.clarify]
+license = "(MIT OR Apache-2.0) AND IJG"
+[[jpeg-encoder.clarify.files]]
+path = "LICENSE-APACHE"
+license = "Apache-2.0"
+checksum = "85a884980abd6032fc6b5439ba918ab16db9ac9051b5cf18db9c27c587df07c0"
+[[jpeg-encoder.clarify.files]]
+path = "LICENSE-IJG"
+license = "IJG"
+checksum = "a21e92ec88aefc6823f0c51994783571a849e8d9b43d9ade61ec9d886776721e"
+
+[libm.clarify]
+license = "MIT"
+[[libm.clarify.files]]
+path = "LICENSE.txt"
+checksum = "3823dda7cf046602f4b4e77ec8e227863dc4736037cc85bb33d9f19febe16bb7"
+
+[pulp-wasm-simd-flag.clarify]
+license = "MIT"
+[[pulp-wasm-simd-flag.clarify.git]]
+path = "LICENSE"
+checksum = "d64f878c89bd5f1e5ada7e4aad57690b122727cf5229b7b87ea1980c188da1d9"
+
+[laz.clarify]
+license = "Apache-2.0"
+[[laz.clarify.files]]
+path = "COPYING"
+checksum = "d8ddd6435eae4d5e7df65248f19a347fcf67e2d454d0826cb418a33648e2dd54"
+[[laz.clarify.files]]
+path = "LICENSE.txt"
+checksum = "1994396677f149094cb8d74037908783f87ccfc5e5d238bac31ffb6afabc81e3"
+
+[adler32.clarify]
+license = "Zlib"
+[[adler32.clarify.files]]
+path = "LICENSE"
+checksum = "f5af8beef8f5f88f1b78494703bbfa019c4f3630ac111344390d6f9975ab22ed"

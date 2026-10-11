@@ -8,7 +8,17 @@ The Rust crate is **`catwalk3d`**; the command is **`catwalk`**.
 
 ## Install and make a thumbnail
 
-With a current stable Rust toolchain and Cargo installed:
+Download a platform ZIP from [GitHub Releases](https://github.com/cmeister2/catwalk3d/releases), extract it, and open a terminal in the extracted directory. On Linux or macOS:
+
+```sh
+./catwalk model.stl --output thumbnail.png --size 256
+```
+
+On Windows, run `.\catwalk.exe model.stl --output thumbnail.png --size 256` in PowerShell.
+
+Linux builds are available for x86-64 and ARM64 with GNU or musl. Choose musl for a statically linked executable, including Alpine and systems without glibc. GNU builds are compiled and tested on Ubuntu 24.04; glibc 2.39 or newer is the supported baseline. macOS builds cover Intel and Apple Silicon; Windows builds cover x86-64. The archives include license notices and release metadata, with SHA-256 checksums beside the downloads. macOS and Windows downloads are not signed or notarized.
+
+To install with a current stable Rust toolchain and Cargo:
 
 ```sh
 cargo install catwalk3d --locked
@@ -141,7 +151,7 @@ cargo clippy --locked --all-targets -- -D warnings
 cargo test --locked
 ```
 
-CI checks formatting, strict Clippy, documentation and the publishable crate, then tests on Linux, macOS and Windows. The aggregate job is named `Success`; it passes only when the checks, all platform tests and the gallery build pass. Linux tests run with display-related environment variables unset.
+CI checks formatting, strict Clippy, documentation and the publishable crate, then tests on Linux, macOS and Windows. It also compiles all seven release targets, runs every-extension image comparisons using each optimized executable, and tests the executable extracted from each archive. The aggregate job is named `Success`; it passes only when the checks, platform tests, gallery and binary preparation/builds pass. Linux tests run with display-related environment variables unset.
 
 The [format corpus](tests/fixtures/formats/manifest.json) includes an encoded input for every advertised extension, plus additional encoding and scene examples. `cargo test --locked --test format_snapshots` renders each case through the CLI and compares decoded pixels with [committed PNG snapshots](tests/snapshots/formats). Missing fixtures, decoding failures and visual changes fail CI. Transparent pixels use premultiplied RGBA comparison, with a maximum per-channel tolerance of 2/255 for platform rounding.
 
@@ -153,7 +163,21 @@ For a local gallery after testing, run `cargo run --locked --example gallery -- 
 
 Successful CI on `main` automatically publishes `catwalk3d` to crates.io and creates a matching GitHub release. Publication waits for `Success`. Conventional commits select the version: `fix:` produces a patch, `feat:` a minor release, and a breaking change a major release. Documentation-only commits produce no release.
 
-`semantic-release-cargo` updates the crate version and publishes it; the GitHub plugin creates the release. Node dependencies are confined to this release tooling. Dependencies are published crates with no local Cargo patches.
+Each release includes `catwalk3d-VERSION-TARGET.zip` archives for these targets:
+
+| Platform | Target |
+| --- | --- |
+| Linux x86-64, GNU | `x86_64-unknown-linux-gnu` |
+| Linux ARM64, GNU | `aarch64-unknown-linux-gnu` |
+| Linux x86-64, static musl | `x86_64-unknown-linux-musl` |
+| Linux ARM64, static musl | `aarch64-unknown-linux-musl` |
+| macOS Intel | `x86_64-apple-darwin` |
+| macOS Apple Silicon | `aarch64-apple-darwin` |
+| Windows x86-64 | `x86_64-pc-windows-msvc` |
+
+Every archive contains the executable, this README, Catwalk's license, generated dependency and Rust runtime license notices, and `release.json` with its version, source commit, compiler and target. Static musl archives also include the musl copyright notice. The release includes individual `.zip.sha256` files, provenance JSON sidecars and a combined `SHA256SUMS` file.
+
+`semantic-release-cargo` prepares the actual release version before the platform builds and publishes the crate; the GitHub plugin attaches the verified archives. Publication checks the complete target set, versions, source commits and archive/member checksums before tagging. Main workflows are serialized to keep version planning and publication together. Pull requests have one CI run, with superseded runs canceled. Node dependencies are confined to release tooling. Dependencies are published crates with no local Cargo patches.
 
 Maintainers supply a crates.io token through the GitHub secret `CARGO_REGISTRY_TOKEN`; `PUBLISH_SECRET` is also accepted. Publication skips while neither is configured. Local `.env` files are excluded from Git and Cargo packages.
 

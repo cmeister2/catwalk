@@ -1,5 +1,7 @@
 /target/
 /node_modules/
+/release-prepared/
+/release-assets/
 /.env
 /.env.*
 __pycache__/
