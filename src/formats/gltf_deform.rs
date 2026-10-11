@@ -8,8 +8,14 @@ use ::gltf::{
 };
 use std::collections::{BTreeSet, HashSet};
 
+/// Maximum joint influence, morph component and expanded vertex operations per model.
 const MAX_DEFORMATION_WORK: usize = 50_000_000;
 
+/// Validate a position accessor layout and required bounds.
+///
+/// # Errors
+/// Returns an error for missing bounds, non-vector layouts or component types not
+/// permitted for base positions or morph deltas by the quantization extension.
 pub(super) fn position_layout(
     accessor: &::gltf::Accessor<'_>,
     quantized: bool,
@@ -19,7 +25,7 @@ pub(super) fn position_layout(
         DataType::F32 => !accessor.normalized(),
         DataType::I8 | DataType::I16 => quantized,
         DataType::U8 | DataType::U16 => quantized && !morph,
-        _ => false,
+        DataType::U32 => false,
     };
     if !valid
         || accessor.dimensions() != Dimensions::Vec3
@@ -31,6 +37,7 @@ pub(super) fn position_layout(
     Ok(())
 }
 
+/// Convert raw position components using the accessor's integer normalization rule.
 pub(super) fn position_vector(values: [f64; 3], accessor: &::gltf::Accessor<'_>) -> Vec3 {
     let values = if accessor.normalized() {
         let scale = match accessor.data_type() {
@@ -47,6 +54,15 @@ pub(super) fn position_vector(values: [f64; 3], accessor: &::gltf::Accessor<'_>)
     Vec3::new(values[0], values[1], values[2])
 }
 
+/// Decode bounded position values without changing their source coordinate system.
+///
+/// # Errors
+/// Returns an error for invalid layouts, unreadable data or non-finite components.
+/// Accessor byte ranges must already have passed the importer's range validation.
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "glTF accessors and skins are cheap document handles matching the reader API ownership convention."
+)]
 pub(super) fn read_positions(
     accessor: ::gltf::Accessor<'_>,
     buffers: &[Vec<u8>],
@@ -70,7 +86,7 @@ pub(super) fn read_positions(
         DataType::U8 => read!(u8),
         DataType::I16 => read!(i16),
         DataType::U16 => read!(u16),
-        _ => unreachable!(),
+        DataType::U32 => unreachable!(),
     };
     if positions.iter().any(|v| !v.is_finite()) {
         return Err("glTF position contains non-finite components".into());
@@ -78,6 +94,85 @@ pub(super) fn read_positions(
     Ok(positions)
 }
 
+/// Validate floating point or permitted normalized signed integer normal layouts.
+///
+/// # Errors
+/// Returns an error when dimensions, normalization or component types are unsupported.
+pub(super) fn normal_layout(accessor: &::gltf::Accessor<'_>, quantized: bool) -> Result<()> {
+    let valid = matches!(
+        (accessor.data_type(), accessor.normalized()),
+        (DataType::F32, false)
+    ) || quantized
+        && matches!(
+            (accessor.data_type(), accessor.normalized()),
+            (DataType::I8 | DataType::I16, true)
+        );
+    if !valid || accessor.dimensions() != Dimensions::Vec3 {
+        return Err(
+            "glTF normal accessor requires float32 or permitted normalized int8/int16 VEC3".into(),
+        );
+    }
+    Ok(())
+}
+
+/// Apply signed integer normalization without normalizing the vector length.
+pub(super) fn normal_vector(values: [f64; 3], accessor: &::gltf::Accessor<'_>) -> Vec3 {
+    let values = if accessor.normalized() {
+        let scale = match accessor.data_type() {
+            DataType::I8 => 127.,
+            DataType::I16 => 32767.,
+            _ => 1.,
+        };
+        values.map(|v| (v / scale).max(-1.))
+    } else {
+        values
+    };
+    Vec3::new(values[0], values[1], values[2])
+}
+
+/// Base normals and morph normal deltas have the same component layouts.
+/// Leave their lengths intact until all morphs and transforms are applied.
+///
+/// # Errors
+/// Returns an error for invalid normal layouts, unreadable data or non-finite
+/// components. Accessor byte ranges must already have passed range validation.
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "glTF accessors and skins are cheap document handles matching the reader API ownership convention."
+)]
+pub(super) fn read_normals(
+    accessor: ::gltf::Accessor<'_>,
+    buffers: &[Vec<u8>],
+    quantized: bool,
+) -> Result<Vec<Vec3>> {
+    normal_layout(&accessor, quantized)?;
+    macro_rules! read {
+        ($ty:ty) => {
+            Iter::<[$ty; 3]>::new(accessor.clone(), |buffer| {
+                buffers.get(buffer.index()).map(Vec::as_slice)
+            })
+            .ok_or("glTF normal data is unreadable")?
+            .map(|v| normal_vector(v.map(f64::from), &accessor))
+            .collect()
+        };
+    }
+    let normals: Vec<Vec3> = match accessor.data_type() {
+        DataType::F32 => read!(f32),
+        DataType::I8 => read!(i8),
+        DataType::I16 => read!(i16),
+        _ => unreachable!(),
+    };
+    if normals.iter().any(|v| !v.is_finite()) {
+        return Err("glTF normal contains non-finite components".into());
+    }
+    Ok(normals)
+}
+
+/// Convert a finite glTF matrix and require an affine final row.
+#[allow(
+    clippy::float_cmp,
+    reason = "Affine matrix row entries require exact protocol constants."
+)]
 fn affine(matrix: [[f32; 4]; 4]) -> Result<Transform> {
     let matrix = Transform::from_gltf(matrix)?;
     if (0..3).any(|i| matrix.0[i][3] != 0.) || matrix.0[3][3] != 1. {
@@ -86,14 +181,21 @@ fn affine(matrix: [[f32; 4]; 4]) -> Result<Transform> {
     Ok(matrix)
 }
 
+/// Compute world transforms for selected roots using evaluated local poses.
+///
+/// # Errors
+/// Returns an error for excessive node counts or depth, shared or cyclic nodes,
+/// non-affine local transforms, or non-finite composed matrices.
 pub(super) fn global_transforms(
     model: &::gltf::Gltf,
     roots: &[::gltf::Node<'_>],
     poses: &[super::animation::Pose],
 ) -> Result<Vec<Option<Transform>>> {
-    if model.nodes().len() > 100_000 {
-        return Err("glTF exceeds the node limit".into());
-    }
+    #[allow(
+        clippy::needless_pass_by_value,
+        clippy::float_cmp,
+        reason = "Node handles are cheap glTF reader values; affine row entries require exact protocol constants."
+    )]
     fn walk(
         node: ::gltf::Node<'_>,
         parent: Transform,
@@ -119,6 +221,9 @@ pub(super) fn global_transforms(
         }
         Ok(())
     }
+    if model.nodes().len() > 100_000 {
+        return Err("glTF exceeds the node limit".into());
+    }
     let mut globals = vec![None; model.nodes().len()];
     for node in roots {
         walk(node.clone(), Transform::IDENTITY, 0, &mut globals, poses)?;
@@ -126,11 +231,25 @@ pub(super) fn global_transforms(
     Ok(globals)
 }
 
+/// Four joint references and weights per vertex for one paired attribute set.
 pub(super) struct InfluenceSet {
+    /// Joint indices into the skin's joint list, in vertex order.
     joints: Vec<[u16; 4]>,
+    /// Nonnegative joint weights before normalization across all influence sets.
     weights: Vec<[f64; 4]>,
 }
 
+/// Decode all paired joint and weight attribute sets for a primitive.
+///
+/// # Errors
+/// Returns an error for missing pairs, incompatible layouts or vertex counts,
+/// unreadable data, invalid weights, or excessive influence work.
+#[allow(
+    clippy::needless_pass_by_value,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Cheap primitive handles follow glTF readers; compressed joint indices are checked as integral u16 values before casting."
+)]
 pub(super) fn read_influences(
     primitive: ::gltf::mesh::Primitive<'_>,
     buffers: &[Vec<u8>],
@@ -177,11 +296,10 @@ pub(super) fn read_influences(
         {
             let decoded = decoded_attribute(geometry, id, joint_accessor)?;
             let mut joints = Vec::with_capacity(count);
-            for values in decoded.values.as_chunks::<4>().0.iter() {
-                if values
-                    .iter()
-                    .any(|v| !v.is_finite() || *v < 0. || *v > u16::MAX as f64 || v.fract() != 0.)
-                {
+            for values in decoded.values.as_chunks::<4>().0 {
+                if values.iter().any(|v| {
+                    !v.is_finite() || *v < 0. || *v > f64::from(u16::MAX) || v.fract() != 0.
+                }) {
                     return Err("glTF Draco joint index is invalid".into());
                 }
                 joints.push(std::array::from_fn(|i| values[i] as u16));
@@ -222,6 +340,15 @@ pub(super) fn read_influences(
     Ok(result)
 }
 
+/// Build joint world transforms composed with inverse bind matrices.
+///
+/// # Errors
+/// Returns an error for excessive joint counts, missing selected-scene joints,
+/// invalid inverse bind layouts or matrices, and unreadable matrix data.
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "glTF accessors and skins are cheap document handles matching the reader API ownership convention."
+)]
 pub(super) fn skin_matrices(
     skin: ::gltf::Skin<'_>,
     buffers: &[Vec<u8>],
@@ -270,6 +397,11 @@ pub(super) fn skin_matrices(
         .collect()
 }
 
+/// Apply normalized linear blend skinning to positions.
+///
+/// # Errors
+/// Returns an error for mismatched influence counts, invalid joint references,
+/// non-finite or empty total weights, and non-finite transformed positions.
 pub(super) fn apply_skin(
     positions: Vec<Vec3>,
     sets: &[InfluenceSet],
@@ -315,6 +447,140 @@ pub(super) fn apply_skin(
     Ok(result)
 }
 
+/// Transform a normal by an inverse transpose using scaled cofactors to avoid overflow.
+/// Zero normals or singular transforms produce zero for geometric normal fallback.
+fn transformed_normal(matrix: Transform, normal: Vec3) -> Result<Vec3> {
+    if !normal.is_finite() || matrix.0.iter().flatten().any(|v| !v.is_finite()) {
+        return Err("glTF normal transform contains non-finite components".into());
+    }
+    // Scale before computing cofactors to avoid overflow for large finite
+    // transforms. The positive uniform factor disappears on normalization.
+    let largest = matrix.0[..3]
+        .iter()
+        .flat_map(|column| column[..3].iter())
+        .map(|value| value.abs())
+        .fold(0., f64::max);
+    let normal_scale = normal.x.abs().max(normal.y.abs()).max(normal.z.abs());
+    if largest == 0. || normal_scale == 0. {
+        return Ok(Vec3::new(0., 0., 0.));
+    }
+    let columns: [Vec3; 3] = std::array::from_fn(|i| {
+        let column = matrix.0[i];
+        Vec3::new(
+            column[0] / largest,
+            column[1] / largest,
+            column[2] / largest,
+        )
+    });
+    let cofactors = [
+        columns[1].cross(columns[2]),
+        columns[2].cross(columns[0]),
+        columns[0].cross(columns[1]),
+    ];
+    let determinant = columns[0].dot(cofactors[0]);
+    // A singular normal matrix has no inverse. Returning zero lets the caller
+    // use the transformed face normal instead of inventing a direction.
+    if determinant == 0. {
+        return Ok(Vec3::new(0., 0., 0.));
+    }
+    let normal = Vec3::new(
+        normal.x / normal_scale,
+        normal.y / normal_scale,
+        normal.z / normal_scale,
+    );
+    let value = (cofactors[0] * normal.x + cofactors[1] * normal.y + cofactors[2] * normal.z)
+        * determinant.signum();
+    let value_scale = value.x.abs().max(value.y.abs()).max(value.z.abs());
+    if value_scale == 0. {
+        return Ok(Vec3::new(0., 0., 0.));
+    }
+    let value = Vec3::new(
+        value.x / value_scale,
+        value.y / value_scale,
+        value.z / value_scale,
+    );
+    let length = value.length();
+    if !length.is_finite() {
+        return Err("glTF deformed normal is non-finite".into());
+    }
+    Ok(value * (1. / length))
+}
+
+/// Apply the inverse transpose of each vertex's weighted affine skin matrix or node transform.
+/// Normal lengths are normalized only after morphing and all transforms.
+///
+/// # Errors
+/// Returns an error for invalid normals, mismatched influence lengths, invalid
+/// weights or joints, excessive influence work, or non-finite transforms.
+pub(super) fn apply_normals(
+    normals: &[Vec3],
+    sets: &[InfluenceSet],
+    matrices: Option<&[Transform]>,
+    transform: Transform,
+) -> Result<Vec<Vec3>> {
+    let Some(matrices) = matrices else {
+        return normals
+            .iter()
+            .map(|&normal| transformed_normal(transform, normal))
+            .collect();
+    };
+    if sets.is_empty()
+        || sets
+            .iter()
+            .any(|set| set.joints.len() != normals.len() || set.weights.len() != normals.len())
+        || normals.len().saturating_mul(sets.len()).saturating_mul(4) > MAX_DEFORMATION_WORK
+    {
+        return Err("glTF normal skin has missing, mismatched, or excessive influences".into());
+    }
+    let mut used = HashSet::new();
+    let mut result = Vec::with_capacity(normals.len());
+    for (vertex, &normal) in normals.iter().enumerate() {
+        let mut sum = 0.;
+        used.clear();
+        for set in sets {
+            for (&joint, &weight) in set.joints[vertex].iter().zip(&set.weights[vertex]) {
+                if joint as usize >= matrices.len() {
+                    return Err("glTF normal skin references a missing joint".into());
+                }
+                if !weight.is_finite() || weight < 0. {
+                    return Err("glTF normal skin weight must be finite and nonnegative".into());
+                }
+                if weight > 0. {
+                    if !used.insert(joint) {
+                        return Err("glTF normal vertex repeats a weighted joint".into());
+                    }
+                    sum += weight;
+                }
+            }
+        }
+        if !sum.is_finite() || sum <= 0. {
+            return Err("glTF normal vertex has no positive skin weight".into());
+        }
+        let mut matrix = Transform::IDENTITY;
+        for column in &mut matrix.0[..3] {
+            column[..3].fill(0.);
+        }
+        for set in sets {
+            for (&joint, &weight) in set.joints[vertex].iter().zip(&set.weights[vertex]) {
+                if weight == 0. {
+                    continue;
+                }
+                let joint = matrices[joint as usize];
+                for (column, joint_column) in matrix.0[..3].iter_mut().zip(&joint.0[..3]) {
+                    for (value, joint_value) in column[..3].iter_mut().zip(&joint_column[..3]) {
+                        *value += joint_value * (weight / sum);
+                    }
+                }
+            }
+        }
+        // Joint matrices already place the skinned mesh in world coordinates;
+        // as for positions, its mesh node's authored transform is excluded.
+        result.push(transformed_normal(matrix, normal)?);
+    }
+    Ok(result)
+}
+
+/// Resolve an untyped morph accessor index and require it to exist.
 fn accessor<'a>(
     context: &LoadContext<'_, 'a>,
     index: &serde_json::Value,
@@ -335,6 +601,11 @@ fn accessor<'a>(
     Ok(accessor)
 }
 
+/// Decode permitted RGB or RGBA morph color deltas with finite components.
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "glTF accessors and skins are cheap document handles matching the reader API ownership convention."
+)]
 fn color_deltas(accessor: ::gltf::Accessor<'_>, buffers: &[Vec<u8>]) -> Result<Vec<[f64; 4]>> {
     let dimension = accessor.dimensions().multiplicity();
     if !matches!(accessor.dimensions(), Dimensions::Vec3 | Dimensions::Vec4) {
@@ -378,6 +649,11 @@ fn color_deltas(accessor: ::gltf::Accessor<'_>, buffers: &[Vec<u8>]) -> Result<V
     Ok(values)
 }
 
+/// Validate and record a consistent morph target count for every mesh.
+///
+/// # Errors
+/// Returns an error for inconsistent primitive targets, excessive targets, or
+/// default mesh weights whose count or components are invalid.
 pub(super) fn morph_target_counts(raw: &serde_json::Value) -> Result<Vec<usize>> {
     raw.get("meshes")
         .and_then(serde_json::Value::as_array)
@@ -406,6 +682,16 @@ pub(super) fn morph_target_counts(raw: &serde_json::Value) -> Result<Vec<usize>>
         .collect()
 }
 
+/// Apply selected node or mesh morph weights to positions, normals, colors and selected UVs.
+///
+/// # Errors
+/// Returns an error for invalid weights, missing base attributes, unsupported
+/// target semantics, incompatible accessor counts or layouts, unreadable data,
+/// non-finite results, or exceeded morph work limits.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "Morphed color components are clamped to the unit interval before returning to glTF f32 color storage."
+)]
 pub(super) fn apply_morphs(
     node: &::gltf::Node<'_>,
     mesh: &::gltf::Mesh<'_>,
@@ -429,8 +715,10 @@ pub(super) fn apply_morphs(
         .weights
         .as_deref()
         .or_else(|| mesh.weights())
-        .map(|v| v.iter().copied().map(f64::from).collect())
-        .unwrap_or_else(|| vec![0.; count]);
+        .map_or_else(
+            || vec![0.; count],
+            |v| v.iter().copied().map(f64::from).collect(),
+        );
     if weights.len() != count || weights.iter().any(|v| !v.is_finite()) {
         return Err("glTF morph weights must match targets and be finite".into());
     }
@@ -448,6 +736,24 @@ pub(super) fn apply_morphs(
                 let deltas = read_positions(accessor, context.buffers, context.quantized, true)?;
                 for (position, delta) in data.positions.iter_mut().zip(deltas) {
                     *position = *position + delta * weight;
+                }
+            } else if semantic == "NORMAL" {
+                let normals = data
+                    .normals
+                    .as_mut()
+                    .ok_or("glTF normal morph has no base NORMAL")?;
+                if normals.len() != data.positions.len() {
+                    return Err("glTF base normal count differs from position count".into());
+                }
+                for (normal, delta) in normals.iter_mut().zip(read_normals(
+                    accessor,
+                    context.buffers,
+                    context.quantized,
+                )?) {
+                    *normal = *normal + delta * weight;
+                    if !normal.is_finite() {
+                        return Err("glTF morph produced a non-finite normal".into());
+                    }
                 }
             } else if semantic == "COLOR_0" {
                 let colors = colors
@@ -467,7 +773,7 @@ pub(super) fn apply_morphs(
                         color[i] += delta[i] * weight;
                     }
                 }
-            } else if !matches!(semantic.as_str(), "NORMAL" | "TANGENT")
+            } else if semantic != "TANGENT"
                 && !semantic.starts_with("TEXCOORD_")
                 && !semantic.starts_with("COLOR_")
                 && !semantic.starts_with('_')
@@ -594,6 +900,10 @@ mod tests {
     }
 
     #[test]
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "The authored inverse bind test matrices contain small exactly representable f32 values."
+    )]
     fn joint_world_and_inverse_bind_ignore_mesh_transform_and_normalize_weights() {
         let mut fixture = Fixture::new();
         fixture.influences([0, 1, 0, 0], [64, 192, 0, 0], 0);
@@ -643,7 +953,7 @@ mod tests {
         let values = fixture.view(
             &[0f32, 2., 0.]
                 .into_iter()
-                .flat_map(|v| v.to_le_bytes())
+                .flat_map(f32::to_le_bytes)
                 .collect::<Vec<_>>(),
         );
         let morph = fixture.document["accessors"].as_array().unwrap().len();
@@ -687,6 +997,10 @@ mod tests {
     }
 
     #[test]
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "The authored fixture uses small accessor indices and buffer offsets within its allocated test bytes."
+    )]
     fn malformed_skin_and_morph_data_fail_explicitly() {
         let mut fixture = Fixture::new();
         fixture.influences([0, 1, 0, 0], [255, 0, 0, 0], 0);
@@ -753,6 +1067,10 @@ mod tests {
     }
 
     #[test]
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "The authored fixture uses small accessor indices and buffer offsets within its allocated test bytes."
+    )]
     fn quantized_signed_positions_and_morphs_preserve_authored_dequantization() {
         let mut fixture = Fixture::new();
         let base = fixture.data(
@@ -771,7 +1089,7 @@ mod tests {
         let bytes: Vec<_> = [-2i16, 1, 0, 0]
             .repeat(3)
             .into_iter()
-            .flat_map(|v| v.to_le_bytes())
+            .flat_map(i16::to_le_bytes)
             .collect();
         let delta = fixture.data("VEC3", 5122, 3, &bytes, false);
         let view = fixture.document["accessors"][delta]["bufferView"]
@@ -827,5 +1145,250 @@ mod tests {
             Vec3::new(offset + 1., -5., 4.),
         );
         near(scene.triangles[0].vertices[2], Vec3::new(offset, -5., 5.));
+    }
+
+    #[test]
+    fn normal_inverse_transpose_handles_nonuniform_scale_reflection_and_singular_fallback() {
+        let matrix = Transform([
+            [0., 2., 0., 0.],
+            [-3., 0., 0., 0.],
+            [0., 0., 4., 0.],
+            [100., 200., 300., 1.],
+        ]);
+        // Rz(90) * diag(2,3,4): inverse-transpose sends (1,1,0)
+        // to (-1/3,1/2,0), then normalization produces (-2,3,0)/sqrt13.
+        near(
+            apply_normals(&[Vec3::new(1., 1., 0.)], &[], None, matrix).unwrap()[0],
+            Vec3::new(-2., 3., 0.) * (1. / 13f64.sqrt()),
+        );
+        let reflected = Transform([
+            [-2., 0., 0., 0.],
+            [0., 3., 0., 0.],
+            [0., 0., 4., 0.],
+            [0., 0., 0., 1.],
+        ]);
+        near(
+            apply_normals(&[Vec3::new(1., 1., 0.)], &[], None, reflected).unwrap()[0],
+            Vec3::new(-3., 2., 0.) * (1. / 13f64.sqrt()),
+        );
+        let mut singular = matrix;
+        singular.0[0] = [0.; 4];
+        near(
+            apply_normals(&[Vec3::new(1., 0., 0.)], &[], None, singular).unwrap()[0],
+            Vec3::new(0., 0., 0.),
+        );
+        near(
+            apply_normals(&[Vec3::new(0., 0., 0.)], &[], None, matrix).unwrap()[0],
+            Vec3::new(0., 0., 0.),
+        );
+        let huge = Transform([
+            [2e300, 0., 0., 0.],
+            [0., 3e300, 0., 0.],
+            [0., 0., 4e300, 0.],
+            [0., 0., 0., 1.],
+        ]);
+        near(
+            apply_normals(&[Vec3::new(1e300, 1e300, 0.)], &[], None, huge).unwrap()[0],
+            Vec3::new(3., 2., 0.) * (1. / 13f64.sqrt()),
+        );
+    }
+
+    #[test]
+    fn normal_skin_uses_inverse_transpose_of_weighted_joint_transform() {
+        let first = Transform([
+            [2., 0., 0., 0.],
+            [0., 1., 0., 0.],
+            [0., 0., 1., 0.],
+            [10., 20., 30., 1.],
+        ]);
+        let second = Transform([
+            [1., 0., 0., 0.],
+            [0., 3., 0., 0.],
+            [0., 0., 1., 0.],
+            [-100., -200., -300., 1.],
+        ]);
+        let set = InfluenceSet {
+            joints: vec![[0, 1, 0, 0]],
+            weights: vec![[1., 3., 0., 0.]],
+        };
+        // The weighted affine is diag(1.25,2.5,1). Its inverse-transpose
+        // sends (1,1,0) to (0.8,0.4,0), not a blend of unit joint normals.
+        let actual = apply_normals(
+            &[Vec3::new(1., 1., 0.)],
+            &[set],
+            Some(&[first, second]),
+            Transform([
+                [0., 9., 0., 0.],
+                [-9., 0., 0., 0.],
+                [0., 0., 9., 0.],
+                [0., 0., 0., 1.],
+            ]),
+        )
+        .unwrap();
+        near(actual[0], Vec3::new(2., 1., 0.) * (1. / 5f64.sqrt()));
+        for (joints, weights) in [
+            ([0, 0, 0, 0], [1., 1., 0., 0.]),
+            ([0, 2, 0, 0], [1., 0., 0., 0.]),
+            ([0, 1, 0, 0], [0., 0., 0., 0.]),
+            ([0, 1, 0, 0], [-1., 2., 0., 0.]),
+            ([0, 1, 0, 0], [f64::NAN, 1., 0., 0.]),
+        ] {
+            let set = InfluenceSet {
+                joints: vec![joints],
+                weights: vec![weights],
+            };
+            assert!(
+                apply_normals(
+                    &[Vec3::new(1., 0., 0.)],
+                    &[set],
+                    Some(&[first, second]),
+                    Transform::IDENTITY
+                )
+                .is_err()
+            );
+        }
+        let mismatched = InfluenceSet {
+            joints: vec![],
+            weights: vec![[1., 0., 0., 0.]],
+        };
+        assert!(
+            apply_normals(
+                &[Vec3::new(1., 0., 0.)],
+                &[mismatched],
+                Some(&[first]),
+                Transform::IDENTITY
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn normal_morph_is_applied_before_skin_and_final_normalization() {
+        let mut fixture = Fixture::new();
+        let normal = fixture.floats("VEC3", 3, &[1., 0., 0., 1., 0., 0., 1., 0., 0.]);
+        fixture.document["meshes"][0]["primitives"][0]["attributes"]["NORMAL"] = json!(normal);
+        let delta = fixture.floats("VEC3", 3, &[0., 2., 0., 0., 2., 0., 0., 2., 0.]);
+        fixture.document["meshes"][0]["primitives"][0]["targets"] = json!([{"NORMAL":delta}]);
+        fixture.document["meshes"][0]["weights"] = json!([0.5]);
+        fixture.influences([0, 0, 0, 0], [255, 0, 0, 0], 0);
+        let q = std::f32::consts::FRAC_1_SQRT_2;
+        fixture.document["nodes"] = json!([
+            {"mesh":0,"skin":0,"scale":[7,8,9]},
+            {"rotation":[0,0,q,q],"scale":[2,3,4],"translation":[10,20,30]}
+        ]);
+        fixture.document["scenes"][0]["nodes"] = json!([0, 1]);
+        fixture.document["skins"] = json!([{"joints":[1]}]);
+        let scene = fixture.load().unwrap();
+        let normals = scene.appearances.get(&0).unwrap().normals.unwrap();
+        for normal in normals {
+            near(normal, Vec3::new(-2., 0., 3.) * (1. / 13f64.sqrt()));
+        }
+        near(scene.triangles[0].vertices[0], Vec3::new(10., -30., 20.));
+    }
+
+    #[test]
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "The authored fixture uses small accessor indices and buffer offsets within its allocated test bytes."
+    )]
+    fn quantized_sparse_normal_morph_preserves_component_values() {
+        let mut fixture = Fixture::new();
+        let normal = fixture.data("VEC3", 5120, 3, &[0, 0, 127, 0].repeat(3), true);
+        let view = fixture.document["accessors"][normal]["bufferView"]
+            .as_u64()
+            .unwrap() as usize;
+        fixture.document["bufferViews"][view]["byteStride"] = json!(4);
+        fixture.document["meshes"][0]["primitives"][0]["attributes"]["NORMAL"] = json!(normal);
+        let indices = fixture.view(&[2]);
+        let values = fixture.view(
+            &[-32768i16, 32767, 0]
+                .into_iter()
+                .flat_map(i16::to_le_bytes)
+                .collect::<Vec<_>>(),
+        );
+        let accessors = fixture.document["accessors"].as_array_mut().unwrap();
+        let delta = accessors.len();
+        accessors.push(json!({"componentType":5122,"type":"VEC3","count":3,"normalized":true,"sparse":{"count":1,"indices":{"bufferView":indices,"componentType":5121},"values":{"bufferView":values}}}));
+        fixture.document["meshes"][0]["primitives"][0]["targets"] = json!([{"NORMAL":delta}]);
+        fixture.document["meshes"][0]["weights"] = json!([1.]);
+        fixture.document["nodes"][0]["scale"] = json!([2, 3, 4]);
+        fixture.document["extensionsUsed"] = json!(["KHR_mesh_quantization"]);
+        fixture.document["extensionsRequired"] = json!(["KHR_mesh_quantization"]);
+        let scene = fixture.load().unwrap();
+        let normals = scene.appearances.get(&0).unwrap().normals.unwrap();
+        near(normals[0], Vec3::new(0., -1., 0.));
+        near(normals[1], Vec3::new(0., -1., 0.));
+        near(normals[2], Vec3::new(-6., -3., 4.) * (1. / 61f64.sqrt()));
+        fixture
+            .document
+            .as_object_mut()
+            .unwrap()
+            .remove("extensionsRequired");
+        assert!(fixture.load().is_err());
+        fixture.document["extensionsRequired"] = json!(["KHR_mesh_quantization"]);
+        fixture.document["accessors"][delta]["count"] = json!(2);
+        assert!(fixture.load().is_err());
+    }
+
+    #[test]
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "The authored fixture uses small accessor indices and offsets within its allocated test bytes."
+    )]
+    fn normal_morph_requires_base_normals_and_valid_components_even_at_zero_weight() {
+        let mut fixture = Fixture::new();
+        let delta = fixture.floats("VEC3", 3, &[0., 0., 0., 0., 0., 0., 0., 0., 0.]);
+        fixture.document["meshes"][0]["primitives"][0]["targets"] = json!([{"NORMAL":delta}]);
+        assert!(
+            fixture
+                .load()
+                .unwrap_err()
+                .to_string()
+                .contains("base NORMAL")
+        );
+        let normal = fixture.floats("VEC3", 3, &[0., 0., 1., 0., 0., 1., 0., 0., 1.]);
+        fixture.document["meshes"][0]["primitives"][0]["attributes"]["NORMAL"] = json!(normal);
+        assert!(fixture.load().is_ok());
+        fixture.document["accessors"][delta]["normalized"] = json!(true);
+        assert!(fixture.load().is_err());
+        fixture.document["accessors"][delta]["normalized"] = json!(false);
+        let view = fixture.document["accessors"][delta]["bufferView"]
+            .as_u64()
+            .unwrap() as usize;
+        let offset = fixture.document["bufferViews"][view]["byteOffset"]
+            .as_u64()
+            .unwrap() as usize;
+        fixture.bytes[offset..offset + 4].copy_from_slice(&f32::NAN.to_le_bytes());
+        assert!(fixture.load().is_err());
+    }
+
+    #[test]
+    fn normal_morph_cancellation_keeps_geometry_with_face_normal_fallback() {
+        let mut fixture = Fixture::new();
+        let normal = fixture.floats("VEC3", 3, &[0., 0., 1., 0., 0., 1., 0., 0., 1.]);
+        fixture.document["meshes"][0]["primitives"][0]["attributes"]["NORMAL"] = json!(normal);
+        let delta = fixture.floats("VEC3", 3, &[0., 0., -1., 0., 0., -1., 0., 0., -1.]);
+        fixture.document["meshes"][0]["primitives"][0]["targets"] = json!([{"NORMAL":delta}]);
+        fixture.document["meshes"][0]["weights"] = json!([1.]);
+        let scene = fixture.load().unwrap();
+        assert_eq!(scene.triangles.len(), 1);
+        assert!(scene.appearances.get(&0).unwrap().normals.is_none());
+        near(scene.triangles[0].vertices[1], Vec3::new(1., 0., 0.));
+        near(scene.triangles[0].vertices[2], Vec3::new(0., 0., 1.));
+    }
+
+    #[test]
+    fn normal_counts_and_empty_sparse_accessors_fail_without_iterator_panics() {
+        let mut fixture = Fixture::new();
+        let normal = fixture.floats("VEC3", 2, &[0., 0., 1., 0., 0., 1.]);
+        fixture.document["meshes"][0]["primitives"][0]["attributes"]["NORMAL"] = json!(normal);
+        assert!(fixture.load().unwrap_err().to_string().contains("count"));
+        fixture.document["accessors"][normal]["count"] = json!(0);
+        assert!(fixture.load().is_err());
+        fixture.document["accessors"][normal]["count"] = json!(2);
+        let indices = fixture.view(&[0]);
+        let values = fixture.view(&[0; 12]);
+        fixture.document["accessors"][normal]["sparse"] = json!({"count":0,"indices":{"bufferView":indices,"componentType":5121},"values":{"bufferView":values}});
+        assert!(fixture.load().is_err());
     }
 }

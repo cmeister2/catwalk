@@ -5,9 +5,16 @@ use crate::{
     scene::{Point, Scene, Vec3},
 };
 use std::{io::Read, path::Path};
+/// Maximum declared point count accepted before geometry allocation.
 const MAX_POINTS: usize = 20_000_000;
+/// Maximum sampled points retained in the preview scene.
 const PREVIEW_POINTS: usize = 1_000_000;
 
+/// Read a bounded survey point or trajectory file and decode its preview geometry.
+///
+/// # Errors
+/// Returns an error for unsupported survey versions/layouts, invalid counts/records, nonfinite
+/// positions or malformed compressed payloads.
 pub(super) fn load(path: &Path) -> Result<Scene> {
     let bytes = super::read_file(path)?;
     let scene = match super::extension(path)?.as_str() {
@@ -22,12 +29,17 @@ pub(super) fn load(path: &Path) -> Result<Scene> {
     Ok(scene)
 }
 
+/// Bounds-checked cursor for survey point or trajectory file records.
 struct Reader<'a> {
+    /// Borrowed complete input byte stream.
     bytes: &'a [u8],
+    /// Byte position of the next unread record.
     position: usize,
+    /// Whether stored words use big-endian byte order.
     big: bool,
 }
 impl<'a> Reader<'a> {
+    /// Start a bounds-checked reader at the beginning of the supplied bytes.
     fn new(bytes: &'a [u8]) -> Self {
         Self {
             bytes,
@@ -35,6 +47,7 @@ impl<'a> Reader<'a> {
             big: false,
         }
     }
+    /// Consume the requested bytes, rejecting offset overflow and truncated records.
     fn take(&mut self, count: usize) -> Result<&'a [u8]> {
         let end = self
             .position
@@ -47,9 +60,11 @@ impl<'a> Reader<'a> {
         self.position = end;
         Ok(data)
     }
+    /// Read one unsigned byte from the current record.
     fn u8(&mut self) -> Result<u8> {
         Ok(self.take(1)?[0])
     }
+    /// Read one unsigned 16-bit word from the current record.
     fn u16(&mut self) -> Result<u16> {
         let b = self.take(2)?.try_into()?;
         Ok(if self.big {
@@ -58,6 +73,7 @@ impl<'a> Reader<'a> {
             u16::from_le_bytes(b)
         })
     }
+    /// Read one unsigned 32-bit word from the current record.
     fn u32(&mut self) -> Result<u32> {
         let b = self.take(4)?.try_into()?;
         Ok(if self.big {
@@ -66,12 +82,19 @@ impl<'a> Reader<'a> {
             u32::from_le_bytes(b)
         })
     }
+    /// Read one signed 32-bit word from the current record.
+    #[allow(
+        clippy::cast_possible_wrap,
+        reason = "Reinterpret the selected-endian u32 word as the corresponding signed two-complement record value."
+    )]
     fn i32(&mut self) -> Result<i32> {
         Ok(self.u32()? as i32)
     }
+    /// Read one finite single-precision number and widen it for geometry calculations.
     fn f32(&mut self) -> Result<f64> {
-        Ok(f32::from_bits(self.u32()?) as f64)
+        Ok(f64::from(f32::from_bits(self.u32()?)))
     }
+    /// Read one finite double-precision number from the current record.
     fn f64(&mut self) -> Result<f64> {
         let b = self.take(8)?.try_into()?;
         Ok(if self.big {
@@ -82,12 +105,14 @@ impl<'a> Reader<'a> {
     }
 }
 
+/// Choose the sampling interval that keeps a preview within one million points.
 fn stride(count: usize) -> Result<usize> {
     if count == 0 || count > MAX_POINTS {
         return Err("survey point count must be between 1 and 20 million".into());
     }
     Ok(count.div_ceil(PREVIEW_POINTS))
 }
+/// Append a selected finite survey point without exceeding the preview budget.
 fn append(scene: &mut Scene, position: Vec3, color: Option<[u8; 3]>, selected: bool) -> Result<()> {
     if !position.is_finite() {
         return Err("survey point coordinates are not finite".into());
@@ -98,11 +123,12 @@ fn append(scene: &mut Scene, position: Vec3, color: Option<[u8; 3]>, selected: b
     Ok(())
 }
 
+/// Decode `TerraScan` versions and their optional per-point color/classification records.
 fn terra(bytes: &[u8]) -> Result<Scene> {
     let mut input = Reader::new(bytes);
     let header = input.u32()? as usize;
     let version = input.u32()?;
-    if input.u32()? != 970401 || input.take(4)? != b"CXYZ" {
+    if input.u32()? != 970_401 || input.take(4)? != b"CXYZ" {
         return Err("invalid TerraScan signature".into());
     }
     let count = input.u32()? as usize;
@@ -121,8 +147,8 @@ fn terra(bytes: &[u8]) -> Result<Scene> {
         return Err("invalid TerraScan header".into());
     }
     let base = match version {
-        20010712 => 16,
-        20020715 => 20,
+        20_010_712 => 16,
+        20_020_715 => 20,
         _ => return Err("unsupported TerraScan version (expected 20010712 or 20020715)".into()),
     };
     let record = base + time as usize * 4 + color as usize * 4;
@@ -132,11 +158,11 @@ fn terra(bytes: &[u8]) -> Result<Scene> {
     input.position = header;
     let mut scene = Scene::default();
     for index in 0..count {
-        if version == 20010712 {
+        if version == 20_010_712 {
             input.take(4)?;
         }
         let raw = [input.i32()?, input.i32()?, input.i32()?];
-        if version == 20020715 {
+        if version == 20_020_715 {
             input.take(8)?;
         }
         if time != 0 {
@@ -148,8 +174,9 @@ fn terra(bytes: &[u8]) -> Result<Scene> {
         } else {
             None
         };
-        let v =
-            std::array::from_fn::<_, 3, _>(|axis| (raw[axis] as f64 - origin[axis]) / units as f64);
+        let v = std::array::from_fn::<_, 3, _>(|axis| {
+            (f64::from(raw[axis]) - origin[axis]) / f64::from(units)
+        });
         append(
             &mut scene,
             Vec3::new(v[0], v[1], v[2]),
@@ -160,6 +187,7 @@ fn terra(bytes: &[u8]) -> Result<Scene> {
     Ok(scene)
 }
 
+/// Decode endian-tagged ATM QFIT records into georeferenced point positions.
 fn qfit(bytes: &[u8]) -> Result<Scene> {
     let mut input = Reader::new(bytes);
     let little = input.u32()? as usize;
@@ -200,9 +228,9 @@ fn qfit(bytes: &[u8]) -> Result<Scene> {
         if input.i32()? < 0 {
             return Err("unexpected history record inside QFIT point data".into());
         }
-        let latitude = input.i32()? as f64 / 1_000_000.;
-        let longitude = input.i32()? as f64 / 1_000_000.;
-        let elevation = input.i32()? as f64 / 1_000.;
+        let latitude = f64::from(input.i32()?) / 1_000_000.;
+        let longitude = f64::from(input.i32()?) / 1_000_000.;
+        let elevation = f64::from(input.i32()?) / 1_000.;
         input.take(size - 16)?;
         if latitude.abs() > 90. || !(-180.0..=360.0).contains(&longitude) {
             return Err("invalid QFIT latitude or longitude".into());
@@ -217,6 +245,7 @@ fn qfit(bytes: &[u8]) -> Result<Scene> {
     Ok(scene)
 }
 
+/// Decode fixed-size SBET navigation records as longitude, latitude and altitude points.
 fn sbet(bytes: &[u8]) -> Result<Scene> {
     const RECORD: usize = 17 * 8;
     if !bytes.len().is_multiple_of(RECORD) {
@@ -244,6 +273,7 @@ fn sbet(bytes: &[u8]) -> Result<Scene> {
     Ok(scene)
 }
 
+/// Apply the survey boresight rotations to a measured direction vector.
 fn rotate(v: Vec3, angles: [f64; 3]) -> Vec3 {
     // Optech orientation is Rz(-heading) * Rx(pitch) * Ry(roll).
     let [roll, pitch, heading] = angles;
@@ -255,6 +285,7 @@ fn rotate(v: Vec3, angles: [f64; 3]) -> Vec3 {
     Vec3::new(c * v.x + s * v.y, -s * v.x + c * v.y, v.z)
 }
 
+/// Decode CSD echoes, instrument placement and ranges into spatial points.
 fn csd(bytes: &[u8]) -> Result<Scene> {
     let mut input = Reader::new(bytes);
     if input.take(4)? != b"CSD\0" {
@@ -295,18 +326,18 @@ fn csd(bytes: &[u8]) -> Result<Scene> {
         let attitude = [input.f32()?, input.f32()?, input.f32()?];
         let latitude = input.f64()?;
         let longitude = input.f64()?;
-        let altitude = input.f32()?;
+        let platform_height = input.f32()?;
         if returns == 0 {
             continue;
         }
         if latitude.abs() >= std::f64::consts::FRAC_PI_2
-            || !Vec3::new(latitude, longitude, altitude).is_finite()
+            || !Vec3::new(latitude, longitude, platform_height).is_finite()
             || !scan.is_finite()
             || attitude.iter().any(|v| !v.is_finite())
         {
             return Err("invalid Optech CSD platform coordinates".into());
         }
-        let flattening = 1. / 298.257223563;
+        let flattening = 1. / 298.257_223_563;
         let e2 = 2. * flattening - flattening * flattening;
         let w = (1. - e2 * latitude.sin().powi(2)).sqrt();
         let east_radius = 6_378_137. / w * latitude.cos();
@@ -322,7 +353,7 @@ fn csd(bytes: &[u8]) -> Result<Scene> {
             let position = Vec3::new(
                 (longitude + displacement.x / east_radius).to_degrees(),
                 (latitude + displacement.y / north_radius).to_degrees(),
-                altitude + displacement.z,
+                platform_height + displacement.z,
             );
             append(&mut scene, position, None, index.is_multiple_of(step))?;
         }
@@ -330,12 +361,22 @@ fn csd(bytes: &[u8]) -> Result<Scene> {
     Ok(scene)
 }
 
+/// Decode BPF dimension layouts, optional zlib payloads and homogeneous coordinate transforms.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "BPF dimensions/counts are checked against layout limits; finite RGB channels are clamped before byte conversion."
+)]
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keep BPF versions, layout metadata and compressed-payload interpretation in one cursor traversal."
+)]
 fn bpf(bytes: &[u8]) -> Result<Scene> {
     let mut input = Reader::new(bytes);
     let v3 = bytes.starts_with(b"BPF!");
     let mut matrix = [0.; 16];
-    for i in 0..4 {
-        matrix[i * 5] = 1.;
+    for index in 0..4 {
+        matrix[index * 5] = 1.;
     }
     let mut offsets = Vec::new();
     let mut labels = Vec::new();
@@ -385,18 +426,24 @@ fn bpf(bytes: &[u8]) -> Result<Scene> {
     input.take((dimensions - static_count) * 16)?; // Min/max metadata.
     for _ in static_count..dimensions {
         let raw = input.take(32)?;
-        let len = raw.iter().position(|v| *v == 0).unwrap_or(raw.len());
+        let len = raw
+            .iter()
+            .position(|sample| *sample == 0)
+            .unwrap_or(raw.len());
         labels.push(std::str::from_utf8(&raw[..len])?.trim().to_owned());
     }
     if header < input.position
         || header > bytes.len()
-        || offsets.iter().chain(matrix.iter()).any(|v| !v.is_finite())
+        || offsets
+            .iter()
+            .chain(matrix.iter())
+            .any(|sample| !sample.is_finite())
     {
         return Err("invalid BPF header length or transform".into());
     }
     let expected = count
         .checked_mul(dimensions)
-        .and_then(|v| v.checked_mul(4))
+        .and_then(|sample| sample.checked_mul(4))
         .ok_or("BPF data size overflow")?;
     if expected as u64 > super::MAX_INPUT_BYTES {
         return Err("BPF decoded point data exceeds 512 MiB".into());
@@ -410,9 +457,9 @@ fn bpf(bytes: &[u8]) -> Result<Scene> {
         input.position = header;
         let mut data = Vec::new();
         while data.len() < expected {
-            let decoded = input.u32()? as usize;
+            let expanded_length = input.u32()? as usize;
             let encoded = input.u32()? as usize;
-            if decoded == 0 || decoded > expected - data.len() || encoded == 0 {
+            if expanded_length == 0 || expanded_length > expected - data.len() || encoded == 0 {
                 return Err("invalid BPF zlib block length".into());
             }
             let block = input.take(encoded)?;
@@ -420,9 +467,9 @@ fn bpf(bytes: &[u8]) -> Result<Scene> {
             let mut out = Vec::new();
             decoder
                 .by_ref()
-                .take(decoded as u64 + 1)
+                .take(expanded_length as u64 + 1)
                 .read_to_end(&mut out)?;
-            if out.len() != decoded || decoder.total_in() != encoded as u64 {
+            if out.len() != expanded_length || decoder.total_in() != encoded as u64 {
                 return Err("BPF zlib block length/checksum mismatch".into());
             }
             data.extend(out);
@@ -436,8 +483,8 @@ fn bpf(bytes: &[u8]) -> Result<Scene> {
         let matches: Vec<_> = labels
             .iter()
             .enumerate()
-            .filter(|(_, l)| l.eq_ignore_ascii_case(name))
-            .map(|(i, _)| i)
+            .filter(|(_, label)| label.eq_ignore_ascii_case(name))
+            .map(|(index, _)| index)
             .collect();
         if matches.len() != 1 {
             return Err("BPF requires unique X/Y/Z dimensions".into());
@@ -445,8 +492,11 @@ fn bpf(bytes: &[u8]) -> Result<Scene> {
         Ok(matches[0])
     };
     let xyz = [axis("X")?, axis("Y")?, axis("Z")?];
-    let rgb = ["Red", "Green", "Blue"]
-        .map(|name| labels.iter().position(|l| l.eq_ignore_ascii_case(name)));
+    let rgb = ["Red", "Green", "Blue"].map(|name| {
+        labels
+            .iter()
+            .position(|label| label.eq_ignore_ascii_case(name))
+    });
     let value = |point: usize, dimension: usize| -> f64 {
         let packed: [u8; 4] = match layout {
             0 => data[(dimension * count + point) * 4..(dimension * count + point + 1) * 4]
@@ -458,33 +508,57 @@ fn bpf(bytes: &[u8]) -> Result<Scene> {
                 .unwrap(),
             _ => std::array::from_fn(|byte| data[dimension * count * 4 + byte * count + point]),
         };
-        f32::from_le_bytes(packed) as f64 + offsets[dimension]
+        f64::from(f32::from_le_bytes(packed)) + offsets[dimension]
     };
     let mut scene = Scene::default();
     let mut colors = Vec::new();
     let mut max_color = 0.0f64;
     for point in 0..count {
-        let [x, y, z] = xyz.map(|d| value(point, d));
-        let denominator = matrix[12] * x + matrix[13] * y + matrix[14] * z + matrix[15];
+        let [x_coordinate, y_coordinate, z_coordinate] =
+            xyz.map(|dimension| value(point, dimension));
+        let denominator = matrix[12] * x_coordinate
+            + matrix[13] * y_coordinate
+            + matrix[14] * z_coordinate
+            + matrix[15];
         if denominator == 0. {
             return Err("BPF transform has a zero homogeneous denominator".into());
         }
-        let v = std::array::from_fn::<_, 3, _>(|r| {
-            (matrix[r * 4] * x + matrix[r * 4 + 1] * y + matrix[r * 4 + 2] * z + matrix[r * 4 + 3])
+        let sample = std::array::from_fn::<_, 3, _>(|row| {
+            (matrix[row * 4] * x_coordinate
+                + matrix[row * 4 + 1] * y_coordinate
+                + matrix[row * 4 + 2] * z_coordinate
+                + matrix[row * 4 + 3])
                 / denominator
         });
         let selected = point.is_multiple_of(step);
-        append(&mut scene, Vec3::new(v[0], v[1], v[2]), None, selected)?;
+        append(
+            &mut scene,
+            Vec3::new(sample[0], sample[1], sample[2]),
+            None,
+            selected,
+        )?;
         if selected {
-            let color = if let [Some(r), Some(g), Some(b)] = rgb {
-                let c = [value(point, r), value(point, g), value(point, b)];
-                if c.iter().any(|v| !v.is_finite() || *v < 0. || *v > 65535.) {
+            let color = if let [
+                Some(red_dimension),
+                Some(green_dimension),
+                Some(blue_dimension),
+            ] = rgb
+            {
+                let components = [
+                    value(point, red_dimension),
+                    value(point, green_dimension),
+                    value(point, blue_dimension),
+                ];
+                if components
+                    .iter()
+                    .any(|sample| !sample.is_finite() || *sample < 0. || *sample > 65535.)
+                {
                     return Err("invalid BPF RGB component".into());
                 }
-                for v in c {
-                    max_color = max_color.max(v);
+                for sample in components {
+                    max_color = max_color.max(sample);
                 }
-                Some(c)
+                Some(components)
             } else {
                 None
             };
@@ -493,7 +567,7 @@ fn bpf(bytes: &[u8]) -> Result<Scene> {
     }
     let divisor = if max_color > 255. { 257. } else { 1. };
     for (point, color) in scene.points.iter_mut().zip(colors) {
-        point.color = color.map(|rgb| rgb.map(|v| (v / divisor).round() as u8));
+        point.color = color.map(|rgb| rgb.map(|sample| (sample / divisor).round() as u8));
     }
     Ok(scene)
 }
@@ -504,7 +578,7 @@ mod tests {
     use std::io::Write;
     fn terra_file(version: u32) -> Vec<u8> {
         let mut b = Vec::new();
-        for v in [56, version, 970401] {
+        for v in [56, version, 970_401] {
             b.extend(v.to_le_bytes());
         }
         b.extend(b"CXYZ");
@@ -516,13 +590,13 @@ mod tests {
         b.extend(1u32.to_le_bytes());
         b.extend(1u32.to_le_bytes());
         for coordinates in [[1100i32, -1800, 3300], [1200, -1700, 3400]] {
-            if version == 20010712 {
+            if version == 20_010_712 {
                 b.extend([1, 2, 3, 0]);
             }
             for v in coordinates {
                 b.extend(v.to_le_bytes());
             }
-            if version == 20020715 {
+            if version == 20_020_715 {
                 b.extend([0; 8]);
             }
             b.extend(1234u32.to_le_bytes());
@@ -532,7 +606,7 @@ mod tests {
     }
     #[test]
     fn terra_versions_offsets_and_optional_fields() {
-        for version in [20010712, 20020715] {
+        for version in [20_010_712, 20_020_715] {
             let b = terra_file(version);
             let s = terra(&b).unwrap();
             assert_eq!(s.points[0].position, Vec3::new(1., 2., 3.));
@@ -542,21 +616,26 @@ mod tests {
         }
     }
     #[test]
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        reason = "The authored QFIT record sizes are small positive constants fitting every tested signed/unsigned width."
+    )]
     fn qfit_endian_lengths_and_header_offsets() {
         for size in [40usize, 48, 56] {
             for big in [false, true] {
                 let mut b = vec![0; size * 4];
                 let values = [
                     (0, size as i32),
-                    (size, -9000000),
+                    (size, -9_000_000),
                     (size + 4, (size * 2) as i32),
                     (size * 2, 100),
-                    (size * 2 + 4, 51000000),
-                    (size * 2 + 8, -120000000),
+                    (size * 2 + 4, 51_000_000),
+                    (size * 2 + 8, -120_000_000),
                     (size * 2 + 12, 4500),
                     (size * 3, 200),
-                    (size * 3 + 4, 51000001),
-                    (size * 3 + 8, -120000001),
+                    (size * 3 + 4, 51_000_001),
+                    (size * 3 + 8, -120_000_001),
                     (size * 3 + 12, 4600),
                 ];
                 for (offset, v) in values {
@@ -617,10 +696,15 @@ mod tests {
         let s = csd(&b).unwrap();
         assert!((s.points[0].position.z - 100.).abs() < 1e-10);
         assert!(
-            (s.points[0].position.x + 10. / 6378137. * 180. / std::f64::consts::PI).abs() < 1e-10
+            (s.points[0].position.x + 10. / 6_378_137. * 180. / std::f64::consts::PI).abs() < 1e-10
         );
         assert!(csd(&b[..b.len() - 1]).is_err());
     }
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "The authored BPF fixture uses three points and a few dimensions with bounded positive values."
+    )]
     fn bpf_file(layout: u8, compressed: bool) -> Vec<u8> {
         let dimensions = 3;
         let count = 2;

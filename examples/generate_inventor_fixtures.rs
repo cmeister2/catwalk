@@ -1,14 +1,24 @@
 //! Reproduce original, MIT-licensed thumbnail-carrier fixtures for snapshot CI.
 //! These CFB files contain saved images, not full Inventor CAD designs.
 #[path = "fixtures/inventor.rs"]
+/// Writer for the authored Inventor thumbnail property-set carriers.
 mod inventor;
 
+/// Encode a rendered fixture image as a PNG byte vector.
+///
+/// # Errors
+/// Returns an error if the image cannot be encoded as PNG.
 fn png(image: &image::RgbaImage) -> catwalk::Result<Vec<u8>> {
     let mut output = Vec::new();
     catwalk::render::write_png(image, &mut output)?;
     Ok(output)
 }
 
+/// Regenerate the authored part and assembly carrier files used by parser tests.
+///
+/// # Errors
+/// Returns an error if the model cannot be loaded or rendered, an image cannot
+/// be encoded, or the fixture directory and compound files cannot be written.
 fn main() -> catwalk::Result<()> {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let destination = root.join("tests/fixtures/saved-previews/autodesk");
@@ -18,7 +28,7 @@ fn main() -> catwalk::Result<()> {
         width: 160,
         height: 128,
         transparent: true,
-        ..Default::default()
+        ..catwalk::render::RenderOptions::default()
     };
     let part = catwalk::render::render(&scene, &options)?;
     inventor::write(

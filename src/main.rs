@@ -1,3 +1,5 @@
+//! Command-line preview rendering, saved-image extraction and PNG output.
+
 use catwalk::{
     Result, formats,
     render::{RenderOptions, write_png},
@@ -6,6 +8,7 @@ use catwalk::{
 use clap::Parser;
 use std::{io::Write, path::PathBuf};
 
+/// CLI arguments shared by thumbnail rendering and original-size extraction.
 #[derive(Parser)]
 #[command(
     version,
@@ -20,7 +23,7 @@ struct Args {
     /// Square thumbnail size in pixels.
     #[arg(short, long, default_value_t = 512, value_parser = clap::value_parser!(u32).range(1..=4096))]
     size: u32,
-    /// Override size with WIDTH,HEIGHT (F3D-style) or WIDTHxHEIGHT.
+    /// Override size with WIDTH,HEIGHT (F3D-style) or `WIDTHxHEIGHT`.
     #[arg(long)]
     resolution: Option<String>,
     /// Save with a transparent background.
@@ -43,6 +46,7 @@ struct Args {
     list_formats: bool,
 }
 
+/// Parse six ASCII hexadecimal color digits, with an optional leading hash.
 fn parse_color(value: &str) -> std::result::Result<[u8; 3], String> {
     let hex = value.strip_prefix('#').unwrap_or(value);
     if hex.len() != 6 || !hex.is_ascii() {
@@ -55,6 +59,7 @@ fn parse_color(value: &str) -> std::result::Result<[u8; 3], String> {
     Ok([parse(0)?, parse(2)?, parse(4)?])
 }
 
+/// Resolve square size or explicit resolution and enforce the output axis limits.
 fn dimensions(args: &Args) -> Result<(u32, u32)> {
     let Some(value) = &args.resolution else {
         return Ok((args.size, args.size));
@@ -69,7 +74,8 @@ fn dimensions(args: &Args) -> Result<(u32, u32)> {
     Ok(pair)
 }
 
-fn run(args: Args) -> Result<()> {
+/// Complete preview decoding and PNG encoding before opening the destination.
+fn run(args: &Args) -> Result<()> {
     if args.list_formats {
         println!(
             "Implemented model readers: {}",
@@ -117,7 +123,7 @@ fn run(args: Args) -> Result<()> {
             write_png(&image, &mut bytes)?;
         }
     } else {
-        let (width, height) = dimensions(&args)?;
+        let (width, height) = dimensions(args)?;
         let options = RenderOptions {
             width,
             height,
@@ -139,9 +145,10 @@ fn run(args: Args) -> Result<()> {
     Ok(())
 }
 
+/// Map CLI failures to diagnostics and a distinct absent-saved-preview exit code.
 fn main() -> std::process::ExitCode {
     let args = Args::parse();
-    match run(args) {
+    match run(&args) {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("catwalk: {error}");

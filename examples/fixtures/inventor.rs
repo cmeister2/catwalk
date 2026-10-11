@@ -2,6 +2,15 @@
 use catwalk::Result;
 use std::{fs::File, io::Write, path::Path};
 
+/// Store an authored PNG in an Inventor-compatible OLE property-set carrier.
+///
+/// # Errors
+/// Returns an error if the PNG cannot be decoded or the compound file cannot be
+/// created, written, or flushed.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "Authored fixture images are at most 280 by 160 pixels, so their dimensions and property payloads fit the native field widths."
+)]
 pub fn write(path: &Path, version: cfb::Version, png: &[u8]) -> Result<()> {
     let mut clipboard = u32::MAX.to_le_bytes().to_vec();
     clipboard.extend_from_slice(&3_u32.to_le_bytes());

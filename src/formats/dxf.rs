@@ -6,31 +6,48 @@ use crate::{Error, Result};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
+/// Maximum decoded records, traversal visits or output geometry items.
 const MAX_ITEMS: usize = 20_000_000;
+/// Required binary DXF file signature and control-byte suffix.
 const SIGNATURE: &[u8] = b"AutoCAD Binary DXF\r\n\x1a\0";
+/// Adaptive rational B-spline sampling for authored DXF curves.
 #[path = "dxf_spline.rs"]
 mod spline;
+/// Construct a DXF importer error with contextual diagnostic text.
 fn error(message: impl Into<String>) -> Error {
     message.into().into()
 }
+/// One authored DXF group-code/value pair.
 #[derive(Clone, Debug)]
 struct Pair {
+    /// DXF group code identifying the value type and meaning.
     code: u16,
+    /// Decoded authored text spelling of the DXF group value.
     value: String,
 }
+/// A DXF entity with ordered groups and nested POLYLINE vertex records.
 #[derive(Clone, Debug)]
 struct Entity {
+    /// Authored uppercase DXF entity type name.
     kind: String,
+    /// Entity group values retained in authored order.
     pairs: Vec<Pair>,
+    /// Nested VERTEX entities belonging to this POLYLINE record.
     vertices: Vec<Entity>,
 }
 impl Entity {
+    /// Borrow the first group value matching the requested DXF code.
     fn value(&self, code: u16) -> Option<&str> {
         self.pairs
             .iter()
             .find(|p| p.code == code)
             .map(|p| p.value.as_str())
     }
+    /// Read a finite numeric group value or return its supplied default.
+    ///
+    /// # Errors
+    ///
+    /// A present group is nonnumeric or non-finite.
     fn number(&self, code: u16, default: f64) -> Result<f64> {
         let n = self
             .value(code)
@@ -42,6 +59,11 @@ impl Entity {
         }
         Ok(n)
     }
+    /// Read an integer group value or return its supplied default.
+    ///
+    /// # Errors
+    ///
+    /// A present group does not parse as a signed integer.
     fn integer(&self, code: u16, default: i64) -> Result<i64> {
         Ok(self
             .value(code)
@@ -49,6 +71,11 @@ impl Entity {
             .transpose()?
             .unwrap_or(default))
     }
+    /// Read XYZ group components, retaining defaults for omitted coordinates.
+    ///
+    /// # Errors
+    ///
+    /// A present component is nonnumeric or non-finite.
     fn vector(&self, code: u16, default: Vec3) -> Result<Vec3> {
         Ok(Vec3::new(
             self.number(code, default.x)?,
@@ -56,6 +83,7 @@ impl Entity {
             self.number(code + 20, default.z)?,
         ))
     }
+    /// Iterate every group value matching a code in authored order.
     fn all(&self, code: u16) -> impl Iterator<Item = &str> {
         self.pairs
             .iter()
@@ -63,11 +91,18 @@ impl Entity {
             .map(|p| p.value.as_str())
     }
 }
+/// Decode a DXF byte string as UTF-8, falling back to byte-preserving character values.
 fn string(bytes: &[u8]) -> String {
-    std::str::from_utf8(bytes)
-        .map(str::to_owned)
-        .unwrap_or_else(|_| bytes.iter().map(|&b| char::from(b)).collect())
+    std::str::from_utf8(bytes).map_or_else(
+        |_| bytes.iter().map(|&b| char::from(b)).collect(),
+        str::to_owned,
+    )
 }
+/// Parse bounded ASCII DXF code/value pairs.
+///
+/// # Errors
+///
+/// Pair structure, group codes, encoding or count limits are invalid.
 fn ascii(bytes: &[u8]) -> Result<Vec<Pair>> {
     let source = string(bytes);
     let mut lines = source.lines();
@@ -86,11 +121,19 @@ fn ascii(bytes: &[u8]) -> Result<Vec<Pair>> {
     }
     Ok(pairs)
 }
+/// Bounds-checked reader for binary DXF group payloads.
 struct Binary<'a> {
+    /// Borrowed binary input payload.
     bytes: &'a [u8],
+    /// Byte offset of the next unread binary DXF field.
     offset: usize,
 }
 impl<'a> Binary<'a> {
+    /// Consume an exact range from a binary DXF stream.
+    ///
+    /// # Errors
+    ///
+    /// The offset overflows or the input is truncated.
     fn take(&mut self, n: usize) -> Result<&'a [u8]> {
         let end = self
             .offset
@@ -103,6 +146,11 @@ impl<'a> Binary<'a> {
         self.offset = end;
         Ok(value)
     }
+    /// Read a null-terminated binary DXF string.
+    ///
+    /// # Errors
+    ///
+    /// The terminator is missing or the byte range is truncated.
     fn text(&mut self) -> Result<String> {
         let rest = &self.bytes[self.offset..];
         let n = rest
@@ -114,6 +162,11 @@ impl<'a> Binary<'a> {
         Ok(value)
     }
 }
+/// Decode legacy or modern binary DXF group pairs.
+///
+/// # Errors
+///
+/// The signature, group schema, numeric payload or pair limits are invalid or unsupported.
 fn binary(bytes: &[u8], modern: bool) -> Result<Vec<Pair>> {
     let mut reader = Binary {
         bytes,
@@ -128,7 +181,7 @@ fn binary(bytes: &[u8], modern: bool) -> Result<Vec<Pair>> {
             if n == 255 {
                 u16::from_le_bytes(reader.take(2)?.try_into()?)
             } else {
-                n as u16
+                u16::from(n)
             }
         };
         let value = match code {
@@ -176,6 +229,11 @@ fn binary(bytes: &[u8], modern: bool) -> Result<Vec<Pair>> {
     }
     Ok(pairs)
 }
+/// Group DXF pairs into bounded entity records.
+///
+/// # Errors
+///
+/// A group appears before its entity or the record count exceeds limits.
 fn records(pairs: Vec<Pair>) -> Result<Vec<Entity>> {
     let mut records: Vec<Entity> = Vec::new();
     for pair in pairs {
@@ -201,17 +259,35 @@ fn records(pairs: Vec<Pair>) -> Result<Vec<Entity>> {
     }
     Ok(records)
 }
+/// Insertion base, flags and reusable entity records for one named block.
 #[derive(Clone)]
 struct Block {
+    /// Authored block insertion-base point.
     base: Vec3,
+    /// Authored block flags used to reject unsupported external definitions.
     flags: i64,
+    /// Model entities stored in the reusable block definition.
     entities: Vec<Entity>,
 }
+/// Layer color and visibility used for entity inheritance.
 #[derive(Clone, Copy)]
 struct Layer {
+    /// Optional inherited RGB surface or line color.
     color: Option<[u8; 3]>,
+    /// Whether the layer suppresses its model entities.
     hidden: bool,
 }
+/// Resolve an `AutoCAD` indexed color, retaining inherited-color sentinel values.
+///
+/// # Errors
+///
+/// The color index is outside the supported palette range.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    reason = "Palette indices/hue sectors are bounded and computed RGB channels intentionally round to bytes."
+)]
 fn palette(index: i64) -> Result<Option<[u8; 3]>> {
     Ok(match index {
         0 | 256 => None,
@@ -247,13 +323,19 @@ fn palette(index: i64) -> Result<Option<[u8; 3]>> {
         _ => return Err(error("invalid DXF indexed color")),
     })
 }
+/// Read an entity's authored true color or indexed color.
+///
+/// # Errors
+///
+/// True-color or palette components are malformed or outside their supported range.
 fn direct_color(entity: &Entity) -> Result<Option<[u8; 3]>> {
     if let Some(value) = entity.value(420) {
         let n: u32 = value.parse()?;
         if n > 0x00ff_ffff {
             return Err(error("DXF true color exceeds 24 bits"));
         }
-        Ok(Some([(n >> 16) as u8, (n >> 8) as u8, n as u8]))
+        let [_, red, green, blue] = n.to_be_bytes();
+        Ok(Some([red, green, blue]))
     } else {
         palette(
             entity
@@ -263,6 +345,11 @@ fn direct_color(entity: &Entity) -> Result<Option<[u8; 3]>> {
         )
     }
 }
+/// Collect a terminated entity sequence, including nested POLYLINE vertices.
+///
+/// # Errors
+///
+/// Nested records or the requested terminator are missing, malformed or oversized.
 fn collect_entities(records: &[Entity], cursor: &mut usize, end: &str) -> Result<Vec<Entity>> {
     let mut entities = Vec::new();
     while let Some(record) = records.get(*cursor) {
@@ -294,6 +381,11 @@ fn collect_entities(records: &[Entity], cursor: &mut usize, end: &str) -> Result
     }
     Err(error(format!("DXF section lacks {end}")))
 }
+/// Construct DXF's object-coordinate-system frame from its extrusion normal.
+///
+/// # Errors
+///
+/// The normal is invalid or cannot define a finite orthogonal frame.
 fn ocs(entity: &Entity) -> Result<Transform> {
     let n = entity.vector(210, Vec3::new(0., 0., 1.))?;
     if n.length() == 0. {
@@ -315,6 +407,7 @@ fn ocs(entity: &Entity) -> Result<Transform> {
     }
     Ok(Transform(m))
 }
+/// Construct an affine translation matrix.
 fn translation(v: Vec3) -> Transform {
     let mut m = Transform::IDENTITY.0;
     m[3][0] = v.x;
@@ -322,6 +415,7 @@ fn translation(v: Vec3) -> Transform {
     m[3][2] = v.z;
     Transform(m)
 }
+/// Construct an affine spatial scaling matrix.
 fn scale(v: Vec3) -> Transform {
     let mut m = Transform::IDENTITY.0;
     m[0][0] = v.x;
@@ -329,6 +423,7 @@ fn scale(v: Vec3) -> Transform {
     m[2][2] = v.z;
     Transform(m)
 }
+/// Construct an XY rotation about the world Z axis.
 fn rotate(angle: f64) -> Transform {
     let (s, c) = angle.to_radians().sin_cos();
     let mut m = Transform::IDENTITY.0;
@@ -339,14 +434,25 @@ fn rotate(angle: f64) -> Transform {
     Transform(m)
 }
 
+/// Block/layer indices, recursive insertion state and accumulated model geometry.
 struct Importer {
+    /// Reusable block definitions indexed by block name.
     blocks: HashMap<String, Block>,
+    /// Layer visibility/color indexed by layer name.
     layers: HashMap<String, Layer>,
+    /// Reference identities currently being expanded, used to reject cycles.
     active: HashSet<String>,
+    /// Accumulated renderable geometry in normalized world coordinates.
     scene: Scene,
+    /// Interior-mutable reference/geometry visit count shared by model expansion.
     visits: usize,
 }
 impl Importer {
+    /// Enforce output geometry and entity-traversal limits.
+    ///
+    /// # Errors
+    ///
+    /// The importer has exceeded the geometry or visit budget.
     fn limit(&self) -> Result<()> {
         if self.scene.triangles.len() + self.scene.lines.len() + self.scene.points.len() > MAX_ITEMS
         {
@@ -354,6 +460,11 @@ impl Importer {
         }
         Ok(())
     }
+    /// Triangulate and append a placed polygon face.
+    ///
+    /// # Errors
+    ///
+    /// Vertex geometry, triangulation, transform values or output limits are invalid.
     fn face(&mut self, vertices: &[Vec3], world: Transform, color: Option<[u8; 3]>) -> Result<()> {
         for vertices in triangulate_polygon(vertices)? {
             let vertices = vertices.map(|p| world.apply(p));
@@ -365,6 +476,11 @@ impl Importer {
         }
         Ok(())
     }
+    /// Append a placed line strip or extruded strip surface.
+    ///
+    /// # Errors
+    ///
+    /// Point/transform values or output limits are invalid.
     fn stroke(
         &mut self,
         points: &[Vec3],
@@ -373,13 +489,7 @@ impl Importer {
         extrusion: Vec3,
     ) -> Result<()> {
         for pair in points.windows(2) {
-            if extrusion != Vec3::default() {
-                self.face(
-                    &[pair[0], pair[1], pair[1] + extrusion, pair[0] + extrusion],
-                    world,
-                    color,
-                )?;
-            } else {
+            if extrusion == Vec3::default() {
                 let vertices = [world.apply(pair[0]), world.apply(pair[1])];
                 if vertices.iter().any(|p| !p.is_finite()) {
                     return Err(error("DXF transform overflow"));
@@ -388,10 +498,31 @@ impl Importer {
                     self.scene.lines.push(Line { vertices, color });
                     self.limit()?;
                 }
+            } else {
+                self.face(
+                    &[pair[0], pair[1], pair[1] + extrusion, pair[0] + extrusion],
+                    world,
+                    color,
+                )?;
             }
         }
         Ok(())
     }
+    /// Expand supported model entities and nested block insertions.
+    ///
+    /// # Errors
+    ///
+    /// Entity schemas, placements, references, block cycles or geometry/work limits are invalid or unsupported.
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_precision_loss,
+        clippy::cast_sign_loss,
+        reason = "Validated dimensions and bounded subdivision indices intentionally retain existing f64 evaluation and rounding."
+    )]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Keep the format record dispatch, validation and its resource checks together without changing geometry evaluation."
+    )]
     fn walk(
         &mut self,
         entity: &Entity,
@@ -577,7 +708,7 @@ impl Importer {
                             *bulges
                                 .last_mut()
                                 .ok_or_else(|| error("DXF bulge appears before a vertex"))? =
-                                pair.value.parse()?
+                                pair.value.parse()?;
                         }
                         40 | 41 if pair.value.parse::<f64>()? != 0. => {
                             return Err(error("DXF polyline widths are not supported"));
@@ -585,7 +716,9 @@ impl Importer {
                         _ => {}
                     }
                 }
-                if entity.integer(90, vertices.len() as i64)? != vertices.len() as i64 {
+                if entity.integer(90, i64::try_from(vertices.len())?)?
+                    != i64::try_from(vertices.len())?
+                {
                     return Err(error("DXF LWPOLYLINE count differs from its vertices"));
                 }
                 if entity.number(43, 0.)? != 0. {
@@ -622,10 +755,11 @@ impl Importer {
                                 if index == 0 {
                                     break;
                                 }
-                                let index = index
-                                    .checked_abs()
-                                    .ok_or_else(|| error("DXF polyface index overflow"))?
-                                    as usize;
+                                let index = usize::try_from(
+                                    index
+                                        .checked_abs()
+                                        .ok_or_else(|| error("DXF polyface index overflow"))?,
+                                )?;
                                 polygon.push(*positions.get(index - 1).ok_or_else(|| {
                                     error("DXF polyface vertex index out of bounds")
                                 })?);
@@ -715,18 +849,20 @@ impl Importer {
                             positions
                                 .last_mut()
                                 .ok_or_else(|| error("DXF mesh Y appears before X"))?
-                                .y = pair.value.parse()?
+                                .y = pair.value.parse()?;
                         }
                         30 => {
                             positions
                                 .last_mut()
                                 .ok_or_else(|| error("DXF mesh Z appears before X"))?
-                                .z = pair.value.parse()?
+                                .z = pair.value.parse()?;
                         }
                         _ => {}
                     }
                 }
-                if entity.integer(92, positions.len() as i64)? != positions.len() as i64 {
+                if entity.integer(92, i64::try_from(positions.len())?)?
+                    != i64::try_from(positions.len())?
+                {
                     return Err(error("DXF MESH vertex count differs from data"));
                 }
                 let data = entity
@@ -795,7 +931,7 @@ impl Importer {
                     .get(name)
                     .cloned()
                     .ok_or_else(|| error("DXF INSERT references a missing block"))?;
-                if block.flags & 28 != 0 {
+                if block.flags & 0x1c != 0 {
                     return Err(error("DXF external reference blocks are not supported"));
                 }
                 if !self.active.insert(name.to_owned()) {
@@ -856,6 +992,17 @@ impl Importer {
         }
         Ok(())
     }
+    /// Sample authored straight and bulged polyline segments before applying extrusion.
+    ///
+    /// # Errors
+    ///
+    /// Coordinates/bulges, circular geometry or output limits are invalid.
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_precision_loss,
+        clippy::cast_sign_loss,
+        reason = "Validated dimensions and bounded subdivision indices intentionally retain existing f64 evaluation and rounding."
+    )]
     fn polyline(
         &mut self,
         vertices: &[Vec3],
@@ -914,10 +1061,20 @@ impl Importer {
     }
 }
 
+/// Read supported ASCII or binary DXF model geometry.
+///
+/// # Errors
+///
+/// File access, pair/entity parsing, required geometry or preview limits fail validation.
 pub(super) fn load(path: &Path) -> Result<Scene> {
     let bytes = super::read_file(path)?;
     parse(&bytes)
 }
+/// Resolve DXF sections, layers, blocks and visible model entities.
+///
+/// # Errors
+///
+/// Sections, entities, references, transformations or preview budgets are invalid or unsupported.
 fn parse(bytes: &[u8]) -> Result<Scene> {
     let pairs = if bytes.starts_with(SIGNATURE) {
         binary(bytes, true).or_else(|_| binary(bytes, false))?
@@ -1040,6 +1197,10 @@ mod tests {
         assert!((end.x - 10.).abs() < 1e-12 && (end.y - 22.).abs() < 1e-12);
     }
     #[test]
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "Small authored test payload lengths fit their native field widths; preserve the exact binary fixture encoding."
+    )]
     fn binary_group_pairs_match_ascii() {
         let ascii = drawing("0\nLINE\n10\n1\n20\n2\n30\n3\n11\n4\n21\n5\n31\n6\n");
         let pairs = super::ascii(&ascii).unwrap();

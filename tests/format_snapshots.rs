@@ -1,3 +1,5 @@
+//! Every-extension corpus checks and committed decoded-pixel image comparisons.
+
 #[path = "support/format_corpus.rs"]
 mod corpus;
 

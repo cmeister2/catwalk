@@ -1,3 +1,5 @@
+//! Independent geometry and original-byte qualification of multipart 3MF packages.
+
 use catwalk::{
     formats,
     scene::{Scene, Vec3},
@@ -121,27 +123,31 @@ fn original_slicer_packages_match_independent_geometry_and_exact_source_bytes() 
             sha256: "2e2c0e271a50c6f89cc42a97b134d6f678d7d3d2849fa9b48c8203586aba5111",
             application: "BambuStudio-01.07.03.04",
             triangles: 12,
-            low: [80.29456119800001, 83.56946339800001, 2.000000165480742e-10],
-            high: [85.294561202, 88.569463402, 0.8499999998],
-            area: 67.00000008559967,
+            low: [
+                80.294_561_198_000_01,
+                83.569_463_398_000_01,
+                2.000_000_165_480_742e-10,
+            ],
+            high: [85.294_561_202, 88.569_463_402, 0.849_999_999_8],
+            area: 67.000_000_085_599_67,
         },
         ExporterReference {
             name: "3mf-orca-badge.3mf",
             sha256: "04573823874f90a8b46778ef35a78a210422bfef0051a53d296b3364ade56f93",
             application: "BambuStudio-02.06.00.51",
             triangles: 72_586,
-            low: [87.529541, 80.4494933, -2.9700000014898364e-8],
-            high: [183.470459, 191.5505066, 1.600000009],
-            area: 26_039.388578452985,
+            low: [87.529_541, 80.449_493_3, -2.970_000_001_489_836_4e-8],
+            high: [183.470_459, 191.550_506_6, 1.600_000_009],
+            area: 26_039.388_578_452_985,
         },
         ExporterReference {
             name: "3mf-prusa-roundtrip.3mf",
             sha256: "f14d9c803e38eee1477e138ac2b59b7c64950aad4506dbfe9d71784c03cf2737",
             application: "PrusaSlicer-2.9.6",
             triangles: 72,
-            low: [72.5751419, 151.59987660000002, 0.],
-            high: [252.0426595, 232.5977599, 36.],
-            area: 46_655.998969248016,
+            low: [72.575_141_9, 151.599_876_600_000_02, 0.],
+            high: [252.042_659_5, 232.597_759_9, 36.],
+            area: 46_655.998_969_248_016,
         },
     ];
     for expected in references {

@@ -10,12 +10,16 @@ use std::collections::{HashMap, HashSet};
 use std::io::{Cursor, Read};
 use std::path::Path;
 
+/// Maximum I3S node-page count visited during leaf traversal.
 const MAX_NODES: usize = 1_000_000;
+/// Maximum declared point count accepted before geometry allocation.
 const MAX_POINTS: usize = 5_000_000;
 
+/// Convert an importer diagnostic into the shared error type.
 fn error(message: impl Into<String>) -> Error {
     message.into().into()
 }
+/// Require a bounded nonnegative integer in the package JSON.
 fn integer(value: &Value, label: &str) -> Result<usize> {
     let n = value
         .as_u64()
@@ -23,6 +27,7 @@ fn integer(value: &Value, label: &str) -> Result<usize> {
         .ok_or_else(|| error(format!("invalid SLPK {label}")))?;
     usize::try_from(n).map_err(Into::into)
 }
+/// Require a package-local resource name without unsafe path components.
 fn name(value: &Value, label: &str) -> Result<String> {
     let name = if let Some(s) = value.as_str() {
         s.to_owned()
@@ -37,12 +42,17 @@ fn name(value: &Value, label: &str) -> Result<String> {
     Ok(name)
 }
 
+/// Indexed I3S ZIP package with aggregate decompression accounting.
 struct Package {
+    /// Original in-memory ZIP archive.
     archive: zip::ZipArchive<Cursor<Vec<u8>>>,
+    /// Normalized member names mapped to archive indices.
     files: HashMap<String, usize>,
+    /// Aggregate member bytes expanded during traversal.
     expanded: u64,
 }
 impl Package {
+    /// Index archive members while rejecting duplicate names and unsafe paths.
     fn new(bytes: Vec<u8>) -> Result<Self> {
         let mut archive = zip::ZipArchive::new(Cursor::new(bytes))?;
         if archive.len() > MAX_NODES * 16 {
@@ -76,6 +86,7 @@ impl Package {
             expanded: 0,
         })
     }
+    /// Read a package member, optionally expand gzip and account for aggregate decoded bytes.
     fn read(&mut self, path: &str) -> Result<Vec<u8>> {
         let i = *self
             .files
@@ -105,6 +116,7 @@ impl Package {
         }
         Ok(data)
     }
+    /// Parse a package member as JSON after bounded decompression.
     fn json(&mut self, path: &str) -> Result<Value> {
         let plain = format!("{path}.json");
         let compressed = format!("{plain}.gz");
@@ -121,13 +133,19 @@ impl Package {
 /// Geographic packages store degrees horizontally and meters vertically.
 /// Convert to a tangent plane in meters before thumbnail framing.
 struct Coordinates {
+    /// Whether coordinates are longitude/latitude rather than projected positions.
     geographic: bool,
+    /// First geographic point used to define the local tangent-frame origin.
     origin: Option<Vec3>,
+    /// Declared vertical-unit conversion into meters.
     height_scale: f64,
+    /// Declared vertical origin offset in meters.
     offset: f64,
+    /// Ellipsoid eccentricity squared for geographic conversion.
     eccentricity_squared: f64,
 }
 impl Coordinates {
+    /// Resolve supported horizontal and vertical spatial-reference metadata.
     fn new(layer: &Value) -> Result<Self> {
         let sr = &layer["spatialReference"];
         let wkid = sr
@@ -176,6 +194,7 @@ impl Coordinates {
             },
         })
     }
+    /// Apply stored height units and convert geographic points to local Cartesian coordinates.
     fn apply(&mut self, mut p: Vec3) -> Result<Vec3> {
         p.z = if self.geographic {
             p.z * self.height_scale + self.offset
@@ -206,6 +225,7 @@ impl Coordinates {
         Ok(result)
     }
 }
+/// Convert longitude, latitude and ellipsoidal height to Earth-centered Cartesian coordinates.
 fn ecef(p: Vec3, e2: f64) -> Vec3 {
     let lon = p.x.to_radians();
     let lat = p.y.to_radians();
@@ -217,9 +237,19 @@ fn ecef(p: Vec3, e2: f64) -> Vec3 {
     )
 }
 
+/// Read a bounded I3S point-cloud scene package and decode its preview geometry.
+///
+/// # Errors
+/// Returns an error for unsafe/duplicate archive paths, invalid node/resource metadata, cyclic
+/// traversal, malformed attributes or unsupported spatial references.
 pub(super) fn load(path: &Path) -> Result<Scene> {
     decode(super::read_file(path)?)
 }
+/// Walk leaf node pages, decode LEPCC positions/colors and combine placed point resources.
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keep I3S page/resource traversal together with its archive, cycle and decoded-byte budgets."
+)]
 fn decode(bytes: Vec<u8>) -> Result<Scene> {
     let mut package = Package::new(bytes)?;
     let layer = package.json("3dSceneLayer")?;
@@ -379,8 +409,8 @@ mod tests {
             "store":{"version":version,"index":{"nodesPerPage":2},
             "defaultGeometrySchema":{"encoding":"lepcc-xyz"}}})
     }
-    fn bytes(value: Value) -> Vec<u8> {
-        serde_json::to_vec(&value).unwrap()
+    fn bytes(value: &Value) -> Vec<u8> {
+        serde_json::to_vec(value).unwrap()
     }
 
     #[test]
@@ -409,7 +439,7 @@ mod tests {
         );
         assert!(max.x - min.x > 800. && max.y - min.y > 1200.);
         assert!(max.z - min.z > 30. && max.z - min.z < 50.);
-        assert!(crate::render::render(&scene, &Default::default()).is_ok());
+        assert!(crate::render::render(&scene, &crate::render::RenderOptions::default()).is_ok());
     }
     #[test]
     fn both_page_naming_schemes_select_only_leaves_and_resource_ids() {
@@ -431,9 +461,9 @@ mod tests {
                 "nodepages/2.json"
             };
             let package = zip(&[
-                ("3dSceneLayer.json", bytes(layer(version))),
-                ("nodepages/0.json", bytes(first)),
-                (filename, bytes(leaf)),
+                ("3dSceneLayer.json", bytes(&layer(version))),
+                ("nodepages/0.json", bytes(&first)),
+                (filename, bytes(&leaf)),
                 ("nodes/17/geometries/0.bin.pccxyz", XYZ.to_vec()),
             ]);
             assert_eq!(decode(package).unwrap().points.len(), 106);
@@ -447,8 +477,8 @@ mod tests {
         let cycle = serde_json::json!({"nodes":[{"resourceId":0,"firstChild":0,"childCount":1}]});
         assert!(
             decode(zip(&[
-                ("3dSceneLayer.json", bytes(layer("2.0"))),
-                ("nodepages/0.json", bytes(cycle))
+                ("3dSceneLayer.json", bytes(&layer("2.0"))),
+                ("nodepages/0.json", bytes(&cycle))
             ]))
             .is_err()
         );
@@ -456,13 +486,13 @@ mod tests {
             serde_json::json!({"nodes":[{"resourceId":0,"childCount":0,"vertexCount":106}]});
         assert!(
             decode(zip(&[
-                ("3dSceneLayer.json", bytes(layer("2.0"))),
-                ("nodepages/0.json", bytes(missing))
+                ("3dSceneLayer.json", bytes(&layer("2.0"))),
+                ("nodepages/0.json", bytes(&missing))
             ]))
             .is_err()
         );
         let mut wrong = layer("2.0");
         wrong["layerType"] = "3DObject".into();
-        assert!(decode(zip(&[("3dSceneLayer.json", bytes(wrong))])).is_err());
+        assert!(decode(zip(&[("3dSceneLayer.json", bytes(&wrong))])).is_err());
     }
 }

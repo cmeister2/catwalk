@@ -1,3 +1,5 @@
+//! Headless scalar-volume rendering checks across supported volume encodings.
+
 use flate2::{
     Compression,
     write::{GzEncoder, ZlibEncoder},

@@ -7,8 +7,11 @@ use draco_core::{
 };
 use std::path::Path;
 
+/// Maximum declared point count accepted before geometry allocation.
 const MAX_POINTS: usize = 5_000_000;
+/// Maximum decoded triangle count accepted from one stream.
 const MAX_FACES: usize = 5_000_000;
+/// Convert an importer diagnostic into the shared error type.
 fn error(message: impl Into<String>) -> Error {
     message.into().into()
 }
@@ -16,19 +19,30 @@ fn error(message: impl Into<String>) -> Error {
 /// Attribute values are raw scalars in decoded point order. `normalized` and
 /// `data_type` allow a container to apply its accessor's normalization rules.
 pub(super) struct DecodedAttribute {
+    /// Number of scalars in one point attribute tuple.
     pub components: usize,
+    /// Original Draco scalar storage type.
     pub data_type: DataType,
+    /// Whether container interpretation normalizes integer attribute values.
     pub normalized: bool,
+    /// Finite scalar tuples expanded in decoded point order.
     pub values: Vec<f64>,
 }
+/// Decoded Draco topology with attributes retained for semantic or unique-ID lookup.
 pub(super) struct DecodedGeometry {
+    /// Number of decoded geometry points.
     pub point_count: usize,
     /// `None` identifies a point cloud, including one with three points.
     pub faces: Option<Vec<[usize; 3]>>,
+    /// Decoded attribute buffers and point-to-value mappings.
     attributes: PointCloud,
 }
 impl DecodedGeometry {
-    /// Resolve the Draco unique ID declared by KHR_draco_mesh_compression.
+    /// Resolve the Draco unique ID declared by `KHR_draco_mesh_compression`.
+    ///
+    /// # Errors
+    /// Returns an error if the unique ID is missing or ambiguous, its attribute
+    /// mapping/storage is invalid, or its scalar tuples exceed limits.
     pub fn attribute(&self, unique_id: u32) -> Result<DecodedAttribute> {
         let mut found = None;
         for i in 0..self.attributes.num_attributes() {
@@ -41,6 +55,12 @@ impl DecodedGeometry {
         }
         self.read_attribute(found.ok_or_else(|| error("Draco attribute unique ID was not found"))?)
     }
+    /// Resolve point-to-value mappings into finite scalar tuples while enforcing the
+    /// expanded-byte limit.
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "Decoded point counts are bounded to five million before creating the decoder u32 point index."
+    )]
     fn read_attribute(&self, attribute: &PointAttribute) -> Result<DecodedAttribute> {
         let components = attribute.num_components() as usize;
         let scalar_count = self
@@ -81,6 +101,10 @@ impl DecodedGeometry {
         })
     }
     /// Standalone DRC files use semantic tags rather than container-supplied IDs.
+    ///
+    /// # Errors
+    /// Returns an error for invalid attribute metadata or multiple attributes declaring the
+    /// requested semantic.
     pub fn attribute_id(&self, kind: GeometryAttributeType) -> Result<Option<u32>> {
         let mut found = None;
         for i in 0..self.attributes.num_attributes() {
@@ -94,6 +118,7 @@ impl DecodedGeometry {
         }
         Ok(found)
     }
+    /// Resolve standalone attribute semantics, including legacy streams with duplicate unique IDs.
     fn semantic_attribute(&self, kind: GeometryAttributeType) -> Result<Option<DecodedAttribute>> {
         let Some(id) = self.attribute_id(kind)? else {
             return Ok(None);
@@ -116,22 +141,33 @@ impl DecodedGeometry {
         }
     }
 }
+/// Decode a little-endian Draco scalar into a geometry value.
+#[allow(
+    clippy::cast_possible_wrap,
+    clippy::cast_precision_loss,
+    reason = "Signed bytes preserve their raw bit pattern; 64-bit scalar values intentionally approximate to f64 for preview geometry."
+)]
 fn scalar(data_type: DataType, bytes: &[u8]) -> Result<f64> {
     Ok(match data_type {
-        DataType::Int8 => bytes[0] as i8 as f64,
-        DataType::Uint8 => bytes[0] as f64,
-        DataType::Int16 => i16::from_le_bytes(bytes.try_into()?) as f64,
-        DataType::Uint16 => u16::from_le_bytes(bytes.try_into()?) as f64,
-        DataType::Int32 => i32::from_le_bytes(bytes.try_into()?) as f64,
-        DataType::Uint32 => u32::from_le_bytes(bytes.try_into()?) as f64,
+        DataType::Int8 => f64::from(bytes[0] as i8),
+        DataType::Uint8 => f64::from(bytes[0]),
+        DataType::Int16 => f64::from(i16::from_le_bytes(bytes.try_into()?)),
+        DataType::Uint16 => f64::from(u16::from_le_bytes(bytes.try_into()?)),
+        DataType::Int32 => f64::from(i32::from_le_bytes(bytes.try_into()?)),
+        DataType::Uint32 => f64::from(u32::from_le_bytes(bytes.try_into()?)),
         DataType::Int64 => i64::from_le_bytes(bytes.try_into()?) as f64,
         DataType::Uint64 => u64::from_le_bytes(bytes.try_into()?) as f64,
-        DataType::Float32 => f32::from_le_bytes(bytes.try_into()?) as f64,
+        DataType::Float32 => f64::from(f32::from_le_bytes(bytes.try_into()?)),
         DataType::Float64 => f64::from_le_bytes(bytes.try_into()?),
-        DataType::Bool if bytes[0] <= 1 => bytes[0] as f64,
+        DataType::Bool if bytes[0] <= 1 => f64::from(bytes[0]),
         _ => return Err(error("invalid Draco scalar data type or boolean")),
     })
 }
+/// Validate component stride, backing storage and every point-to-attribute mapping.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "Decoded point counts are bounded to five million before creating the decoder u32 point index."
+)]
 fn validate_attribute(attribute: &PointAttribute, count: usize) -> Result<()> {
     let width = attribute.data_type().byte_length();
     let components = attribute.num_components() as usize;
@@ -153,6 +189,11 @@ fn validate_attribute(attribute: &PointAttribute, count: usize) -> Result<()> {
     }
     Ok(())
 }
+/// Decode bounded Draco topology and attributes without losing unique attribute IDs.
+///
+/// # Errors
+/// Returns an error for invalid signatures or geometry types, malformed/trailing compressed
+/// data, invalid topology/attribute layouts or decoder resource limits.
 pub(super) fn decode_geometry(bytes: &[u8]) -> Result<DecodedGeometry> {
     if bytes.len() as u64 > super::MAX_INPUT_BYTES {
         return Err(error("Draco input exceeds 512 MiB"));
@@ -210,21 +251,37 @@ pub(super) fn decode_geometry(bytes: &[u8]) -> Result<DecodedGeometry> {
         attributes,
     })
 }
+/// Convert normalized or raw Draco color scalars to rounded eight-bit channels.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    reason = "Normalization uses the stored integer range; channels are clamped and intentionally rounded to eight-bit RGB."
+)]
 fn color(value: f64, attribute: &DecodedAttribute) -> u8 {
     let factor = match attribute.data_type {
         DataType::Float32 | DataType::Float64 | DataType::Bool => 255.,
         DataType::Uint8 if attribute.normalized => 1.,
-        DataType::Uint16 if attribute.normalized => 255. / u16::MAX as f64,
-        DataType::Uint32 if attribute.normalized => 255. / u32::MAX as f64,
+        DataType::Uint16 if attribute.normalized => 255. / f64::from(u16::MAX),
+        DataType::Uint32 if attribute.normalized => 255. / f64::from(u32::MAX),
         DataType::Uint64 if attribute.normalized => 255. / u64::MAX as f64,
-        DataType::Int8 if attribute.normalized => 255. / i8::MAX as f64,
-        DataType::Int16 if attribute.normalized => 255. / i16::MAX as f64,
-        DataType::Int32 if attribute.normalized => 255. / i32::MAX as f64,
+        DataType::Int8 if attribute.normalized => 255. / f64::from(i8::MAX),
+        DataType::Int16 if attribute.normalized => 255. / f64::from(i16::MAX),
+        DataType::Int32 if attribute.normalized => 255. / f64::from(i32::MAX),
         DataType::Int64 if attribute.normalized => 255. / i64::MAX as f64,
         _ => 1.,
     };
     (value * factor).clamp(0., 255.).round() as u8
 }
+/// Expand standalone Draco positions and optional RGB into triangle or point geometry.
+///
+/// # Errors
+/// Returns an error for malformed topology, invalid or ambiguous attributes, nonfinite values,
+/// truncated storage or decoder resource limits.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "A mean of three byte colors remains within the byte range before quantization."
+)]
 pub(super) fn decode(bytes: &[u8]) -> Result<Scene> {
     let decoded = decode_geometry(bytes)?;
     let positions = decoded
@@ -262,7 +319,7 @@ pub(super) fn decode(bytes: &[u8]) -> Result<Scene> {
                 std::array::from_fn(|component| {
                     (indices
                         .iter()
-                        .map(|&i| colors[i][component] as u16)
+                        .map(|&i| u16::from(colors[i][component]))
                         .sum::<u16>()
                         / 3) as u8
                 })
@@ -280,6 +337,11 @@ pub(super) fn decode(bytes: &[u8]) -> Result<Scene> {
     scene.validate()?;
     Ok(scene)
 }
+/// Read a bounded Draco mesh or point cloud and decode its preview geometry.
+///
+/// # Errors
+/// Returns an error for malformed topology, invalid or ambiguous attributes, nonfinite values,
+/// truncated storage or decoder resource limits.
 pub(super) fn load(path: &Path) -> Result<Scene> {
     decode(&super::read_file(path)?)
 }

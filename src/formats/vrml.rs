@@ -5,28 +5,41 @@ use std::rc::Rc;
 
 use super::mesh::triangulate_polygon;
 use super::transform::Transform;
-use crate::scene::{Line, Point, Scene, Triangle, Vec3};
+use crate::scene::{Point, Scene, Triangle, Vec3};
 use crate::{Error, Result};
 
+/// Maximum numeric values and output geometry elements decoded from VRML.
 const MAX_ITEMS: usize = 20_000_000;
+/// Maximum parsed nodes and traversed node instances.
 const MAX_NODES: usize = 100_000;
 #[path = "vrml_geometry.rs"]
 mod detailed_geometry;
+/// Attach VRML context to an import error.
 fn error(message: impl Into<String>) -> Error {
     message.into().into()
 }
 
+/// Load a UTF-8 VRML 2 scene into bounded static geometry.
+///
+/// # Errors
+/// Returns an error for malformed tokens or nodes, unresolved definitions,
+/// unsupported visible geometry, invalid numeric data, or exceeded traversal limits.
 pub(super) fn load(path: &Path) -> Result<Scene> {
     let bytes = super::read_file(path)?;
     vrml(std::str::from_utf8(&bytes)?)
 }
 
 #[derive(Clone, Debug, PartialEq)]
+/// Lexical token in the VRML text syntax.
 enum Token {
+    /// Unquoted identifier or numeric token.
     Atom(String),
+    /// Quoted string with escapes decoded.
     String(String),
+    /// Structural punctuation token.
     Symbol(char),
 }
+/// Tokenize VRML text while respecting comments and quoted string escapes.
 fn tokenize(source: &str) -> Result<Vec<Token>> {
     let mut chars = source.chars().peekable();
     let mut tokens = Vec::new();
@@ -83,25 +96,40 @@ fn tokenize(source: &str) -> Result<Vec<Token>> {
     Ok(tokens)
 }
 #[derive(Clone, Debug)]
+/// Parsed value for one VRML field.
 enum Value {
+    /// Consecutive numeric or identifier atoms.
     Atoms(Vec<String>),
+    /// One or more quoted strings.
     Strings,
+    /// A parsed node shared by definitions and uses.
     Node(Rc<Node>),
+    /// Bracketed field values retaining their source order.
     List(Vec<Value>),
+    /// Explicit null node value.
     Null,
 }
 #[derive(Debug)]
+/// A VRML node with its type and named field values.
 struct Node {
+    /// Node type identifier.
     kind: String,
+    /// Fields indexed by their names.
     fields: HashMap<String, Value>,
 }
+/// Bounded VRML parser with shared definition lookup.
 struct Parser {
+    /// Lexical input tokens.
     tokens: Vec<Token>,
+    /// Index of the next token to consume.
     offset: usize,
+    /// Named nodes available to subsequent USE references.
     definitions: HashMap<String, Rc<Node>>,
+    /// Number of parsed nodes for the allocation budget.
     nodes: usize,
 }
 impl Parser {
+    /// Consume one atom token or return a contextual syntax error.
     fn atom(&mut self) -> Result<String> {
         match self.tokens.get(self.offset).cloned() {
             Some(Token::Atom(s)) => {
@@ -111,6 +139,7 @@ impl Parser {
             _ => Err(error("expected a VRML identifier")),
         }
     }
+    /// Consume and require one punctuation token.
     fn symbol(&mut self, symbol: char) -> Result<()> {
         if self.tokens.get(self.offset) != Some(&Token::Symbol(symbol)) {
             return Err(error(format!("expected VRML '{symbol}'")));
@@ -118,6 +147,7 @@ impl Parser {
         self.offset += 1;
         Ok(())
     }
+    /// Parse a node, definition, use or null reference with depth and node limits.
     fn node(&mut self, depth: usize) -> Result<Rc<Node>> {
         if depth > 256 || self.nodes >= MAX_NODES {
             return Err(error("VRML node/depth limit exceeded"));
@@ -155,6 +185,7 @@ impl Parser {
         self.symbol('}')?;
         Ok(Rc::new(Node { kind, fields }))
     }
+    /// Parse a field value, preserving bracketed values and shared node references.
     fn value(&mut self, depth: usize) -> Result<Value> {
         if depth > 256 {
             return Err(error("VRML nesting limit exceeded"));
@@ -209,6 +240,7 @@ impl Parser {
 }
 
 impl Node {
+    /// Reject fields whose unsupported behavior would change imported geometry.
     fn check(&self, fields: &[&str]) -> Result<()> {
         if let Some(name) = self
             .fields
@@ -222,6 +254,7 @@ impl Node {
         }
         Ok(())
     }
+    /// Read finite numeric field values, or return the supplied omitted default.
     fn numbers(&self, name: &str) -> Result<Vec<f64>> {
         fn flatten(value: &Value, output: &mut Vec<f64>) -> Result<()> {
             match value {
@@ -249,6 +282,7 @@ impl Node {
         }
         Ok(values)
     }
+    /// Read exactly one numeric field value.
     fn scalar(&self, name: &str, default: f64) -> Result<f64> {
         if !self.fields.contains_key(name) {
             return Ok(default);
@@ -259,6 +293,7 @@ impl Node {
         }
         Ok(values[0])
     }
+    /// Read a three-component numeric field value.
     fn vector(&self, name: &str, default: Vec3) -> Result<Vec3> {
         if !self.fields.contains_key(name) {
             return Ok(default);
@@ -269,6 +304,7 @@ impl Node {
         }
         Ok(Vec3::new(values[0], values[1], values[2]))
     }
+    /// Read a TRUE or FALSE field with its omitted default.
     fn boolean(&self, name: &str, default: bool) -> Result<bool> {
         match self.fields.get(name) {
             None => Ok(default),
@@ -280,6 +316,7 @@ impl Node {
             _ => Err(error("invalid VRML boolean field")),
         }
     }
+    /// Read child nodes while preserving explicit null entries.
     fn node_options(&self, name: &str) -> Result<Vec<Option<Rc<Node>>>> {
         fn flatten(value: &Value, nodes: &mut Vec<Option<Rc<Node>>>) -> Result<()> {
             match value {
@@ -300,9 +337,11 @@ impl Node {
         }
         Ok(nodes)
     }
+    /// Read non-null child nodes from a node-valued field.
     fn nodes(&self, name: &str) -> Result<Vec<Rc<Node>>> {
         Ok(self.node_options(name)?.into_iter().flatten().collect())
     }
+    /// Read at most one child node from a field.
     fn single(&self, name: &str) -> Result<Option<Rc<Node>>> {
         let mut nodes = self.node_options(name)?;
         if nodes.len() > 1 {
@@ -312,6 +351,7 @@ impl Node {
     }
 }
 
+/// Group flat numeric field components into three-dimensional vectors.
 fn vectors(node: &Node, name: &str) -> Result<Vec<Vec3>> {
     let values = node.numbers(name)?;
     if values.len() % 3 != 0 {
@@ -324,9 +364,23 @@ fn vectors(node: &Node, name: &str) -> Result<Vec<Vec3>> {
         .map(|p| Vec3::new(p[0], p[1], p[2]))
         .collect())
 }
+/// Encode a linear RGB field color as display bytes.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Color components are clamped and rounded to the inclusive byte range before conversion."
+)]
 fn color(value: Vec3) -> [u8; 3] {
     [value.x, value.y, value.z].map(|v| (v * 255.).clamp(0., 255.).round() as u8)
 }
+/// Split index lists at VRML's negative face separators.
+#[allow(
+    clippy::float_cmp,
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "The exact -1 sentinel separates lists; other indices are validated integral values bounded by twenty million."
+)]
 fn index_lists(values: &[f64]) -> Result<Vec<Vec<usize>>> {
     let mut faces = Vec::new();
     let mut current = Vec::new();
@@ -348,6 +402,7 @@ fn index_lists(values: &[f64]) -> Result<Vec<Vec<usize>>> {
     }
     Ok(faces)
 }
+/// Read a finite axis-angle rotation from a node field.
 fn rotation(node: &Node, name: &str, inverse: bool) -> Result<Transform> {
     let values = node.numbers(name)?;
     if values.is_empty() && !node.fields.contains_key(name) {
@@ -361,6 +416,7 @@ fn rotation(node: &Node, name: &str, inverse: bool) -> Result<Transform> {
         values[3] * if inverse { -1. } else { 1. },
     )
 }
+/// Compose a rotation matrix from a normalized axis and angle.
 fn axis_rotation(axis: Vec3, angle: f64) -> Result<Transform> {
     if axis.length() == 0. {
         return Err(error("VRML rotation axis is zero"));
@@ -394,6 +450,7 @@ fn axis_rotation(axis: Vec3, angle: f64) -> Result<Transform> {
     }
     Ok(Transform(matrix))
 }
+/// Create an affine translation matrix.
 fn translation(v: Vec3) -> Transform {
     let mut m = Transform::IDENTITY.0;
     m[3][0] = v.x;
@@ -401,6 +458,7 @@ fn translation(v: Vec3) -> Transform {
     m[3][2] = v.z;
     Transform(m)
 }
+/// Compose VRML translation, center, rotation, scale orientation and scale.
 fn transform(node: &Node) -> Result<Transform> {
     let center = node.vector("center", Vec3::default())?;
     let translate = node.vector("translation", Vec3::default())?;
@@ -421,11 +479,15 @@ fn transform(node: &Node) -> Result<Transform> {
         .then(translation(-center)))
 }
 
+/// Static VRML traversal and accumulated scene geometry.
 struct Importer {
+    /// Rendered points, lines and triangles.
     scene: Scene,
+    /// Number of visited instances for the traversal budget.
     visits: usize,
 }
 impl Importer {
+    /// Transform and append a finite point with its optional color.
     fn point(&mut self, position: Vec3, world: Transform, color: Option<[u8; 3]>) -> Result<()> {
         let p = world.apply(position);
         let position = Vec3::new(p.x, -p.z, p.y);
@@ -435,6 +497,7 @@ impl Importer {
         self.scene.points.push(Point { position, color });
         self.limit()
     }
+    /// Transform and append a triangle respecting winding and optional color.
     fn face(
         &mut self,
         vertices: &[Vec3],
@@ -458,6 +521,7 @@ impl Importer {
         }
         Ok(())
     }
+    /// Enforce the aggregate output geometry budget.
     fn limit(&self) -> Result<()> {
         if self.scene.points.len() + self.scene.triangles.len() + self.scene.lines.len() > MAX_ITEMS
         {
@@ -465,6 +529,14 @@ impl Importer {
         }
         Ok(())
     }
+    /// Visit visible scene nodes, propagating transforms and shape appearance.
+    #[allow(
+        clippy::too_many_lines,
+        clippy::cast_precision_loss,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "The bounded node dispatch preserves inherited state; switch selections are validated nonnegative integral indices before casting."
+    )]
     fn walk(&mut self, node: &Node, world: Transform, depth: usize) -> Result<()> {
         self.visits += 1;
         if depth > 256 || self.visits > MAX_NODES {
@@ -601,6 +673,14 @@ impl Importer {
         }
         Ok(())
     }
+    /// Decode a shape's geometry and append its transformed static representation.
+    #[allow(
+        clippy::too_many_lines,
+        clippy::cast_precision_loss,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "Geometry dispatch keeps field validation with decoding; color indices and byte averages are bounded, as are small tessellation angles."
+    )]
     fn geometry(&mut self, node: &Node, world: Transform, material: Option<[u8; 3]>) -> Result<()> {
         match node.kind.as_str() {
             "IndexedLineSet" => self.indexed_lines(node, world, material)?,
@@ -701,7 +781,7 @@ impl Importer {
                                 .collect::<Result<Vec<_>>>()?;
                             if !face_colors.is_empty() {
                                 face_color = Some(std::array::from_fn(|i| {
-                                    (face_colors.iter().map(|c| c[i] as u64).sum::<u64>()
+                                    (face_colors.iter().map(|c| u64::from(c[i])).sum::<u64>()
                                         / face_colors.len() as u64)
                                         as u8
                                 }));
@@ -856,6 +936,7 @@ impl Importer {
     }
 }
 
+/// Parse root nodes and traverse the resulting static VRML scene.
 fn vrml(source: &str) -> Result<Scene> {
     let header = source
         .lines()
@@ -901,14 +982,14 @@ mod tests {
     use super::*;
     #[test]
     fn indexed_faces_def_use_transforms_and_y_up() {
-        let source = r#"#VRML V2.0 utf8
+        let source = r"#VRML V2.0 utf8
           DEF coords Coordinate { point [ 0 0 0, 1 0 0, 0 1 0 ] }
           DEF geom IndexedFaceSet { coord USE coords coordIndex [0,1,2,-1] }
           Transform { translation 2 3 4 scale 2 2 2 children [
             Shape { geometry USE geom appearance Appearance { material Material { diffuseColor 1 0 0 } } }
           ] }
           Shape { geometry USE geom }
-        "#;
+        ";
         // Geometry DEFs are normally nested in a Shape; keep the top-level
         // definition as a data declaration without independently rendering it.
         let source = source
@@ -971,13 +1052,13 @@ mod tests {
     }
     #[test]
     fn indexed_lines_preserve_indices_transform_and_emissive_or_authored_color() {
-        let scene = vrml(r#"#VRML V2.0 utf8
+        let scene = vrml(r"#VRML V2.0 utf8
         Transform { translation 2 3 4 scale 2 2 2 children [
           Shape { appearance Appearance { material Material { diffuseColor 1 0 0 emissiveColor 0 1 0 } }
             geometry IndexedLineSet { coord Coordinate { point [0 0 0 1 0 0 1 1 0] } coordIndex [0 1 2 -1] } }
           Shape { geometry IndexedLineSet { coord Coordinate { point [0 0 0 1 0 0 1 1 0] }
             coordIndex [0 1 -1 1 2] colorPerVertex FALSE color Color { color [1 0 0 0 0 1] } colorIndex [1 0] } }
-        ] }"#).unwrap();
+        ] }").unwrap();
         assert_eq!(scene.lines.len(), 4);
         assert_eq!(
             scene.lines[0].vertices,
@@ -986,8 +1067,8 @@ mod tests {
         assert_eq!(scene.lines[0].color, Some([0, 255, 0]));
         assert_eq!(scene.lines[2].color, Some([0, 0, 255]));
         assert_eq!(scene.lines[3].color, Some([255, 0, 0]));
-        let bad = r#"#VRML V2.0 utf8
-        Shape { geometry IndexedLineSet { coord Coordinate { point [0 0 0 1 0 0] } coordIndex [0 9] } }"#;
+        let bad = r"#VRML V2.0 utf8
+        Shape { geometry IndexedLineSet { coord Coordinate { point [0 0 0 1 0 0] } coordIndex [0 9] } }";
         assert!(vrml(bad).is_err());
         let colored = bad.replace("[0 9]", "[0 1]").replace(
             "coordIndex [0 1]",
@@ -997,11 +1078,11 @@ mod tests {
     }
     #[test]
     fn elevation_grid_preserves_height_spacing_winding_and_quad_colors() {
-        let source = r#"#VRML V2.0 utf8
+        let source = r"#VRML V2.0 utf8
         Transform { translation 10 20 30 children [Shape { geometry ElevationGrid {
           xDimension 3 zDimension 2 xSpacing 2 zSpacing 3 height [0 1 2 0 1 2]
           colorPerVertex FALSE color Color { color [1 0 0 0 1 0] }
-        } }] }"#;
+        } }] }";
         let scene = vrml(source).unwrap();
         assert_eq!(scene.triangles.len(), 4);
         assert!(scene.positions().any(|p| p == Vec3::new(14., -33., 22.)));
@@ -1049,9 +1130,13 @@ mod tests {
         assert!((area - 20_001f64.sqrt()).abs() < 1e-9);
     }
     #[test]
+    #[allow(
+        clippy::float_cmp,
+        reason = "This test identifies caps at exactly authored z coordinates with no interpolated transform."
+    )]
     fn extrusion_concave_caps_and_open_sides_have_real_geometry() {
-        let source = r#"#VRML V2.0 utf8
-        Shape { geometry Extrusion { convex FALSE crossSection [0 0 0 2 1 1 2 2 2 0 0 0] spine [0 0 0 0 3 0] } }"#;
+        let source = r"#VRML V2.0 utf8
+        Shape { geometry Extrusion { convex FALSE crossSection [0 0 0 2 1 1 2 2 2 0 0 0] spine [0 0 0 0 3 0] } }";
         let scene = vrml(source).unwrap();
         assert!((signed_volume(&scene) - 9.).abs() < 1e-9);
         let cap_area: f64 = scene
@@ -1079,14 +1164,14 @@ mod tests {
                 .all(|t| t.vertices.iter().any(|p| p.z == 0.)
                     && t.vertices.iter().any(|p| p.z == 3.))
         );
-        assert!(crate::render::render(&scene, &Default::default()).is_ok());
+        assert!(crate::render::render(&scene, &crate::render::RenderOptions::default()).is_ok());
     }
     #[test]
     fn extrusion_applies_spine_frame_scale_orientation_and_coincident_sections() {
-        let source = r#"#VRML V2.0 utf8
+        let source = r"#VRML V2.0 utf8
         Transform { translation 10 20 30 children [Shape { geometry Extrusion {
           spine [0 0 0 0 2 0] scale [1 1 2 2] orientation [0 1 0 0 0 1 0 1.5707963267948966]
-        } }] }"#;
+        } }] }";
         let scene = vrml(source).unwrap();
         assert_eq!(scene.triangles.len(), 12);
         assert!(

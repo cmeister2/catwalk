@@ -1,4 +1,4 @@
-//! Extract LightBurn's qualified saved XML thumbnail without rendering geometry.
+//! Extract `LightBurn`'s qualified saved XML thumbnail without rendering geometry.
 
 use crate::Result;
 use base64::Engine;
@@ -9,14 +9,24 @@ use std::{
     path::Path,
 };
 
+/// Maximum XML project size admitted for saved-preview parsing.
 const MAX_SOURCE_BYTES: usize = 64 * 1024 * 1024;
+/// Maximum base64 thumbnail attribute length before decoding.
 const MAX_ENCODED_PREVIEW_BYTES: usize = 12 * 1024 * 1024;
+/// Maximum decoded PNG payload size.
 const MAX_PREVIEW_BYTES: usize = 8 * 1024 * 1024;
+/// Largest accepted PNG width or height.
 const MAX_IMAGE_DIMENSION: u32 = 8192;
+/// Maximum decoded saved-thumbnail pixel count.
 const MAX_IMAGE_PIXELS: u64 = 16_000_000;
 
-/// Extract a qualified FormatVersion 0 or 1 saved PNG, preserving its pixels.
+/// Extract a qualified `FormatVersion` 0 or 1 saved PNG, preserving its pixels.
 /// Missing or explicitly empty previews return `None`; corrupt carriers error.
+///
+/// # Errors
+///
+/// Returns an error for I/O failures, malformed XML, unqualified or ambiguous thumbnail carriers,
+/// invalid base64 or PNG data, or exceeded input and image limits.
 pub fn extract(path: &Path) -> Result<Option<RgbaImage>> {
     let file = File::open(path)?;
     if file.metadata()?.len() > MAX_SOURCE_BYTES as u64 {
@@ -28,6 +38,7 @@ pub fn extract(path: &Path) -> Result<Option<RgbaImage>> {
     extract_bytes(&bytes)
 }
 
+/// Validate the XML thumbnail carrier, decode bounded base64 PNG data and preserve its pixels.
 fn extract_bytes(bytes: &[u8]) -> Result<Option<RgbaImage>> {
     if bytes.len() > MAX_SOURCE_BYTES {
         return Err("LightBurn source exceeds the 64 MiB saved-preview limit".into());
@@ -112,6 +123,10 @@ fn extract_bytes(bytes: &[u8]) -> Result<Option<RgbaImage>> {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "Test builders serialize small fixed carrier fields and deliberately quantize their sample colors"
+)]
 mod tests {
     use super::*;
 

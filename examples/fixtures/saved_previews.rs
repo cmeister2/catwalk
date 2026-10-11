@@ -1,6 +1,7 @@
 //! Licensed, unmodified saved-preview fixtures. Their images come from the
 //! source application's saved carrier rather than Catwalk geometry rendering.
 #[path = "inventor.rs"]
+/// Writer for authored Inventor thumbnail carriers.
 mod inventor;
 
 use catwalk::Result;
@@ -10,15 +11,21 @@ use std::{
     path::Path,
 };
 
+/// Corpus subdirectory containing document thumbnail carriers and their licenses.
 const DIR: &str = "saved_previews";
 
+/// Generate authored Inventor part and assembly thumbnail carriers.
+///
+/// # Errors
+/// Returns an error if the source model cannot be rendered, the preview cannot
+/// be encoded, or the output directory and compound files cannot be written.
 pub fn generate_inventor(root: &Path) -> Result<Vec<crate::Fixture>> {
     fs::create_dir_all(root.join(DIR))?;
     let options = catwalk::render::RenderOptions {
         width: 160,
         height: 128,
         transparent: true,
-        ..Default::default()
+        ..catwalk::render::RenderOptions::default()
     };
     let part = catwalk::thumbnail(
         &Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/models/gear.obj"),
@@ -53,8 +60,12 @@ pub fn generate_inventor(root: &Path) -> Result<Vec<crate::Fixture>> {
     Ok(cases)
 }
 
-/// Copy the proven LightBurn legacy/current carriers into the portable corpus.
+/// Copy the proven `LightBurn` legacy/current carriers into the portable corpus.
 /// Expected snapshot images remain controlled by the separate review workflow.
+///
+/// # Errors
+/// Returns an error if fixture or license files cannot be copied, provenance
+/// cannot be written, or a copied carrier has no valid 256 by 256 saved preview.
 pub fn generate_lightburn(root: &Path) -> Result<Vec<crate::Fixture>> {
     let directory = root.join(DIR);
     fs::create_dir_all(&directory)?;
@@ -130,6 +141,10 @@ pub fn generate_lightburn(root: &Path) -> Result<Vec<crate::Fixture>> {
 }
 
 /// Include actual licensed Blender scenes and authored document-only carriers.
+///
+/// # Errors
+/// Returns an error if the corpus directory cannot be created or a source
+/// carrier or license file cannot be copied into it.
 pub fn generate_blend_dwg(root: &Path) -> Result<Vec<crate::Fixture>> {
     let directory = root.join(DIR);
     fs::create_dir_all(&directory)?;
@@ -219,6 +234,10 @@ pub fn generate_blend_dwg(root: &Path) -> Result<Vec<crate::Fixture>> {
 }
 
 /// An authored archive matching the qualified Fusion carrier, not CAD geometry.
+///
+/// # Errors
+/// Returns an error if the source model cannot be rendered, a PNG or ZIP cannot
+/// be encoded, or the output directory and archives cannot be written.
 pub fn generate_fusion(root: &Path) -> Result<Vec<crate::Fixture>> {
     let directory = root.join(DIR);
     fs::create_dir_all(&directory)?;
@@ -226,14 +245,14 @@ pub fn generate_fusion(root: &Path) -> Result<Vec<crate::Fixture>> {
         width: 192,
         height: 128,
         supersampling: 2,
-        ..Default::default()
+        ..catwalk::render::RenderOptions::default()
     };
     let image = catwalk::thumbnail(&root.join("mesh_scene/obj-material-palette.obj"), &options)?;
     let mut png = Vec::new();
     catwalk::render::write_png(&image, &mut png)?;
     let mut manifest = Vec::new();
     for value in ["3-2-0-0", "FusionDocType"] {
-        manifest.extend_from_slice(&(value.len() as u32).to_le_bytes());
+        manifest.extend_from_slice(&u32::try_from(value.len())?.to_le_bytes());
         manifest.extend_from_slice(value.as_bytes());
     }
     manifest.extend_from_slice(&4_u32.to_le_bytes());

@@ -8,24 +8,37 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::rc::Rc;
 
+/// Maximum geometry or attribute item count accepted by this importer.
 const MAX_ITEMS: usize = 20_000_000;
+/// Maximum parsed objects or hierarchy nodes accepted.
 const MAX_OBJECTS: usize = 100_000;
+/// Convert an importer diagnostic into the shared error type.
 fn error(message: impl Into<String>) -> Error {
     message.into().into()
 }
 #[derive(Clone, Debug, PartialEq)]
+/// Lexical token shared by X text and binary parsing.
 enum Token {
+    /// An authored template or object identifier.
     Word(String),
+    /// A parsed finite numeric token.
     Number(f64),
+    /// A consumed quoted or binary string token.
     String,
+    /// An object/list punctuation token.
     Symbol(char),
+    /// A consumed template GUID token.
     Guid,
 }
+/// Bounds-checked byte cursor for DirectX X mesh and frame hierarchy records.
 struct Bytes<'a> {
+    /// Borrowed complete input byte stream.
     bytes: &'a [u8],
+    /// Byte position of the next unread record.
     cursor: usize,
 }
 impl<'a> Bytes<'a> {
+    /// Consume the requested bytes, rejecting offset overflow and truncated records.
     fn take(&mut self, n: usize) -> Result<&'a [u8]> {
         let end = self
             .cursor
@@ -38,15 +51,18 @@ impl<'a> Bytes<'a> {
         self.cursor = end;
         Ok(bytes)
     }
+    /// Read one unsigned 16-bit word from the current record.
     fn u16(&mut self) -> Result<u16> {
         Ok(u16::from_le_bytes(self.take(2)?.try_into()?))
     }
+    /// Read one unsigned 32-bit word from the current record.
     fn u32(&mut self) -> Result<u32> {
         Ok(u32::from_le_bytes(self.take(4)?.try_into()?))
     }
+    /// Read a finite four- or eight-byte little-endian X numeric word.
     fn float(&mut self, size: usize) -> Result<f64> {
         let n = if size == 4 {
-            f32::from_le_bytes(self.take(4)?.try_into()?) as f64
+            f64::from(f32::from_le_bytes(self.take(4)?.try_into()?))
         } else {
             f64::from_le_bytes(self.take(8)?.try_into()?)
         };
@@ -56,6 +72,7 @@ impl<'a> Bytes<'a> {
         Ok(n)
     }
 }
+/// Expand bounded MSZIP blocks with their rolling 32 KiB dictionary.
 fn compressed(bytes: &[u8]) -> Result<Vec<u8>> {
     let mut data = Bytes { bytes, cursor: 0 };
     let declared = data.u32()? as usize;
@@ -103,6 +120,7 @@ fn compressed(bytes: &[u8]) -> Result<Vec<u8>> {
     }
     Ok(output)
 }
+/// Decode X binary tokens, including integer and floating-point lists.
 fn binary(bytes: &[u8], float_size: usize) -> Result<Vec<Token>> {
     let mut data = Bytes { bytes, cursor: 0 };
     let mut tokens = Vec::new();
@@ -124,7 +142,7 @@ fn binary(bytes: &[u8], float_size: usize) -> Result<Vec<Token>> {
                 }
                 tokens.push(Token::String);
             }
-            3 => tokens.push(Token::Number(data.u32()? as f64)),
+            3 => tokens.push(Token::Number(f64::from(data.u32()?))),
             5 => {
                 data.take(16)?;
                 tokens.push(Token::Guid);
@@ -135,7 +153,7 @@ fn binary(bytes: &[u8], float_size: usize) -> Result<Vec<Token>> {
                     return Err(error("too many X integer-list items"));
                 }
                 for _ in 0..n {
-                    tokens.push(Token::Number(data.u32()? as f64));
+                    tokens.push(Token::Number(f64::from(data.u32()?)));
                 }
             }
             7 => {
@@ -170,6 +188,7 @@ fn binary(bytes: &[u8], float_size: usize) -> Result<Vec<Token>> {
     }
     Ok(tokens)
 }
+/// Tokenize X text identifiers, numeric values, punctuation, strings and GUIDs.
 fn text(bytes: &[u8]) -> Result<Vec<Token>> {
     let source = std::str::from_utf8(bytes)?;
     let mut chars = source.chars().peekable();
@@ -267,24 +286,38 @@ fn text(bytes: &[u8]) -> Result<Vec<Token>> {
 }
 
 #[derive(Clone, Debug)]
+/// Inline X object or symbolic reference to a named object.
 enum Entry {
+    /// A nested inline object declaration.
     Object(Rc<Object>),
+    /// A symbolic reference resolved through the authored-name index.
     Reference(String),
 }
 #[derive(Debug)]
+/// Parsed X template object, scalar payload and nested entries.
 struct Object {
+    /// Declared X template type.
     kind: String,
+    /// Optional authored name used by symbolic references.
     name: Option<String>,
+    /// Flattened numeric values in declaration order.
     numbers: Vec<f64>,
+    /// Number of string values consumed from the object.
     strings: usize,
+    /// Nested inline objects and named references.
     entries: Vec<Entry>,
 }
+/// X token cursor with an aggregate object-count limit.
 struct Parser {
+    /// Tokenized X payload.
     tokens: Vec<Token>,
+    /// Index of the next unread token.
     cursor: usize,
+    /// Objects parsed so far for aggregate allocation bounds.
     count: usize,
 }
 impl Parser {
+    /// Require the next X token to be an identifier.
     fn word(&mut self) -> Result<String> {
         match self.tokens.get(self.cursor).cloned() {
             Some(Token::Word(s)) => {
@@ -294,6 +327,7 @@ impl Parser {
             _ => Err(error("expected X object name")),
         }
     }
+    /// Require the specified X punctuation token.
     fn symbol(&mut self, c: char) -> Result<()> {
         if self.tokens.get(self.cursor) != Some(&Token::Symbol(c)) {
             return Err(error(format!("expected X '{c}'")));
@@ -301,6 +335,7 @@ impl Parser {
         self.cursor += 1;
         Ok(())
     }
+    /// Consume an X template declaration without treating it as geometry.
     fn template(&mut self) -> Result<()> {
         self.word()?;
         self.symbol('{')?;
@@ -316,6 +351,7 @@ impl Parser {
         }
         Ok(())
     }
+    /// Parse a bounded-depth X object and its nested object/reference entries.
     fn object(&mut self, depth: usize) -> Result<Rc<Object>> {
         self.count += 1;
         if depth > 256 || self.count > MAX_OBJECTS {
@@ -365,11 +401,15 @@ impl Parser {
         }))
     }
 }
+/// Checked cursor over a parsed X object numeric payload.
 struct Numbers<'a> {
+    /// Borrowed numeric payload of the current X object.
     numbers: &'a [f64],
+    /// Index of the next unread numeric value.
     cursor: usize,
 }
 impl Numbers<'_> {
+    /// Consume the next finite object numeric value.
     fn number(&mut self) -> Result<f64> {
         let n = *self
             .numbers
@@ -378,6 +418,13 @@ impl Numbers<'_> {
         self.cursor += 1;
         Ok(n)
     }
+    /// Consume a bounded nonnegative X record count.
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_precision_loss,
+        clippy::cast_sign_loss,
+        reason = "The parsed value is finite, integral, nonnegative and at most MAX_ITEMS before native conversion."
+    )]
     fn count(&mut self) -> Result<usize> {
         let n = self.number()?;
         if n < 0. || n.fract() != 0. || n > MAX_ITEMS as f64 {
@@ -385,16 +432,24 @@ impl Numbers<'_> {
         }
         Ok(n as usize)
     }
+    /// Consume an exact unsigned 32-bit object numeric word.
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "The parsed value is finite, integral and within the exact u32 range before conversion."
+    )]
     fn dword(&mut self) -> Result<u32> {
         let n = self.number()?;
-        if n < 0. || n.fract() != 0. || n > u32::MAX as f64 {
+        if n < 0. || n.fract() != 0. || n > f64::from(u32::MAX) {
             return Err(error("invalid X DWORD"));
         }
         Ok(n as u32)
     }
+    /// Read three consecutive finite components into a geometry vector.
     fn vector(&mut self) -> Result<Vec3> {
         Ok(Vec3::new(self.number()?, self.number()?, self.number()?))
     }
+    /// Reject unused records after the expected object payload.
     fn done(&self) -> Result<()> {
         if self.cursor != self.numbers.len() {
             return Err(error("extra numeric data in X object"));
@@ -402,9 +457,16 @@ impl Numbers<'_> {
         Ok(())
     }
 }
+/// Clamp and quantize material diffuse channels into eight-bit RGB.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Diffuse channels are clamped to the byte range and intentionally rounded before quantization."
+)]
 fn rgb(values: &[f64]) -> [u8; 3] {
     std::array::from_fn(|i| (values[i] * 255.).clamp(0., 255.).round() as u8)
 }
+/// Read a material object diffuse color and validate its required numeric fields.
 fn material(object: &Object) -> Result<[u8; 3]> {
     if object.kind != "Material" || object.numbers.len() != 11 {
         return Err(error(
@@ -413,6 +475,11 @@ fn material(object: &Object) -> Result<[u8; 3]> {
     }
     Ok(rgb(&object.numbers[..3]))
 }
+/// Decode a finite row-major `FrameTransformMatrix` into an affine transform.
+#[allow(
+    clippy::float_cmp,
+    reason = "An affine homogeneous matrix requires the stored final row to be exactly (0,0,0,1)."
+)]
 fn frame_matrix(object: &Object) -> Result<Transform> {
     if object.numbers.len() != 16 {
         return Err(error("X FrameTransformMatrix needs sixteen values"));
@@ -426,13 +493,19 @@ fn frame_matrix(object: &Object) -> Result<Transform> {
     }
     Ok(matrix)
 }
+/// X object-name index, active reference traversal and accumulated geometry.
 struct Importer {
+    /// All authored names and the objects declaring each one.
     names: HashMap<String, Vec<Rc<Object>>>,
+    /// Object identities currently visited during reference traversal.
     active: HashSet<usize>,
+    /// Aggregate object visits across scene instantiation.
     visits: usize,
+    /// Placed triangles collected from visible mesh objects.
     scene: Scene,
 }
 impl Importer {
+    /// Resolve a unique named object, optionally requiring its declared template type.
     fn reference(&self, name: &str, kind: Option<&str>) -> Result<Rc<Object>> {
         let matches: Vec<_> = self
             .names
@@ -447,6 +520,7 @@ impl Importer {
             _ => Err(error("X reference names multiple objects and is ambiguous")),
         }
     }
+    /// Resolve an inline object or named reference before visiting its geometry.
     fn walk_entry(&mut self, entry: &Entry, world: Transform, depth: usize) -> Result<()> {
         match entry {
             Entry::Object(object) => self.walk(object, world, depth),
@@ -456,6 +530,7 @@ impl Importer {
             }
         }
     }
+    /// Compose nested frame transforms and visit supported objects without reference cycles.
     fn walk(&mut self, object: &Rc<Object>, world: Transform, depth: usize) -> Result<()> {
         self.visits += 1;
         if depth > 256 || self.visits > MAX_OBJECTS {
@@ -507,6 +582,15 @@ impl Importer {
         self.active.remove(&key);
         Ok(())
     }
+    /// Triangulate a placed X mesh with optional per-face materials and validated attributes.
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "Mesh counts are bounded to MAX_ITEMS before conversion into packed-attribute sizes."
+    )]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Keep X mesh topology and material/attribute validation in one grammar traversal."
+    )]
     fn mesh(&mut self, object: &Object, world: Transform) -> Result<()> {
         let mut values = Numbers {
             numbers: &object.numbers,
@@ -607,7 +691,7 @@ impl Importer {
                     };
                     let count = values.count()?;
                     for _ in 0..count {
-                        values.vector()?;
+                        let _ = values.vector()?;
                     }
                     let n = values.count()?;
                     if n != faces.len() {
@@ -727,9 +811,9 @@ impl Importer {
                 base
             } else {
                 Some(std::array::from_fn(|i| {
-                    let average = vertex_colors.iter().map(|c| c[i] as u64).sum::<u64>()
+                    let average = vertex_colors.iter().map(|c| u64::from(c[i])).sum::<u64>()
                         / vertex_colors.len() as u64;
-                    ((average * base.map_or(255, |c| c[i]) as u64) / 255) as u8
+                    ((average * u64::from(base.map_or(255, |c| c[i]))) / 255) as u8
                 }))
             };
             let polygon: Vec<_> = face.iter().map(|&i| vertices[i]).collect();
@@ -751,6 +835,7 @@ impl Importer {
         Ok(())
     }
 }
+/// Index all named nested objects so references resolve independently of declaration order.
 fn collect_names(object: &Rc<Object>, names: &mut HashMap<String, Vec<Rc<Object>>>) {
     if let Some(name) = &object.name {
         names.entry(name.clone()).or_default().push(object.clone());
@@ -761,10 +846,16 @@ fn collect_names(object: &Rc<Object>, names: &mut HashMap<String, Vec<Rc<Object>
         }
     }
 }
+/// Read a bounded DirectX X mesh and frame hierarchy and decode its preview geometry.
+///
+/// # Errors
+/// Returns an error for malformed text/binary/MSZIP records, unsupported geometry, invalid
+/// references/transforms or resource limits.
 pub(super) fn load(path: &Path) -> Result<Scene> {
     let bytes = super::read_file(path)?;
     parse(&bytes)
 }
+/// Decode X text/binary/MSZIP envelopes and import static mesh/frame geometry.
 fn parse(bytes: &[u8]) -> Result<Scene> {
     let header = bytes
         .get(..16)
@@ -834,6 +925,10 @@ mod tests {
         assert_eq!(scene.triangles[0].vertices[0], Vec3::new(2., 4., 3.));
         assert_eq!(scene.triangles[0].color, Some([255, 0, 0]));
     }
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "The authored X fixture contains a few constant vertices and its array counts fit u32."
+    )]
     fn binary_mesh(float_size: usize) -> Vec<u8> {
         let mut bytes = format!("xof 0303bin {:04}", float_size * 8).into_bytes();
         bytes.extend_from_slice(&1_u16.to_le_bytes());
@@ -868,6 +963,10 @@ mod tests {
             assert!(parse(&bytes[..bytes.len() - 1]).is_err());
         }
     }
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "The authored MSZIP fixture payload and blocks fit their u32/u16 format length fields."
+    )]
     fn zip(payload: &[u8], binary: bool) -> Vec<u8> {
         use std::io::Write;
         let mut encoder =
@@ -891,6 +990,10 @@ mod tests {
         assert_eq!(parse(&zip(&binary[16..], true)).unwrap().triangles.len(), 1);
     }
     #[test]
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "The authored rolling-dictionary fixture uses bounded 8192-byte blocks and a small total file."
+    )]
     fn mszip_rolling_dictionary_across_blocks() {
         use flate2::{Compress, Compression, FlushCompress};
         let mut payload = Vec::new();
@@ -908,17 +1011,17 @@ mod tests {
                     .set_dictionary(&payload[consumed.saturating_sub(32768)..consumed])
                     .unwrap();
             }
-            let mut encoded = Vec::with_capacity(block.len() + 128);
+            let mut compressed_bytes = Vec::with_capacity(block.len() + 128);
             assert_eq!(
                 encoder
-                    .compress_vec(block, &mut encoded, FlushCompress::Finish)
+                    .compress_vec(block, &mut compressed_bytes, FlushCompress::Finish)
                     .unwrap(),
                 Status::StreamEnd
             );
             file.extend_from_slice(&(block.len() as u16).to_le_bytes());
-            file.extend_from_slice(&((encoded.len() + 2) as u16).to_le_bytes());
+            file.extend_from_slice(&((compressed_bytes.len() + 2) as u16).to_le_bytes());
             file.extend_from_slice(b"CK");
-            file.extend_from_slice(&encoded);
+            file.extend_from_slice(&compressed_bytes);
             consumed += block.len();
         }
         assert_eq!(parse(&file).unwrap().triangles.len(), 1);

@@ -1,6 +1,6 @@
 //! IGES and Open CASCADE ASCII BREP topology, imported and tessellated in Rust.
 //! The kernel's omission/approximation report is checked before any preview.
-//! Primary implementation: https://github.com/gilbertorconde/ogeom-rs
+//! Primary implementation: <https://github.com/gilbertorconde/ogeom-rs>
 use crate::{
     Result,
     scene::{Point, Scene, Triangle, Vec3},
@@ -12,15 +12,26 @@ use std::{
     path::Path,
 };
 
+/// Restore native BREP geometry carrier placements.
 #[path = "cad_carriers.rs"]
 mod carriers;
 
+/// Standard millimetre-scale numerical tolerances for the Rust CAD kernel.
 const TOLERANCES: Tolerances = Tolerances::millimetres();
+/// Maximum decoded CAD exchange payload size accepted for previews.
 const MAX_CAD_BYTES: usize = 16 * 1024 * 1024;
+/// Maximum native topology or expanded spline records accepted during validation.
 const MAX_TOPOLOGY: usize = 100_000;
+/// Maximum CAD face count accepted for a preview body.
 const MAX_FACES: usize = 4096;
+/// Maximum source or expanded preview triangle count.
 const MAX_TRIANGLES: usize = 5_000_000;
 
+/// Load IGES or ASCII BREP geometry and tessellate its complete topology.
+///
+/// # Errors
+///
+/// File reads, UTF-8 decoding, unsupported entities, invalid topology or tessellation limits fail.
 pub(super) fn load(path: &Path) -> Result<Scene> {
     let bytes = super::read_file(path)?;
     let extension = super::extension(path)?;
@@ -31,10 +42,20 @@ pub(super) fn load(path: &Path) -> Result<Scene> {
     }
 }
 
+/// Import an in-memory ASCII BREP document with the same validation as file loading.
+///
+/// # Errors
+///
+/// The text is malformed, contains unsupported geometry or exceeds topology/tessellation limits.
 pub(super) fn load_brep_text(text: &str) -> Result<Scene> {
     parse(text.as_bytes(), "brep")
 }
 
+/// Validate and import CAD exchange data before emitting surfaces, free wires and vertices.
+///
+/// # Errors
+///
+/// Input encoding, format records, topology, numeric bounds or tessellation fail validation.
 fn parse(bytes: &[u8], extension: &str) -> Result<Scene> {
     if bytes.len() > MAX_CAD_BYTES {
         return Err("CAD input exceeds the 16 MiB preview limit".into());
@@ -110,10 +131,24 @@ fn parse(bytes: &[u8], extension: &str) -> Result<Scene> {
     Ok(scene)
 }
 
+/// Append a CAD shape using the standard millimetre kernel tolerances.
+///
+/// # Errors
+///
+/// Topology is invalid, geometry cannot be evaluated or preview tessellation limits are exceeded.
 pub(super) fn append_shape(scene: &mut Scene, model: &Model, root: &Shape) -> Result<()> {
     append_shape_with_tolerances(scene, model, root, TOLERANCES)
 }
 
+/// Append every supported face, free curve and isolated vertex at the requested tolerances.
+///
+/// # Errors
+///
+/// Missing topology, failed geometry evaluation or unmet bounded tessellation tolerance prevents a complete preview.
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keep the format record dispatch, validation and its resource checks together without changing geometry evaluation."
+)]
 fn append_shape_with_tolerances(
     scene: &mut Scene,
     model: &Model,
@@ -224,9 +259,8 @@ fn append_shape_with_tolerances(
             let Some(EdgeRepr::Curve3d { curve, range, .. }) = data.curve3d() else {
                 if data.degenerate {
                     continue;
-                } else {
-                    return Err("free CAD edge has no supported 3D curve".into());
                 }
+                return Err("free CAD edge has no supported 3D curve".into());
             };
             let geometry = model
                 .geometry()
@@ -272,6 +306,11 @@ fn append_shape_with_tolerances(
     Ok(())
 }
 
+/// Bound topology size and validate its geometry before kernel traversal.
+///
+/// # Errors
+///
+/// Topology exceeds limits or the kernel reports invalid geometry or structure.
 fn validate_topology(model: &Model, root: &Shape) -> Result<()> {
     let mut queue = vec![(root.clone(), 0usize)];
     let mut occurrences = 0usize;
@@ -378,6 +417,11 @@ fn validate_iges(text: &str) -> Result<()> {
     Ok(())
 }
 
+/// Decode a whitespace-padded decimal count from an exchange record.
+///
+/// # Errors
+///
+/// The bytes are not UTF-8 or do not represent a nonnegative machine-sized integer.
 fn parse_usize(bytes: &[u8]) -> Result<usize> {
     Ok(std::str::from_utf8(bytes)?.trim().parse()?)
 }
@@ -388,7 +432,11 @@ fn parse_usize(bytes: &[u8]) -> Result<usize> {
 /// this resolution. Its scale constructor also scales linear tolerances,
 /// so invert the requested millimeter confusion to retain that precision.
 /// Primary specification, section 2.2.4.2.19:
-/// https://nvlpubs.nist.gov/nistpubs/Legacy/IR/nbsir86-3359.pdf
+/// <https://nvlpubs.nist.gov/nistpubs/Legacy/IR/nbsir86-3359.pdf>
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keep the format record dispatch, validation and its resource checks together without changing geometry evaluation."
+)]
 fn iges_tolerances(text: &str) -> Result<Tolerances> {
     let global = text
         .lines()
@@ -471,7 +519,7 @@ fn iges_tolerances(text: &str) -> Result<Tolerances> {
         8 => 0.0254,
         9 => 0.001,
         10 => 10.,
-        11 => 0.0000254,
+        11 => 0.000_025_4,
         3 => match fields
             .get(14)
             .ok_or("IGES custom unit name missing")?
@@ -487,7 +535,7 @@ fn iges_tolerances(text: &str) -> Result<Tolerances> {
             "MIL" => 0.0254,
             "UM" => 0.001,
             "CM" => 10.,
-            "UIN" => 0.0000254,
+            "UIN" => 0.000_025_4,
             _ => return Err("unsupported IGES resolution units".into()),
         },
         _ => return Err("unsupported IGES resolution units".into()),
@@ -671,12 +719,24 @@ fn normalize_brep_caches(text: &str) -> Result<String> {
 /// The upstream reader has recursive trimmed/offset geometry records.
 /// Walk their numeric schema before calling it, bounding nesting, spline
 /// grids and multiplicities independently of the file's top-level counts.
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keep the format record dispatch, validation and its resource checks together without changing geometry evaluation."
+)]
 fn validate_geometry_table(tokens: &[&str], dimension: u8) -> Result<()> {
+    /// Bounds-checked cursor for recursive BREP geometry-token schemas.
     struct Cursor<'a> {
+        /// Token payload for one native geometry table.
         tokens: &'a [&'a str],
+        /// Index of the next unread token.
         at: usize,
     }
     impl Cursor<'_> {
+        /// Consume one bounded BREP geometry count.
+        ///
+        /// # Errors
+        ///
+        /// The record is truncated, nonnumeric or above the topology limit.
         fn count(&mut self) -> Result<usize> {
             let n = self
                 .tokens
@@ -689,6 +749,11 @@ fn validate_geometry_table(tokens: &[&str], dimension: u8) -> Result<()> {
             }
             Ok(n)
         }
+        /// Advance the geometry-token cursor without crossing its payload.
+        ///
+        /// # Errors
+        ///
+        /// The offset overflows or the payload is truncated.
         fn skip(&mut self, n: usize) -> Result<()> {
             self.at = self
                 .at
@@ -699,6 +764,11 @@ fn validate_geometry_table(tokens: &[&str], dimension: u8) -> Result<()> {
             }
             Ok(())
         }
+        /// Consume a BREP geometry boolean encoded as zero or one.
+        ///
+        /// # Errors
+        ///
+        /// The flag is missing, nonnumeric or outside zero/one.
         fn flag(&mut self) -> Result<usize> {
             let n = self.count()?;
             if n > 1 {
@@ -706,6 +776,11 @@ fn validate_geometry_table(tokens: &[&str], dimension: u8) -> Result<()> {
             }
             Ok(n)
         }
+        /// Validate knot multiplicities and their bounded expanded count.
+        ///
+        /// # Errors
+        ///
+        /// The degree, multiplicities or expansion exceed preview limits, or data is truncated.
         fn knots(&mut self, n: usize, degree: usize) -> Result<()> {
             if degree > 64 {
                 return Err("BREP spline degree exceeds 64".into());
@@ -723,6 +798,11 @@ fn validate_geometry_table(tokens: &[&str], dimension: u8) -> Result<()> {
             }
             Ok(())
         }
+        /// Consume one supported recursive analytic or spline geometry record.
+        ///
+        /// # Errors
+        ///
+        /// The schema is unsupported, truncated or exceeds nesting/spline limits.
         fn geometry(&mut self, dimension: u8, depth: usize) -> Result<()> {
             if depth > 64 {
                 return Err("BREP trimmed/offset geometry exceeds 64 levels".into());
@@ -743,21 +823,21 @@ fn validate_geometry_table(tokens: &[&str], dimension: u8) -> Result<()> {
                         let rational = self.flag()? + self.flag()? > 0;
                         self.flag()?;
                         self.flag()?;
-                        let udegree = self.count()?;
-                        let vdegree = self.count()?;
-                        let upoles = self.count()?;
-                        let vpoles = self.count()?;
-                        let uknots = self.count()?;
-                        let vknots = self.count()?;
-                        let cells = upoles
-                            .checked_mul(vpoles)
+                        let degree_u = self.count()?;
+                        let degree_v = self.count()?;
+                        let poles_u = self.count()?;
+                        let poles_v = self.count()?;
+                        let knots_u = self.count()?;
+                        let knots_v = self.count()?;
+                        let cells = poles_u
+                            .checked_mul(poles_v)
                             .ok_or("BREP spline grid overflow")?;
                         if cells > MAX_TOPOLOGY {
                             return Err("BREP spline grid exceeds 100000 poles".into());
                         }
                         self.skip(cells * (3 + usize::from(rational)))?;
-                        self.knots(uknots, udegree)?;
-                        self.knots(vknots, vdegree)?;
+                        self.knots(knots_u, degree_u)?;
+                        self.knots(knots_v, degree_v)?;
                     }
                     10 => {
                         self.skip(4)?;
@@ -811,6 +891,11 @@ fn validate_geometry_table(tokens: &[&str], dimension: u8) -> Result<()> {
     Ok(())
 }
 
+/// Check cached polygon or triangulation payloads before discarding them.
+///
+/// # Errors
+///
+/// Counts, flags, indices or cached parameter records are malformed or out of bounds.
 fn validate_cache(tokens: &[&str], kind: u8) -> Result<()> {
     let mut at = 0;
     let number = |at: &mut usize| -> Result<usize> {
@@ -882,6 +967,11 @@ fn validate_cache(tokens: &[&str], kind: u8) -> Result<()> {
     Ok(())
 }
 
+/// Validate ASCII BREP headers, tables and finite numeric payloads.
+///
+/// # Errors
+///
+/// Headers, counts, topology, geometry or placement records are malformed or unsupported.
 fn validate_brep(text: &str) -> Result<()> {
     let first = text
         .lines()
@@ -934,6 +1024,11 @@ fn validate_brep(text: &str) -> Result<()> {
     Ok(())
 }
 
+/// Validate BREP placement matrices and bounded composition powers.
+///
+/// # Errors
+///
+/// Locations are truncated, non-finite, invalidly referenced or exceed composition limits.
 fn validate_locations<'a>(
     tokens: &mut std::iter::Peekable<impl Iterator<Item = &'a str>>,
     count: usize,
@@ -983,6 +1078,7 @@ fn validate_locations<'a>(
 mod tests {
     use super::*;
     use ogeom_math::{Frame, Point as CadPoint, Vector};
+    use std::fmt::Write as _;
 
     fn body(kind: &str) -> (Model, Shape) {
         let mut model = Model::new();
@@ -1195,10 +1291,10 @@ mod tests {
         let directory = counts[2] + 1;
         let parameter = counts[3] + 1;
         let fields = |values: [usize; 9]| {
-            values
-                .iter()
-                .map(|value| format!("{value:>8}"))
-                .collect::<String>()
+            values.iter().fold(String::new(), |mut text, value| {
+                let _ = write!(text, "{value:>8}");
+                text
+            })
         };
         let first = format!(
             "{}D{directory:>7}",
@@ -1252,14 +1348,14 @@ mod tests {
         let text = text_of("box", true);
         let lines: Vec<_> = text.lines().collect();
         assert!(parse(lines[..lines.len() - 1].join("\n").as_bytes(), "iges").is_err());
-        let mut broken: Vec<String> = lines.iter().map(|line| line.to_string()).collect();
+        let mut broken: Vec<String> = lines.iter().map(std::string::ToString::to_string).collect();
         let parameter = broken
             .iter_mut()
             .find(|line| line.as_bytes()[72] == b'P')
             .unwrap();
         parameter.replace_range(64..72, "       0");
         assert!(parse(broken.join("\n").as_bytes(), "iges").is_err());
-        let mut broken: Vec<String> = lines.iter().map(|line| line.to_string()).collect();
+        let mut broken: Vec<String> = lines.iter().map(std::string::ToString::to_string).collect();
         broken.last_mut().unwrap().replace_range(25..32, "9999999");
         assert!(parse(broken.join("\n").as_bytes(), "iges").is_err());
     }
@@ -1324,13 +1420,11 @@ mod tests {
                             break;
                         }
                         cursor += match kind {
-                            1 => 4,
-                            2 => 5,
+                            1 | 7 => 4,
+                            2 | 4 => 5,
                             3 => 7,
-                            4 => 5,
                             5 => 2,
                             6 => 3,
-                            7 => 4,
                             _ => panic!("unexpected representation"),
                         };
                     }
@@ -1382,6 +1476,10 @@ mod tests {
     }
 
     #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Keep all geometry qualification assertions beside the authored fixture construction."
+    )]
     fn rigid_brep_carriers_share_geometry_and_preserve_occurrence_bounds() {
         for mirrored in [false, true] {
             let (mut model, root) = body("box");
@@ -1416,7 +1514,7 @@ mod tests {
                         }
                         edge.assert_same_parameter(false);
                     }
-                    _ => {}
+                    NodeData::Container => {}
                 }
                 *model.node_mut(&node).unwrap().data_mut() = data;
             }
@@ -1456,9 +1554,8 @@ mod tests {
                             words[cursor + 1] = "2".to_owned();
                             cursor += 4;
                         }
-                        2 => cursor += 5,
+                        2 | 4 => cursor += 5,
                         3 => cursor += 7,
-                        4 => cursor += 5,
                         5 => cursor += 2,
                         6 => cursor += 3,
                         7 => cursor += 4,
@@ -1626,9 +1723,8 @@ mod tests {
                         words[cursor + 1] = "1".into();
                         cursor += 4;
                     }
-                    2 => cursor += 5,
+                    2 | 4 => cursor += 5,
                     3 => cursor += 7,
-                    4 => cursor += 5,
                     5 => cursor += 2,
                     6 => cursor += 3,
                     7 => cursor += 4,
@@ -1755,6 +1851,10 @@ mod tests {
     }
 
     #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Keep all geometry qualification assertions beside the authored fixture construction."
+    )]
     fn iges_unsewn_preview_retains_every_face_and_accounts_only_owned_alternatives() {
         let mut model = Model::new();
         let wire = ogeom_algo::make_polygon(
@@ -1782,7 +1882,7 @@ mod tests {
             / 2;
         assert_eq!(authored_faces, 2);
         let imported = ogeom_io::read_iges_unsewn(&source, TOLERANCES).unwrap();
-        assert!(imported.report.warnings.is_empty());
+        assert_eq!(imported.report.warnings, [] as [std::string::String; 0]);
         let model = imported.document.model();
         let imported_faces: usize = imported
             .sheets

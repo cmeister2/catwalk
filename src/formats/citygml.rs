@@ -1,4 +1,4 @@
-//! CityGML polygonal geometry, including planar holes and local XLinks.
+//! `CityGML` polygonal geometry, including planar holes and local `XLinks`.
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
@@ -6,24 +6,31 @@ use crate::scene::{Point, Scene, Triangle, Vec3};
 use crate::{Error, Result};
 use roxmltree::{Document, Node, NodeId};
 
+/// Maximum decoded records, traversal visits or output geometry items.
 const MAX_ITEMS: usize = 20_000_000;
+/// Maximum vertices in one polygon boundary ring.
 const MAX_RING: usize = 100_000;
+/// Standard XML namespace for local geometry `XLink` references.
 const XLINK: &str = "http://www.w3.org/1999/xlink";
+/// Construct a `CityGML` geometry error with its contextual diagnostic.
 fn error(message: impl Into<String>) -> Error {
     message.into().into()
 }
+/// Recognize elements in the supported GML namespaces.
 fn gml(node: Node<'_, '_>) -> bool {
     node.is_element()
         && node.tag_name().namespace().is_some_and(|ns| {
             ns == "http://www.opengis.net/gml" || ns.starts_with("http://www.opengis.net/gml/")
         })
 }
+/// Iterate direct GML children with a specified local element name.
 fn local<'a, 'i>(node: Node<'a, 'i>, name: &str) -> impl Iterator<Item = Node<'a, 'i>> {
     let name = name.to_owned();
     node.children()
         .filter(move |n| n.is_element() && n.tag_name().name() == name)
 }
-fn id<'a, 'i>(node: Node<'a, 'i>) -> Option<&'a str> {
+/// Borrow a supported GML identifier attribute when present.
+fn id<'a>(node: Node<'a, '_>) -> Option<&'a str> {
     node.attributes()
         .find(|a| {
             a.name() == "id"
@@ -32,6 +39,11 @@ fn id<'a, 'i>(node: Node<'a, 'i>) -> Option<&'a str> {
         })
         .map(|a| a.value())
 }
+/// Parse a whitespace-separated list of finite coordinate values.
+///
+/// # Errors
+///
+/// A token is nonnumeric/non-finite or the coordinate count exceeds limits.
 fn floats(text: &str) -> Result<Vec<f64>> {
     let mut values = Vec::new();
     for word in text.split_whitespace() {
@@ -46,6 +58,11 @@ fn floats(text: &str) -> Result<Vec<f64>> {
     }
     Ok(values)
 }
+/// Read an optional supported two- or three-dimensional coordinate declaration.
+///
+/// # Errors
+///
+/// The dimension is malformed or outside the supported range.
 fn dimension(node: Node<'_, '_>) -> Result<Option<usize>> {
     for ancestor in node.ancestors() {
         if let Some(n) = ancestor.attribute("srsDimension") {
@@ -58,6 +75,11 @@ fn dimension(node: Node<'_, '_>) -> Result<Option<usize>> {
     }
     Ok(None)
 }
+/// Read one GML position as a finite three-dimensional point.
+///
+/// # Errors
+///
+/// Dimensionality, coordinate count or numeric values are invalid.
 fn position(node: Node<'_, '_>) -> Result<Vec3> {
     let values = floats(node.text().unwrap_or(""))?;
     let dim = dimension(node)?.unwrap_or(values.len());
@@ -70,6 +92,11 @@ fn position(node: Node<'_, '_>) -> Result<Vec3> {
         if dim == 3 { values[2] } else { 0. },
     ))
 }
+/// Decode GML coordinate sequences with declared or inferred dimensionality.
+///
+/// # Errors
+///
+/// The encoding, dimensions, tuple count or numeric coordinates are invalid or unsupported.
 fn coordinate_list(node: Node<'_, '_>) -> Result<Vec<Vec3>> {
     let values = floats(node.text().unwrap_or(""))?;
     let declared_count = node
@@ -95,6 +122,11 @@ fn coordinate_list(node: Node<'_, '_>) -> Result<Vec<Vec3>> {
         .collect())
 }
 
+/// Read and validate a closed GML linear boundary ring.
+///
+/// # Errors
+///
+/// The ring is unclosed, malformed, oversized or contains unsupported coordinates.
 fn ring(node: Node<'_, '_>) -> Result<Vec<Vec3>> {
     let mut vertices = Vec::new();
     match node.tag_name().name() {
@@ -129,7 +161,7 @@ fn ring(node: Node<'_, '_>) -> Result<Vec<Vec3>> {
                     vertices.push(p);
                 }
             } else {
-                for point in node.children().filter(|n| n.is_element()) {
+                for point in node.children().filter(roxmltree::Node::is_element) {
                     match point.tag_name().name() {
                         "pos" => vertices.push(position(point)?),
                         "pointProperty" | "pointRep" => {
@@ -178,6 +210,11 @@ fn ring(node: Node<'_, '_>) -> Result<Vec<Vec3>> {
     Ok(clean)
 }
 
+/// Triangulate coplanar polygon rings and holes without flattening their authored plane.
+///
+/// # Errors
+///
+/// Rings are degenerate, nonplanar, oversized or cannot be triangulated consistently.
 pub(super) fn triangulate_rings(rings: &[Vec<Vec3>]) -> Result<Vec<[Vec3; 3]>> {
     if rings
         .iter()
@@ -250,7 +287,7 @@ pub(super) fn triangulate_rings(rings: &[Vec<Vec3>]) -> Result<Vec<[Vec3; 3]>> {
         .map_err(|e| error(format!("cannot triangulate CityGML polygon: {e}")))?;
     let mut triangles = Vec::new();
     let mut area = 0.;
-    for indices in indices.as_chunks::<3>().0.iter() {
+    for indices in indices.as_chunks::<3>().0 {
         let mut triangle = [
             positions[indices[0]],
             positions[indices[1]],
@@ -280,6 +317,7 @@ pub(super) fn triangulate_rings(rings: &[Vec<Vec3>]) -> Result<Vec<[Vec3; 3]>> {
     Ok(triangles)
 }
 
+/// Identify supported `CityGML` feature/container elements.
 fn feature(node: Node<'_, '_>) -> bool {
     node.is_element()
         && node
@@ -308,6 +346,7 @@ fn feature(node: Node<'_, '_>) -> bool {
                 | "ReliefFeature"
         )
 }
+/// Read the geometry level from a supported level-of-detail property name.
 fn lod(node: Node<'_, '_>) -> Option<u8> {
     let name = node.tag_name().name().as_bytes();
     if name.len() > 3 && name.starts_with(b"lod") && name[3].is_ascii_digit() {
@@ -316,21 +355,34 @@ fn lod(node: Node<'_, '_>) -> Option<u8> {
         None
     }
 }
+/// Find the highest authored geometry level among a feature's direct properties.
 fn highest_lod(node: Node<'_, '_>) -> Option<u8> {
     node.children()
         .filter(|n| n.is_element() && !feature(*n))
         .filter_map(|n| lod(n).or_else(|| highest_lod(n)))
         .max()
 }
+/// Local geometry/material indices and bounded shared-reference traversal state.
 struct Importer<'a, 'i> {
+    /// Package-local geometry identifiers mapped to XML nodes.
     ids: HashMap<&'a str, Node<'a, 'i>>,
+    /// Diffuse RGB material colors indexed by their target identifiers.
     materials: HashMap<String, [u8; 3]>,
+    /// Reference identities currently being expanded, used to reject cycles.
     active: HashSet<NodeId>,
+    /// Geometry node identities already appended to the scene.
     emitted: HashSet<NodeId>,
+    /// Accumulated renderable geometry in normalized world coordinates.
     scene: Scene,
+    /// Number of reference/geometry visits charged against the traversal limit.
     visits: usize,
 }
 impl<'a, 'i> Importer<'a, 'i> {
+    /// Resolve a package-local geometry `XLink` or retain an inline geometry node.
+    ///
+    /// # Errors
+    ///
+    /// The reference is external, missing or malformed.
     fn resolve(&self, node: Node<'a, 'i>) -> Result<Node<'a, 'i>> {
         if let Some(href) = node.attribute((XLINK, "href")) {
             let id = href
@@ -345,12 +397,20 @@ impl<'a, 'i> Importer<'a, 'i> {
             Ok(node)
         }
     }
+    /// Resolve and read one polygon-boundary property.
+    ///
+    /// # Errors
+    ///
+    /// The boundary/reference structure or its ring geometry is invalid or unsupported.
     fn boundary(&self, property: Node<'a, 'i>) -> Result<Vec<Vec3>> {
         let node = self.resolve(property)?;
         let ring_node = if node.tag_name().name() == "LinearRing" {
             node
         } else {
-            let children: Vec<_> = node.children().filter(|n| n.is_element()).collect();
+            let children: Vec<_> = node
+                .children()
+                .filter(roxmltree::Node::is_element)
+                .collect();
             if children.len() != 1 {
                 return Err(error("CityGML boundary needs exactly one ring"));
             }
@@ -358,6 +418,11 @@ impl<'a, 'i> Importer<'a, 'i> {
         };
         ring(ring_node)
     }
+    /// Expand selected feature geometry, shared references and polygon materials.
+    ///
+    /// # Errors
+    ///
+    /// Geometry/references are unsupported, cyclic or exceed traversal/output limits.
     fn walk(
         &mut self,
         original: Node<'a, 'i>,
@@ -458,7 +523,7 @@ impl<'a, 'i> Importer<'a, 'i> {
         {
             return Err(error(format!("unsupported CityGML geometry <{name}>")));
         } else {
-            for child in node.children().filter(|n| n.is_element()) {
+            for child in node.children().filter(roxmltree::Node::is_element) {
                 self.walk(child, selected_lod, color, reverse, depth + 1)?;
             }
         }
@@ -467,10 +532,25 @@ impl<'a, 'i> Importer<'a, 'i> {
     }
 }
 
+/// Read supported `CityGML`/GML polygon geometry and local references.
+///
+/// # Errors
+///
+/// File/UTF-8/XML parsing, required geometry or preview limits fail validation.
 pub(super) fn load(path: &Path) -> Result<Scene> {
     let bytes = super::read_file(path)?;
     parse(std::str::from_utf8(&bytes)?)
 }
+/// Index local geometry/material identifiers and render highest-detail feature geometry.
+///
+/// # Errors
+///
+/// XML, identifiers, materials, references or required polygon geometry are invalid or unsupported.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Validated zero-to-one color factors are intentionally rounded to bounded RGB bytes."
+)]
 fn parse(source: &str) -> Result<Scene> {
     let doc = Document::parse(source)?;
     let root = doc.root_element();
@@ -484,7 +564,7 @@ fn parse(source: &str) -> Result<Scene> {
     }
     let mut ids = HashMap::new();
     let mut materials = HashMap::new();
-    for node in root.descendants().filter(|n| n.is_element()) {
+    for node in root.descendants().filter(roxmltree::Node::is_element) {
         if let Some(id) = id(node)
             && ids.insert(id, node).is_some()
         {
@@ -532,15 +612,19 @@ fn parse(source: &str) -> Result<Scene> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fmt::Write as _;
     fn model(body: &str) -> String {
         format!(
-            r##"<core:CityModel xmlns:core="http://www.opengis.net/citygml/2.0" xmlns:bldg="http://www.opengis.net/citygml/building/2.0" xmlns:gml="http://www.opengis.net/gml" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:app="http://www.opengis.net/citygml/appearance/2.0">{body}</core:CityModel>"##
+            r#"<core:CityModel xmlns:core="http://www.opengis.net/citygml/2.0" xmlns:bldg="http://www.opengis.net/citygml/building/2.0" xmlns:gml="http://www.opengis.net/gml" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:app="http://www.opengis.net/citygml/appearance/2.0">{body}</core:CityModel>"#
         )
     }
     fn polygon(id: &str, exterior: &str, holes: &[&str]) -> String {
-        let holes: String = holes.iter().map(|coords| format!("<gml:interior><gml:LinearRing><gml:posList>{coords}</gml:posList></gml:LinearRing></gml:interior>")).collect();
+        let holes = holes.iter().fold(String::new(), |mut text, coords| {
+            let _ = write!(text, "<gml:interior><gml:LinearRing><gml:posList>{coords}</gml:posList></gml:LinearRing></gml:interior>");
+            text
+        });
         format!(
-            r##"<gml:Polygon gml:id="{id}"><gml:exterior><gml:LinearRing><gml:posList>{exterior}</gml:posList></gml:LinearRing></gml:exterior>{holes}</gml:Polygon>"##
+            r#"<gml:Polygon gml:id="{id}"><gml:exterior><gml:LinearRing><gml:posList>{exterior}</gml:posList></gml:LinearRing></gml:exterior>{holes}</gml:Polygon>"#
         )
     }
     fn area(scene: &Scene) -> f64 {
@@ -588,11 +672,6 @@ mod tests {
         assert!(parse(&model(&polygon("p", "0 0 0 1 0 0 0 1 0", &[]))).is_err());
         assert!(parse(&model(&polygon("p", "0 0 0 1 0 0 1 1 1 0 1 0 0 0 0", &[]))).is_err());
         assert!(parse(&model(r##"<gml:surfaceMember xlink:href="#missing"/>"##)).is_err());
-        assert!(
-            parse(&model(
-                r##"<gml:surfaceMember xlink:href="remote.gml#p"/>"##
-            ))
-            .is_err()
-        );
+        assert!(parse(&model(r#"<gml:surfaceMember xlink:href="remote.gml#p"/>"#)).is_err());
     }
 }

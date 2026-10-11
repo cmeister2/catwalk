@@ -1,16 +1,20 @@
 //! Quake MDL v6 geometry; preview the first frame, including grouped frames.
-//! Layout: https://github.com/id-Software/Quake/blob/master/WinQuake/modelgen.h
+//! Layout: <https://github.com/id-Software/Quake/blob/master/WinQuake/modelgen.h>
 use crate::{
     Result,
     scene::{Scene, Triangle, Vec3},
 };
 use std::path::Path;
 
+/// Bounds-checked cursor over a Quake MDL byte stream.
 struct Input<'a> {
+    /// Borrowed complete MDL input bytes.
     bytes: &'a [u8],
+    /// Absolute position of the next unread record.
     position: usize,
 }
 impl<'a> Input<'a> {
+    /// Consume the requested bytes, rejecting offset overflow and truncated records.
     fn take(&mut self, size: usize) -> Result<&'a [u8]> {
         let end = self.position.checked_add(size).ok_or("MDL size overflow")?;
         let value = self
@@ -20,9 +24,15 @@ impl<'a> Input<'a> {
         self.position = end;
         Ok(value)
     }
+    /// Read a little-endian signed header or triangle-index word.
     fn integer(&mut self) -> Result<i32> {
         Ok(i32::from_le_bytes(self.take(4)?.try_into()?))
     }
+    /// Read a positive count bounded to five million records.
+    #[allow(
+        clippy::cast_sign_loss,
+        reason = "The signed MDL count is validated as positive and at most five million before native conversion."
+    )]
     fn count(&mut self) -> Result<usize> {
         let value = self.integer()?;
         if !(1..=5_000_000).contains(&value) {
@@ -30,16 +40,19 @@ impl<'a> Input<'a> {
         }
         Ok(value as usize)
     }
+    /// Read a finite little-endian MDL float and widen it to double precision.
     fn float(&mut self) -> Result<f64> {
-        let value = f32::from_le_bytes(self.take(4)?.try_into()?) as f64;
+        let value = f64::from(f32::from_le_bytes(self.take(4)?.try_into()?));
         if !value.is_finite() {
             return Err("non-finite MDL numeric value".into());
         }
         Ok(value)
     }
+    /// Read three consecutive finite components into a geometry vector.
     fn vector(&mut self) -> Result<Vec3> {
         Ok(Vec3::new(self.float()?, self.float()?, self.float()?))
     }
+    /// Validate that grouped skin or frame intervals are positive and strictly increasing.
     fn intervals(&mut self, count: usize) -> Result<()> {
         let mut previous = 0.;
         for _ in 0..count {
@@ -53,10 +66,20 @@ impl<'a> Input<'a> {
     }
 }
 
+/// Read a bounded Quake MDL version-six first-frame geometry and decode its preview geometry.
+///
+/// # Errors
+/// Returns an error for unreadable input, invalid version/counts, truncated records, invalid
+/// indices or nonfinite geometry.
 pub(super) fn load(path: &Path) -> Result<Scene> {
     parse(&super::read_file(path)?)
 }
 
+/// Validate MDL v6 records and expand the first compressed-vertex frame using its scale and origin.
+#[allow(
+    clippy::cast_sign_loss,
+    reason = "Every signed MDL vertex index is checked against the bounded vertex array before native conversion."
+)]
 fn parse(bytes: &[u8]) -> Result<Scene> {
     let mut input = Input { bytes, position: 0 };
     if input.take(4)? != b"IDPO" || input.integer()? != 6 {
@@ -65,7 +88,7 @@ fn parse(bytes: &[u8]) -> Result<Scene> {
     let scale = input.vector()?;
     let origin = input.vector()?;
     input.float()?; // Radius.
-    input.vector()?; // Eye position.
+    let _ = input.vector()?; // Eye position.
     let skins = input.count()?;
     let skin_width = input.count()?;
     let skin_height = input.count()?;
@@ -129,9 +152,9 @@ fn parse(bytes: &[u8]) -> Result<Scene> {
                     .iter()
                     .map(|v| {
                         Vec3::new(
-                            v[0] as f64 * scale.x + origin.x,
-                            v[1] as f64 * scale.y + origin.y,
-                            v[2] as f64 * scale.z + origin.z,
+                            f64::from(v[0]) * scale.x + origin.x,
+                            f64::from(v[1]) * scale.y + origin.y,
+                            f64::from(v[2]) * scale.z + origin.z,
                         )
                     })
                     .collect();
@@ -153,6 +176,7 @@ fn parse(bytes: &[u8]) -> Result<Scene> {
             .collect(),
         points: Vec::new(),
         lines: Vec::new(),
+        ..Scene::default()
     };
     scene.validate()?;
     Ok(scene)
@@ -177,7 +201,7 @@ mod tests {
         for value in [1i32, 0, 1, 2] {
             bytes.extend(value.to_le_bytes());
         }
-        bytes.extend((if grouped { 1i32 } else { 0i32 }).to_le_bytes());
+        bytes.extend(i32::from(grouped).to_le_bytes());
         if grouped {
             bytes.extend(2i32.to_le_bytes());
             bytes.extend([0; 8]);
@@ -202,7 +226,9 @@ mod tests {
                     Vec3::new(10., 23., 30.)
                 ]
             );
-            assert!(crate::render::render(&scene, &Default::default()).is_ok());
+            assert!(
+                crate::render::render(&scene, &crate::render::RenderOptions::default()).is_ok()
+            );
         }
     }
     #[test]

@@ -14,22 +14,31 @@ use std::{
     path::Path,
 };
 
+/// Subdirectory containing retained point-cloud and raster fixture resources.
 const DIR: &str = "images_points";
+/// Provenance label for deterministic MIT-licensed examples authored in this generator.
 const AUTHORED: &str =
     "Author-created deterministic Rust fixture; MIT, matching the project license";
+/// Source and retained Apache-2.0 notices for the unchanged Esri point-cloud package.
 const ESRI: &str = "Unmodified Esri LEPCC testData/SMALL_AUTZEN_LAS_All.slpk; Apache-2.0; https://github.com/Esri/lepcc; original license and notice retained in images_points/ESRI-LICENSE.txt and ESRI-NOTICE.txt";
+/// Attribution for an authored color package retaining unchanged Esri XYZ geometry.
 const ESRI_COLORED: &str = "Authored I3S 2.0 package and LEPCC RGB bands (MIT), containing unchanged Esri LEPCC SMALL_AUTZEN_LAS_All XYZ geometry (Apache-2.0); https://github.com/Esri/lepcc; license and notice retained in images_points/ESRI-LICENSE.txt and ESRI-NOTICE.txt";
 
+/// Write, verify and register point-cloud and raster inputs under one corpus root.
 struct Fixtures<'a> {
+    /// Root directory into which the corpus resources are written.
     root: &'a Path,
+    /// Manifest entries for successfully verified generated or retained inputs.
     cases: Vec<crate::Fixture>,
 }
 
 impl Fixtures<'_> {
+    /// Write a fixture or license resource into the point/raster subdirectory.
     fn resource(&self, name: &str, bytes: &[u8]) -> Result<()> {
         fs::write(self.root.join(DIR).join(name), bytes)?;
         Ok(())
     }
+    /// Verify geometry or image diversity and register a nonempty rendered fixture.
     fn register(
         &mut self,
         id: &str,
@@ -64,6 +73,7 @@ impl Fixtures<'_> {
         ));
         Ok(())
     }
+    /// Write an authored input, validate its decoded output and record its provenance.
     fn add(
         &mut self,
         id: &str,
@@ -77,6 +87,12 @@ impl Fixtures<'_> {
     }
 }
 
+/// Generate point-cloud and raster examples and retain the attributed Esri resources.
+///
+/// # Errors
+///
+/// Returns an error if directories or resources cannot be written, a format encoder fails,
+/// or a generated input fails geometry, color, placement or thumbnail verification.
 pub fn generate(root: &Path) -> Result<Vec<crate::Fixture>> {
     fs::create_dir_all(root.join(DIR))?;
     let mut fixtures = Fixtures {
@@ -174,8 +190,13 @@ fn verify_points(path: &Path, extension: &str, id: &str) -> Result<()> {
 }
 
 /// Package unchanged independently encoded XYZ with an independently authored
-/// ClusterRGB raw stream. The original Esri package stays byte-for-byte intact.
+/// `ClusterRGB` raw stream. The original Esri package stays byte-for-byte intact.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "The retained Esri payload contains exactly 106 points, so its LEPCC count fits the u32 header."
+)]
 fn colored_slpk() -> Result<Vec<u8>> {
+    /// Number of points in the independently encoded retained Esri XYZ payload.
     const COUNT: usize = 106;
     let palette = [
         [235u8, 75, 50],
@@ -199,14 +220,14 @@ fn colored_slpk() -> Result<Vec<u8>> {
     let mut second = 0u32;
     for word in rgb[16..].chunks(2) {
         let value = u16::from_be_bytes([word[0], word.get(1).copied().unwrap_or(0)]);
-        first = (first + value as u32) % 65535;
-        second = (second + first) % 65535;
+        first = (first + u32::from(value)) % 65_535;
+        second = (second + first) % 65_535;
     }
     if first == 0 {
-        first = 65535;
+        first = 65_535;
     }
     if second == 0 {
-        second = 65535;
+        second = 65_535;
     }
     rgb[12..16].copy_from_slice(&((second << 16) | first).to_le_bytes());
     let layer = serde_json::json!({
@@ -237,20 +258,28 @@ fn colored_slpk() -> Result<Vec<u8>> {
 }
 
 #[derive(Clone, Copy)]
+/// One authored sample with Cartesian placement and an eight-bit RGB color.
 struct ColoredPoint {
+    /// Cartesian sample position before a format-specific placement or axis conversion.
     position: [f64; 3],
+    /// Red, green and blue channels used to verify color decoding.
     color: [u8; 3],
 }
 
 /// Two densely sampled helical rails and sixteen colored rungs. The asymmetric
 /// red/blue rails make axis, color and placement regressions visible.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "The sampled helix parameter lies in [0,1]; authored palette increments remain nonnegative and below 256."
+)]
 fn helix() -> Vec<ColoredPoint> {
     let mut points = Vec::new();
     for i in 0..256 {
-        let t = i as f64 / 255.;
+        let t = f64::from(i) / 255.;
         let angle = t * TAU * 1.6;
         for strand in 0..2 {
-            let phase = angle + strand as f64 * TAU / 2.;
+            let phase = angle + f64::from(strand) * TAU / 2.;
             points.push(ColoredPoint {
                 position: [phase.cos(), phase.sin(), (t - 0.5) * 3.2],
                 color: if strand == 0 {
@@ -262,10 +291,10 @@ fn helix() -> Vec<ColoredPoint> {
         }
     }
     for rung in 0..16 {
-        let t = (rung as f64 + 0.5) / 16.;
+        let t = (f64::from(rung) + 0.5) / 16.;
         let angle = t * TAU * 1.6;
         for i in 1..24 {
-            let radius = 1. - i as f64 / 12.;
+            let radius = 1. - f64::from(i) / 12.;
             points.push(ColoredPoint {
                 position: [radius * angle.cos(), radius * angle.sin(), (t - 0.5) * 3.2],
                 color: if rung % 2 == 0 {
@@ -279,15 +308,27 @@ fn helix() -> Vec<ColoredPoint> {
     points
 }
 
-fn point_formats(f: &mut Fixtures<'_>) -> Result<()> {
+/// Encode and register the helix in scan, Gaussian-splat, lidar and survey formats.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "The authored helix coordinates are bounded and intentionally quantized to the SPLAT f32 layout."
+)]
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keep all point encoders and their aliases together while validating the same independently authored helix."
+)]
+fn point_formats(fixtures: &mut Fixtures<'_>) -> Result<()> {
     let points = helix();
     let mut pts = format!("{}\n", points.len());
-    for p in &points {
-        let [x, y, z] = p.position;
-        let [r, g, b] = p.color;
-        writeln!(pts, "{x:.6} {y:.6} {z:.6} 0.8 {r} {g} {b}")?;
+    for point in &points {
+        let [x_coordinate, y_coordinate, z_coordinate] = point.position;
+        let [red, green, blue] = point.color;
+        writeln!(
+            pts,
+            "{x_coordinate:.6} {y_coordinate:.6} {z_coordinate:.6} 0.8 {red} {green} {blue}"
+        )?;
     }
-    f.add(
+    fixtures.add(
         "pts-colored-helix",
         "pts",
         "PTS counted colored double helix",
@@ -299,13 +340,16 @@ fn point_formats(f: &mut Fixtures<'_>) -> Result<()> {
         "{}\n1\n8 -3 2\n0 -1 0\n1 0 0\n0 0 1\n0 -1 0 0\n1 0 0 0\n0 0 1 0\n8 -3 2 1\n",
         points.len() + 1
     );
-    for p in &points {
-        let [x, y, z] = p.position;
-        let [r, g, b] = p.color;
-        writeln!(ptx, "{x:.6} {y:.6} {z:.6} 0.8 {r} {g} {b}")?;
+    for point in &points {
+        let [x_coordinate, y_coordinate, z_coordinate] = point.position;
+        let [red, green, blue] = point.color;
+        writeln!(
+            ptx,
+            "{x_coordinate:.6} {y_coordinate:.6} {z_coordinate:.6} 0.8 {red} {green} {blue}"
+        )?;
     }
     ptx.push_str("0 0 0 0 0 0 0\n");
-    f.add(
+    fixtures.add(
         "ptx-transformed-helix",
         "ptx",
         "PTX transformed scan and missing return",
@@ -319,21 +363,21 @@ fn point_formats(f: &mut Fixtures<'_>) -> Result<()> {
             _ => "pcd-ascii-helix",
         };
         let title = format!("PCD {encoding} colored double helix");
-        f.add(id, "pcd", &title, "model", &pcd(&points, encoding))?;
+        fixtures.add(id, "pcd", &title, "model", &pcd(&points, encoding))?;
     }
     let mut splat = Vec::new();
-    for p in &points {
-        for value in p.position {
+    for point in &points {
+        for value in point.position {
             splat.extend((value as f32).to_le_bytes());
         }
         for value in [0.04f32, 0.03, 0.06] {
             splat.extend(value.to_le_bytes());
         }
-        splat.extend(p.color);
+        splat.extend(point.color);
         splat.push(255);
         splat.extend([255, 128, 128, 128]); // Quantized identity quaternion, WXYZ.
     }
-    f.add(
+    fixtures.add(
         "splat-colored-helix",
         "splat",
         "Gaussian SPLAT colored centers",
@@ -341,7 +385,7 @@ fn point_formats(f: &mut Fixtures<'_>) -> Result<()> {
         &splat,
     )?;
     for version in 1..=4 {
-        f.add(
+        fixtures.add(
             &format!("spz-v{version}-helix"),
             "spz",
             &format!(
@@ -353,7 +397,7 @@ fn point_formats(f: &mut Fixtures<'_>) -> Result<()> {
         )?;
     }
     for compressed in [false, true] {
-        f.add(
+        fixtures.add(
             if compressed {
                 "laz-colored-helix"
             } else {
@@ -371,7 +415,7 @@ fn point_formats(f: &mut Fixtures<'_>) -> Result<()> {
     }
     for (layout, name) in [(0, "dimension"), (1, "interleaved"), (2, "byte")] {
         for compressed in [false, true] {
-            f.add(
+            fixtures.add(
                 &format!("bpf-{name}-{}", if compressed { "zlib" } else { "raw" }),
                 "bpf",
                 &format!(
@@ -383,8 +427,8 @@ fn point_formats(f: &mut Fixtures<'_>) -> Result<()> {
             )?;
         }
     }
-    for version in [20010712, 20020715] {
-        f.add(
+    for version in [20_010_712, 20_020_715] {
+        fixtures.add(
             &format!("bin-terrascan-{version}"),
             "bin",
             &format!("TerraScan {version} colored survey points"),
@@ -393,7 +437,7 @@ fn point_formats(f: &mut Fixtures<'_>) -> Result<()> {
         )?;
     }
     for (size, big) in [(40, false), (48, false), (56, true)] {
-        f.add(
+        fixtures.add(
             &format!(
                 "qi-{}-{}",
                 size / 4,
@@ -409,14 +453,14 @@ fn point_formats(f: &mut Fixtures<'_>) -> Result<()> {
             &qfit(&points, size, big),
         )?;
     }
-    f.add(
+    fixtures.add(
         "sbet-survey-trajectory",
         "sbet",
         "SBET navigation trajectory in radians",
         "model",
         &sbet(&points),
     )?;
-    f.add(
+    fixtures.add(
         "csd-survey-echoes",
         "csd",
         "Optech CSD range echoes and platform placement",
@@ -426,10 +470,16 @@ fn point_formats(f: &mut Fixtures<'_>) -> Result<()> {
     Ok(())
 }
 
+/// Pack one RGB triple into the PCD unsigned red-green-blue word layout.
 fn packed_rgb(p: ColoredPoint) -> u32 {
-    (p.color[0] as u32) << 16 | (p.color[1] as u32) << 8 | p.color[2] as u32
+    (u32::from(p.color[0])) << 16 | (u32::from(p.color[1])) << 8 | u32::from(p.color[2])
 }
 
+/// Encode the helix as ASCII, interleaved binary or field-major LZF-compressed PCD.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "The authored 880-point helix and its LZF payload fit u32 lengths; coordinates intentionally use the PCD f32 layout."
+)]
 fn pcd(points: &[ColoredPoint], encoding: &str) -> Vec<u8> {
     let mut data = format!("# .PCD v0.7\nVERSION 0.7\nFIELDS x y z rgb\nSIZE 4 4 4 4\nTYPE F F F U\nCOUNT 1 1 1 1\nWIDTH {}\nHEIGHT 1\nVIEWPOINT 0 0 0 1 0 0 0\nPOINTS {}\nDATA {encoding}\n", points.len(), points.len()).into_bytes();
     if encoding == "ascii" {
@@ -463,6 +513,10 @@ fn pcd(points: &[ColoredPoint], encoding: &str) -> Vec<u8> {
 }
 
 /// Independent LZF writer with literal runs and overlapping back references.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "LZF bounds literals to 32 bytes, matches to 264 and distances to 8192; the last offset byte intentionally keeps its low bits."
+)]
 fn lzf_encode(data: &[u8]) -> Vec<u8> {
     let mut out = Vec::new();
     let mut literals = Vec::new();
@@ -522,6 +576,12 @@ fn lzf_encode(data: &[u8]) -> Vec<u8> {
 }
 
 /// Round f32 coordinates to IEEE binary16 for the original SPZ v1 layout.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    reason = "IEEE binary16 encoding splits fixed-width sign/exponent/mantissa fields; positive exponents and retained low bits use intentional narrowing."
+)]
 fn half(value: f32) -> u16 {
     let bits = value.to_bits();
     let sign = (bits >> 16) as u16 & 0x8000;
@@ -538,6 +598,12 @@ fn half(value: f32) -> u16 {
     sign | (((exponent as u32) << 10) + rounded) as u16
 }
 
+/// Encode SPZ coordinate, opacity, spherical-harmonic color, scale and rotation planes.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Bounded helix coordinates fit SPZ signed 24-bit placement; Gaussian colors are intentionally rounded within the byte range."
+)]
 fn spz_attributes(points: &[ColoredPoint], version: u32) -> Vec<Vec<u8>> {
     let mut attributes = vec![Vec::new(); 5];
     for p in points {
@@ -551,13 +617,14 @@ fn spz_attributes(points: &[ColoredPoint], version: u32) -> Vec<Vec<u8>> {
         }
         attributes[1].push(255);
         for channel in p.color {
-            let encoded =
-                (0.5 + ((channel as f64 / 255.) - 0.5) * 0.15 / 0.28209479177387814) * 255.;
+            let encoded = (0.5
+                + ((f64::from(channel) / 255.) - 0.5) * 0.15 / 0.282_094_791_773_878_14)
+                * 255.;
             attributes[2].push(encoded.round() as u8);
         }
         attributes[3].extend([109, 104, 115]); // Quantized log scales for small Gaussians.
         if version >= 3 {
-            attributes[4].extend(0xc0000000u32.to_le_bytes());
+            attributes[4].extend(0xc000_0000u32.to_le_bytes());
         } else {
             attributes[4].extend([128, 128, 128]);
         }
@@ -565,6 +632,11 @@ fn spz_attributes(points: &[ColoredPoint], version: u32) -> Vec<Vec<u8>> {
     attributes
 }
 
+/// Write a single-segment Zstandard frame with one raw or repeated-byte final block.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "Authored SPZ planes are small nonempty buffers that fit both the u32 content-size and 24-bit block headers."
+)]
 fn zstd_raw(data: &[u8]) -> Vec<u8> {
     // Single-segment frame with a 32-bit content size. Constant alpha planes
     // use a real RLE block; remaining attribute planes use a raw final block.
@@ -580,6 +652,11 @@ fn zstd_raw(data: &[u8]) -> Vec<u8> {
     frame
 }
 
+/// Package SPZ attributes as a gzip stream or independently framed Zstandard planes.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "The authored helix has 880 points, fitting every version of the SPZ u32 count header."
+)]
 fn spz(points: &[ColoredPoint], version: u32) -> Result<Vec<u8>> {
     let attributes = spz_attributes(points, version);
     let mut bytes = b"NGSP".to_vec();
@@ -608,6 +685,7 @@ fn spz(points: &[ColoredPoint], version: u32) -> Result<Vec<u8>> {
     }
 }
 
+/// Write LAS or LAZ with translated coordinates and full-range sixteen-bit RGB.
 fn las(points: &[ColoredPoint], compressed: bool) -> Result<Vec<u8>> {
     let mut builder = las::Builder::from((1, 4));
     builder.point_format = las::point::Format::new(2)?;
@@ -617,7 +695,7 @@ fn las(points: &[ColoredPoint], compressed: bool) -> Result<Vec<u8>> {
     builder.date = None;
     let mut writer = las::Writer::new(Cursor::new(Vec::new()), builder.into_header()?)?;
     for p in points {
-        let [r, g, b] = p.color.map(|v| v as u16 * 257);
+        let [r, g, b] = p.color.map(|v| u16::from(v) * 257);
         writer.write_point(las::Point {
             x: p.position[0] + 1000.,
             y: p.position[1] + 2000.,
@@ -631,7 +709,13 @@ fn las(points: &[ColoredPoint], compressed: bool) -> Result<Vec<u8>> {
     Ok(writer.into_inner()?.into_inner())
 }
 
+/// Write BPF v3 XYZ/RGB dimensions in one of three layouts, optionally split into zlib blocks.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "Six dimensions and 880 samples fit BPF byte/u32 headers; coordinates intentionally quantize to f32."
+)]
 fn bpf(points: &[ColoredPoint], layout: u8, compressed: bool) -> Result<Vec<u8>> {
+    /// Number of BPF dimensions: three coordinates followed by three color channels.
     const DIMENSIONS: usize = 6;
     let mut bytes = b"BPF!0003".to_vec();
     bytes.extend((176u32 + 56 * DIMENSIONS as u32).to_le_bytes());
@@ -654,9 +738,9 @@ fn bpf(points: &[ColoredPoint], layout: u8, compressed: bool) -> Result<Vec<u8>>
                 p.position[0] as f32,
                 p.position[1] as f32,
                 p.position[2] as f32,
-                p.color[0] as f32 * 257.,
-                p.color[1] as f32 * 257.,
-                p.color[2] as f32 * 257.,
+                f32::from(p.color[0]) * 257.,
+                f32::from(p.color[1]) * 257.,
+                f32::from(p.color[2]) * 257.,
             ]
         })
         .collect();
@@ -669,7 +753,7 @@ fn bpf(points: &[ColoredPoint], layout: u8, compressed: bool) -> Result<Vec<u8>>
                 .reduce(if maximum { f32::max } else { f32::min })
                 .unwrap();
             let offset = [1000f64, 2000., 10., 0., 0., 0.][d];
-            bytes.extend((value as f64 + offset).to_le_bytes());
+            bytes.extend((f64::from(value) + offset).to_le_bytes());
         }
     }
     for label in ["X", "Y", "Z", "Red", "Green", "Blue"] {
@@ -708,10 +792,10 @@ fn bpf(points: &[ColoredPoint], layout: u8, compressed: bool) -> Result<Vec<u8>>
         for block in data.chunks(4096) {
             let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
             encoder.write_all(block)?;
-            let encoded = encoder.finish()?;
+            let compressed_bytes = encoder.finish()?;
             bytes.extend((block.len() as u32).to_le_bytes());
-            bytes.extend((encoded.len() as u32).to_le_bytes());
-            bytes.extend(encoded);
+            bytes.extend((compressed_bytes.len() as u32).to_le_bytes());
+            bytes.extend(compressed_bytes);
         }
     } else {
         bytes.extend(data);
@@ -719,29 +803,35 @@ fn bpf(points: &[ColoredPoint], layout: u8, compressed: bool) -> Result<Vec<u8>>
     Ok(bytes)
 }
 
+/// Write `TerraScan` survey records with integer millimetre coordinates and byte RGB.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "The 880-point helix, bounded millimetre coordinates and small timestamps fit the TerraScan integer record fields."
+)]
 fn terra(points: &[ColoredPoint], version: u32) -> Vec<u8> {
     let mut bytes = Vec::new();
-    for value in [56, version, 970401] {
+    for value in [56, version, 970_401] {
         bytes.extend(value.to_le_bytes());
     }
     bytes.extend(b"CXYZ");
     bytes.extend((points.len() as u32).to_le_bytes());
     bytes.extend(1000i32.to_le_bytes());
-    for value in [1000000f64, 2000000., 10000.] {
+    for value in [1_000_000f64, 2_000_000., 10_000.] {
         bytes.extend(value.to_le_bytes());
     }
     bytes.extend(1u32.to_le_bytes());
     bytes.extend(1u32.to_le_bytes());
     for (i, p) in points.iter().enumerate() {
-        if version == 20010712 {
+        if version == 20_010_712 {
             bytes.extend([1, 1, 0, 0]);
         }
         for (axis, value) in p.position.iter().enumerate() {
             bytes.extend(
-                ((value * 1000.).round() as i32 + [1000000, 2000000, 10000][axis]).to_le_bytes(),
+                ((value * 1000.).round() as i32 + [1_000_000, 2_000_000, 10_000][axis])
+                    .to_le_bytes(),
             );
         }
-        if version == 20020715 {
+        if version == 20_020_715 {
             bytes.extend([1, 1, 0, 0, 0, 0, 0, 0]);
         }
         bytes.extend((i as u32 * 100).to_le_bytes());
@@ -751,6 +841,12 @@ fn terra(points: &[ColoredPoint], version: u32) -> Vec<u8> {
     bytes
 }
 
+/// Write ten-, twelve- or fourteen-word QFIT records in the selected byte order.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    reason = "QFIT record sizes are 40/48/56 bytes and 880 authored geographic samples fit every signed record field."
+)]
 fn qfit(points: &[ColoredPoint], size: usize, big: bool) -> Vec<u8> {
     let mut bytes = vec![0; size * (points.len() + 2)];
     let put = |bytes: &mut [u8], offset: usize, value: i32| {
@@ -782,6 +878,11 @@ fn qfit(points: &[ColoredPoint], size: usize, big: bool) -> Vec<u8> {
     bytes
 }
 
+/// Write SBET navigation records with geographic radians and altitude placement.
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "The authored trajectory has only 880 entries, so converting sample indices to f64 timestamps is exact."
+)]
 fn sbet(points: &[ColoredPoint]) -> Vec<u8> {
     let mut bytes = Vec::new();
     for (i, p) in points.iter().enumerate() {
@@ -797,6 +898,12 @@ fn sbet(points: &[ColoredPoint]) -> Vec<u8> {
     bytes
 }
 
+/// Write CSD platform positions and two downward range echoes for each helix point.
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    reason = "The authored 880-point survey fits CSD count words; its bounded platform heights intentionally use f32."
+)]
 fn csd(points: &[ColoredPoint]) -> Vec<u8> {
     let mut bytes = vec![0; 2048];
     bytes[..4].copy_from_slice(b"CSD\0");
@@ -827,6 +934,11 @@ fn csd(points: &[ColoredPoint]) -> Vec<u8> {
 
 /// Color chart with a chevron, ring and stepped bands. Each codec/alias gets a
 /// different orientation/palette, while RGBA codecs retain a soft alpha edge.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    reason = "The chart is 96 by 64 pixels with small fixed palette seeds; every byte channel and signed geometry operand stays in range."
+)]
 fn pattern(seed: u32) -> RgbaImage {
     RgbaImage::from_fn(96, 64, |x, y| {
         let x = if seed.is_multiple_of(2) { x } else { 95 - x };
@@ -876,12 +988,18 @@ fn pattern(seed: u32) -> RgbaImage {
     })
 }
 
-fn encoded(image: DynamicImage, format: ImageFormat) -> Result<Vec<u8>> {
+/// Encode a dynamic raster using the requested image crate codec.
+fn encoded(image: &DynamicImage, format: ImageFormat) -> Result<Vec<u8>> {
     let mut cursor = Cursor::new(Vec::new());
     image.write_to(&mut cursor, format)?;
     Ok(cursor.into_inner())
 }
 
+/// Register patterned raster aliases and synthetic native/RLE DICOM captures.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "The enumerated raster palette seeds are the eight small fixed codec entries, fitting u32."
+)]
 fn image_formats(f: &mut Fixtures<'_>) -> Result<()> {
     for (seed, (extension, format, title)) in [
         ("png", ImageFormat::Png, "PNG color chart with alpha"),
@@ -907,13 +1025,19 @@ fn image_formats(f: &mut Fixtures<'_>) -> Result<()> {
             extension,
             title,
             "image",
-            &encoded(image, format)?,
+            &encoded(&image, format)?,
         )?;
     }
     let hdr = pattern(8);
     let pixels: Vec<_> = hdr
         .pixels()
-        .map(|p| Rgb([p[0] as f32 / 255., p[1] as f32 / 255., p[2] as f32 / 255.]))
+        .map(|p| {
+            Rgb([
+                f32::from(p[0]) / 255.,
+                f32::from(p[1]) / 255.,
+                f32::from(p[2]) / 255.,
+            ])
+        })
         .collect();
     let mut bytes = Vec::new();
     image::codecs::hdr::HdrEncoder::new(&mut bytes).encode(&pixels, 96, 64)?;
@@ -930,7 +1054,7 @@ fn image_formats(f: &mut Fixtures<'_>) -> Result<()> {
         "exr",
         "OpenEXR float RGBA chart",
         "image",
-        &encoded(exr.into(), ImageFormat::OpenExr)?,
+        &encoded(&exr.into(), ImageFormat::OpenExr)?,
     )?;
     let raw_tga = pattern(10);
     let mut bytes = Vec::new();
@@ -949,40 +1073,45 @@ fn image_formats(f: &mut Fixtures<'_>) -> Result<()> {
         "dcm",
         "DICOM native RGB secondary capture",
         "image",
-        &dicom(true, false, false)?,
+        &dicom(true, false, false),
     )?;
     f.add(
         "dcm-rle-rgb-pattern",
         "dcm",
         "DICOM RLE three-plane RGB capture",
         "image",
-        &dicom(true, false, true)?,
+        &dicom(true, false, true),
     )?;
     f.add(
         "dcm-native-gray16-pattern",
         "dcm",
         "DICOM native 16-bit grayscale capture",
         "image",
-        &dicom(false, true, false)?,
+        &dicom(false, true, false),
     )?;
     f.add(
         "dcm-rle-gray-pattern",
         "dcm",
         "DICOM RLE 8-bit grayscale capture",
         "image",
-        &dicom(false, false, true)?,
+        &dicom(false, false, true),
     )?;
     Ok(())
 }
 
-fn dicom_element(out: &mut Vec<u8>, group: u16, tag: u16, vr: &[u8; 2], mut value: Vec<u8>) {
+/// Append one explicit-VR little-endian DICOM element with even-length padding.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "The synthetic capture metadata and 96-by-64 pixel arrays fit DICOM u16/u32 element lengths."
+)]
+fn dicom_element(out: &mut Vec<u8>, group: u16, tag: u16, vr: [u8; 2], mut value: Vec<u8>) {
     if !value.len().is_multiple_of(2) {
-        value.push(if vr == b"UI" { 0 } else { b' ' });
+        value.push(if vr == *b"UI" { 0 } else { b' ' });
     }
     out.extend(group.to_le_bytes());
     out.extend(tag.to_le_bytes());
     out.extend(vr);
-    if [b"OB", b"OW", b"SQ", b"UN", b"UT"].contains(&vr) {
+    if [*b"OB", *b"OW", *b"SQ", *b"UN", *b"UT"].contains(&vr) {
         out.extend([0; 2]);
         out.extend((value.len() as u32).to_le_bytes());
     } else {
@@ -991,7 +1120,17 @@ fn dicom_element(out: &mut Vec<u8>, group: u16, tag: u16, vr: &[u8; 2], mut valu
     out.extend(value);
 }
 
-fn dicom(rgb: bool, gray16: bool, rle: bool) -> Result<Vec<u8>> {
+/// Build a synthetic secondary capture with RGB or grayscale pixels and optional RLE planes.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    reason = "The fixed 96-by-64 chart has small pixel coordinates and frame lengths fitting its DICOM element and segment fields."
+)]
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keep synthetic DICOM metadata and native/encapsulated pixel layout together so every capture shares one authored chart."
+)]
+fn dicom(rgb: bool, gray16: bool, rle: bool) -> Vec<u8> {
     let mut meta = Vec::new();
     let syntax = if rle {
         "1.2.840.10008.1.2.5"
@@ -1000,7 +1139,9 @@ fn dicom(rgb: bool, gray16: bool, rle: bool) -> Result<Vec<u8>> {
     };
     let uid = format!(
         "2.25.123456789012345678901234567890123{}{}{}",
-        rgb as u8, gray16 as u8, rle as u8
+        u8::from(rgb),
+        u8::from(gray16),
+        u8::from(rle)
     );
     for (tag, vr, value) in [
         (1, b"OB", vec![0, 1]),
@@ -1009,7 +1150,7 @@ fn dicom(rgb: bool, gray16: bool, rle: bool) -> Result<Vec<u8>> {
         (0x10, b"UI", syntax.as_bytes().to_vec()),
         (0x12, b"UI", b"2.25.123456789012345678901234567890".to_vec()),
     ] {
-        dicom_element(&mut meta, 2, tag, vr, value);
+        dicom_element(&mut meta, 2, tag, *vr, value);
     }
     let mut out = vec![0; 128];
     out.extend(b"DICM");
@@ -1017,7 +1158,7 @@ fn dicom(rgb: bool, gray16: bool, rle: bool) -> Result<Vec<u8>> {
         &mut out,
         2,
         0,
-        b"UL",
+        *b"UL",
         (meta.len() as u32).to_le_bytes().to_vec(),
     );
     out.extend(meta);
@@ -1025,30 +1166,30 @@ fn dicom(rgb: bool, gray16: bool, rle: bool) -> Result<Vec<u8>> {
         &mut out,
         8,
         0x16,
-        b"UI",
+        *b"UI",
         b"1.2.840.10008.5.1.4.1.1.7".to_vec(),
     );
-    dicom_element(&mut out, 8, 0x18, b"UI", uid.as_bytes().to_vec());
-    dicom_element(&mut out, 8, 0x60, b"CS", b"OT".to_vec());
+    dicom_element(&mut out, 8, 0x18, *b"UI", uid.as_bytes().to_vec());
+    dicom_element(&mut out, 8, 0x60, *b"CS", b"OT".to_vec());
     dicom_element(
         &mut out,
         0x10,
         0x10,
-        b"PN",
+        *b"PN",
         b"AUTHOR^CREATED^PATTERN".to_vec(),
     );
     dicom_element(
         &mut out,
         0x28,
         2,
-        b"US",
+        *b"US",
         (if rgb { 3u16 } else { 1 }).to_le_bytes().to_vec(),
     );
     dicom_element(
         &mut out,
         0x28,
         4,
-        b"CS",
+        *b"CS",
         if rgb {
             b"RGB".to_vec()
         } else {
@@ -1056,7 +1197,7 @@ fn dicom(rgb: bool, gray16: bool, rle: bool) -> Result<Vec<u8>> {
         },
     );
     if rgb {
-        dicom_element(&mut out, 0x28, 6, b"US", 0u16.to_le_bytes().to_vec());
+        dicom_element(&mut out, 0x28, 6, *b"US", 0u16.to_le_bytes().to_vec());
     }
     let bits = if gray16 { 16u16 } else { 8 };
     for (tag, value) in [
@@ -1067,7 +1208,7 @@ fn dicom(rgb: bool, gray16: bool, rle: bool) -> Result<Vec<u8>> {
         (0x102, bits - 1),
         (0x103, 0),
     ] {
-        dicom_element(&mut out, 0x28, tag, b"US", value.to_le_bytes().to_vec());
+        dicom_element(&mut out, 0x28, tag, *b"US", value.to_le_bytes().to_vec());
     }
     let mut pixels = Vec::new();
     for (x, y, p) in pattern(if rgb { 11 } else { 12 }).enumerate_pixels() {
@@ -1083,21 +1224,13 @@ fn dicom(rgb: bool, gray16: bool, rle: bool) -> Result<Vec<u8>> {
                 ((x * 180 / 95 + y * 70 / 63) as u8).min(250)
             };
             if gray16 {
-                pixels.extend((value as u16 * 257).to_le_bytes());
+                pixels.extend((u16::from(value) * 257).to_le_bytes());
             } else {
                 pixels.push(value);
             }
         }
     }
-    if !rle {
-        dicom_element(
-            &mut out,
-            0x7fe0,
-            0x10,
-            if gray16 { b"OW" } else { b"OB" },
-            pixels,
-        );
-    } else {
+    if rle {
         let samples = if rgb { 3 } else { 1 };
         let mut frame = vec![0; 64];
         frame[..4].copy_from_slice(&(samples as u32).to_le_bytes());
@@ -1131,10 +1264,25 @@ fn dicom(rgb: bool, gray16: bool, rle: bool) -> Result<Vec<u8>> {
         out.extend(0xfffeu16.to_le_bytes());
         out.extend(0xe0ddu16.to_le_bytes());
         out.extend(0u32.to_le_bytes());
+    } else {
+        dicom_element(
+            &mut out,
+            0x7fe0,
+            0x10,
+            if gray16 { *b"OW" } else { *b"OB" },
+            pixels,
+        );
     }
-    Ok(out)
+    out
 }
 
+/// Encode one DICOM scalar row using `PackBits` repeat runs and bounded literal runs.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    reason = "PackBits bounds runs to 128 bytes; a signed repeat control intentionally preserves its two-complement byte representation."
+)]
 fn packbits(row: &[u8]) -> Vec<u8> {
     let mut out = Vec::new();
     let mut cursor = 0;

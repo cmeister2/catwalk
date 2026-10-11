@@ -44,8 +44,8 @@ These seven extension aliases are additional saved-image formats, outside the pu
 | [XBF](#xbf) | `.xbf` | Subset: native binary XCAF static B-rep geometry, free shapes, instance placements and diffuse colors. |
 | [Alembic](#alembic) | `.abc` | Subset: Ogawa/HDF5 first-sample meshes, subdivision cages, points, sampled curves, transforms, instances and RGB. |
 | [OBJ](#obj) | `.obj` | Subset: static polygons, polylines and points, vertex RGB and local MTL diffuse colors. |
-| [GLTF, GLTFDraco](#gltf) | `.gltf` | Subset: triangle/point/line scenes, first animation pose, weighted skins, morphs, colors and Rust Draco/quantized decoding. |
-| [GLB, GLBDraco](#glb) | `.glb` | Subset: triangle/point/line scenes, first animation pose, weighted skins, morphs, colors and Rust Draco/quantized decoding. |
+| [GLTF, GLTFDraco](#gltf) | `.gltf` | Subset: textured triangle/point/line scenes, alpha, normals, first poses, skins/morphs, GPU instances and Rust Draco/quantized decoding. |
+| [GLB, GLBDraco](#glb) | `.glb` | Subset: textured triangle/point/line scenes, alpha, normals, first poses, skins/morphs, GPU instances and Rust Draco/quantized decoding. |
 | [Draco](#draco) | `.drc` | Subset: sequential/Edgebreaker meshes and sequential/kd-tree point clouds, positions and colors. |
 | [3DS](#3ds) | `.3ds` | Subset: static triangle meshes, diffuse colors and earliest-key object hierarchy. |
 | [VRMLReader](#vrml) | `.wrl`, `.vrml` | Subset: VRML97 text, static shapes, lines, terrain, extrusions, DEF/USE, transforms and colors. |
@@ -72,7 +72,7 @@ These seven extension aliases are additional saved-image formats, outside the pu
 
 ## Shared preview policies
 
-The renderer uses one automatically fitted orthographic view, a depth buffer, simple lighting, colored triangles, points and line segments. Static scene importers select the authored pose or earliest supported transform sample. Texture sampling, animation playback, authored camera views, scene lighting, volume transfer functions and Gaussian opacity/covariance are outside the current preview policy. Supporting a first static view permits omission of interactive viewer features, but does not remove the need to parse each model format correctly.
+The renderer uses one automatically fitted orthographic view, a depth buffer, simple lighting, colored triangles, points and line segments. Optional triangle appearances support base-color texture sampling, interpolated linear RGBA and normals, unlit shading, sidedness, alpha masks and per-sample depth-sorted transparency. glTF/GLB currently populate these appearances; other readers retain their stated material subsets. Static scene importers select the authored pose or earliest supported transform sample. Animation playback, authored camera views, scene lighting, full physically based materials, volume transfer functions and Gaussian opacity/covariance are outside the current preview policy. Supporting a first static view permits omission of interactive viewer features, but does not remove the need to parse each model format correctly.
 
 All current importers ignore non-geometric fields that do not affect their supported static geometry. Exact encoding restrictions are enforced by each reader. New variants need representative fixtures and thumbnail checks before this matrix changes to implemented.
 
@@ -408,23 +408,27 @@ OBJ loads static positions, faces, polylines and explicit points, with concave-a
 
 **Extensions:** `.gltf`.
 
-**Coverage:** Subset: triangle/point/line scenes, first animation pose, weighted skins, morphs, colors and Rust Draco/quantized decoding.
+**Coverage:** Subset: textured triangle/point/line scenes, alpha, normals, first poses, skins/morphs, GPU instances and Rust Draco/quantized decoding.
 
 glTF accepts triangle, triangle-strip, triangle-fan, point and line primitives, scene transforms, base material factors and vertex colors, following the [glTF 2.0 specification](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html). It evaluates the first animation at its earliest active channel timestamp; other channels clamp to their first value, and cubic samplers select the value from the first tangent/value/tangent triple. Unanimated scenes retain their authored pose.
 
-Morph position and `COLOR_0` deltas, including sparse accessors and normalized integer color data, are applied before skinning. Node weights override mesh defaults; primitives may omit targets and contribute zero deltas. Joint globals and inverse bind matrices produce genuine weighted geometry across multiple influence sets; the skinned mesh node transform is excluded as required by glTF.
+Morph position, normal, selected texture-coordinate and `COLOR_0` deltas, including sparse accessors and permitted normalized integer data, are applied before skinning. Node weights override mesh defaults; primitives may omit targets and contribute zero deltas. Joint globals and inverse bind matrices produce genuine weighted geometry across multiple influence sets; the skinned mesh node transform is excluded as required by glTF. Normals use the inverse transpose of the applicable affine transform, including the weighted joint matrix, then normalize. Singular transforms or cancelled normals fall back to geometric face normals.
 
-`KHR_draco_mesh_compression` decodes actual positions, colors, joints and weights with checked attribute IDs, counts, types and normalization. `KHR_mesh_quantization` supports permitted byte/short base positions and signed position morphs, retaining authored node or inverse-bind dequantization transforms. Required extensions outside these two and `KHR_materials_unlit` fail explicitly. Imported normals, texture sampling, later animation times and animation playback are omitted.
+Triangle materials sample actual PNG/JPEG base-color images from local relative paths, base64 data URIs or GLB buffer views. Selected `TEXCOORD_n`, `KHR_texture_transform` offset/rotation/scale and coordinate overrides are preserved. Shared images are decoded once. Repeat, mirrored repeat and clamp wrapping, distinct nearest/bilinear magnification and minification, and the specified base-level fallback for mipmap modes are supported. Texture RGB is decoded from sRGB before filtering and multiplication with linear base factors and interpolated vertex RGBA. Material `OPAQUE`, `MASK` and `BLEND`, alpha cutoffs above one, single-sided culling, mirrored winding, double-sided normal reversal and `KHR_materials_unlit` are evaluated. Blended fragments are sorted by depth for each raster sample and respect opaque geometry; appearance supersampling resolves linear premultiplied color.
 
-Seventeen importer/deformation/animation tests check weighted geometry, sparse data, quantization, morph colors, first poses and malformed input. Independent checks rendered 22 [Khronos sample-asset variants](https://github.com/KhronosGroup/glTF-Sample-Assets) and compared their emitted vertices against a separate accessor/TRS/morph/skin evaluator and Google Draco decoder. These checks establish the tested subset, not every extension or asset. See [GLB](#glb) for binary packaging.
+`KHR_draco_mesh_compression` decodes positions, normals, selected UVs, colors, joints and weights with checked attribute IDs, counts, types and normalization. `KHR_mesh_quantization` supports permitted byte/short positions, normals and texture coordinates, retaining authored node or inverse-bind dequantization transforms. `EXT_mesh_gpu_instancing` expands actual local TRS instances before the node's global transform; omitted TRS attributes retain their defaults and the uninstanced base mesh is not added. Required extensions outside these three, `KHR_texture_transform` and `KHR_materials_unlit` fail explicitly. Skin combined with GPU instancing is explicitly unsupported. Full metallic/roughness shading, normal/emissive/occlusion maps, texture appearances on point/line primitives, later animation times and playback remain omitted.
+
+Limits include 256 images/buffers, 1024 textures, 100,000 nodes/materials/instances per instancing batch, five million expanded geometry elements, fifty million expanded vertex transformations and 512 MiB aggregate buffer/external-image bytes. Each decoded texture is limited to 8192 pixels per axis and sixteen million pixels; distinct textures total at most sixty-four million pixels. Appearance rasterization caps bounding-box visits at 256 million and retained transparent fragments at four million. Exceeding a limit produces an error.
+
+Importer/deformation/animation tests check weighted geometry and normals, sparse data, quantization, morphs, first poses, instance composition and malformed input. [Thirteen additional gallery cases](../tests/fixtures/formats/mesh_scene/README.md) include authored appearance controls and four unchanged, licensed Khronos models: TextureCoordinateTest, TextureSettingsTest, AlphaBlendModeTest and SimpleInstancing. Independent qualification checks source hashes, geometry counts/bounds/areas, decoded PNG/JPEG pixels, samplers, material metadata and hand-computed transforms; the genuine instancing asset retains all 125 instances and 1500 triangles. Earlier independent checks rendered 22 [Khronos sample-asset variants](https://github.com/KhronosGroup/glTF-Sample-Assets) and compared their emitted vertices against a separate accessor/TRS/morph/skin evaluator and Google Draco decoder. These checks establish the tested subset, not every extension or asset. See [GLB](#glb) for binary packaging.
 
 ## GLB
 
 **Extensions:** `.glb`.
 
-**Coverage:** Subset: triangle/point/line scenes, first animation pose, weighted skins, morphs, colors and Rust Draco/quantized decoding.
+**Coverage:** Subset: textured triangle/point/line scenes, alpha, normals, first poses, skins/morphs, GPU instances and Rust Draco/quantized decoding.
 
-GLB decodes the binary glTF container, its JSON chunk and binary buffer chunk. Geometry, transforms, first animation poses, skins, morphs, colors and supported Draco/quantization extensions follow the [glTF reader](#gltf). Relative external resources and buffer/accessor layouts are validated. Generated glTF/GLB pairs render identically, and the independent Khronos checks include binary-packaged variants.
+GLB decodes the binary glTF container, its JSON chunk and binary buffer chunk. Geometry, textures, alpha, normals, transforms, first animation poses, skins, morphs and supported extensions follow the [glTF reader](#gltf). Relative external resources and buffer/accessor layouts are validated. Generated glTF/GLB pairs render identically, and the independent Khronos checks include binary-packaged variants.
 
 ## Draco
 

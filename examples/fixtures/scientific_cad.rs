@@ -10,14 +10,18 @@ use netcdf_writer::{NcAttrValue, NcFileBuilder, NcWriteFormat, NcWriteOptions};
 use ogeom_core::Tolerances;
 use ogeom_math::{Frame, Point};
 use ogeom_topo::{Model, Shape};
-use std::{fs, io::Write, path::Path};
+use std::{fmt::Write as _, fs, io::Write, path::Path};
 use truck_modeling::{Point3, Vector3, builder};
 use truck_stepio::out::{CompleteStepDisplay, StepHeaderDescriptor, StepModel};
 
+/// License and authorship notice attached to generated fixture records.
 const PROVENANCE: &str =
     "Author-created deterministic Rust fixture; MIT, matching the project license";
+/// Corpus subdirectory for the scientific and CAD model inputs.
 const DIR: &str = "scientific_cad";
+/// Upstream license, exact source revision, and retained-asset checksum.
 const CADQUERY: &str = "Unmodified CadQuery tests/testdata/red_cube_blue_cylinder.step; Apache-2.0; https://github.com/CadQuery/cadquery/blob/5f5bc62b255f62e3512105740025361b6c31eddd/tests/testdata/red_cube_blue_cylinder.step; SHA-256 1fd5c7d9325bcfb9863365faf84554f89e7e7a5e86760a0fc8d5db00619d9ef5; original license and provenance retained in scientific_cad/step-cadquery-LICENSE and step-cadquery-NOTICE.txt";
+/// Written corpus provenance explaining authored geometry and retained licensing.
 const README: &str = r"# Scientific and CAD fixtures
 
 Authored examples are generated deterministically by `examples/fixtures/scientific_cad.rs` and are MIT licensed with Catwalk. The STEP assembly examples use actual B-rep surfaces, repeated product occurrences and nested representation mappings, with nonzero source-frame origins and rotated/translated components. Geometry checks compare their placed vertices independently; PNG snapshots check the resulting thumbnails.
@@ -27,20 +31,36 @@ Authored examples are generated deterministically by `examples/fixtures/scientif
 Regeneration uses Rust and retained fixture bytes; no CAD application, native writer or network is required. The separately licensed upstream asset is not relabeled as an authored fixture.
 ";
 
+/// Writes corpus resources and records models after checking they load geometry.
 struct Fixtures<'a> {
+    /// Output corpus root containing the scientific/CAD subdirectory.
     root: &'a Path,
+    /// Manifest entries for successfully validated model inputs.
     cases: Vec<crate::Fixture>,
 }
 impl Fixtures<'_> {
+    /// Write a model, sidecar, or license resource into the corpus subdirectory.
+    ///
+    /// # Errors
+    /// Returns an error if the resource cannot be written to the filesystem.
     fn resource(&self, name: &str, bytes: &[u8]) -> Result<()> {
         fs::write(self.root.join(DIR).join(name), bytes)?;
         Ok(())
     }
+    /// Write an authored model and register its geometry and provenance.
+    ///
+    /// # Errors
+    /// Returns an error if the model cannot be written, loaded, or produces no
+    /// triangles, points, or lines.
     fn add(&mut self, id: &str, extension: &str, title: &str, bytes: &[u8]) -> Result<()> {
         let name = format!("{id}.{extension}");
         self.resource(&name, bytes)?;
         self.register(id, extension, title, PROVENANCE)
     }
+    /// Validate a written model and append its gallery manifest entry.
+    ///
+    /// # Errors
+    /// Returns an error if the model cannot be loaded or has no geometry.
     fn register(&mut self, id: &str, extension: &str, title: &str, provenance: &str) -> Result<()> {
         let input = format!("{DIR}/{id}.{extension}");
         let scene = catwalk::formats::load(&self.root.join(&input))?;
@@ -54,6 +74,11 @@ impl Fixtures<'_> {
     }
 }
 
+/// Write and validate the scientific, volume, and CAD fixture families.
+///
+/// # Errors
+/// Returns an error if model construction or serialization fails, a corpus file
+/// cannot be written, or a generated or retained input cannot load geometry.
 pub fn generate(root: &Path) -> Result<Vec<crate::Fixture>> {
     fs::create_dir_all(root.join(DIR))?;
     let mut f = Fixtures {
@@ -86,12 +111,16 @@ pub fn generate(root: &Path) -> Result<Vec<crate::Fixture>> {
         "xbf-colored-carrier",
         "xbf",
         "XBF colored face with genuine carrier and instance placement",
-        &xbf()?,
+        &xbf(),
     )?;
     f.resource("README.md", README.as_bytes())?;
     Ok(f.cases)
 }
 
+/// Emit legacy and XML VTK meshes, structured grids, and multiblock references.
+///
+/// # Errors
+/// Returns an error if compression, writing, or geometry validation fails.
 fn scientific(f: &mut Fixtures<'_>) -> Result<()> {
     let vtk = b"# vtk DataFile Version 3.0\nTwo tetrahedra sharing a face\nASCII\nDATASET UNSTRUCTURED_GRID\nPOINTS 5 float\n0 0 0 2 0 0 0 3 0 0 0 4 0 0 -2\nCELLS 2 10\n4 0 1 2 3\n4 0 2 1 4\nCELL_TYPES 2\n10 10\n";
     f.add(
@@ -136,7 +165,7 @@ fn scientific(f: &mut Fixtures<'_>) -> Result<()> {
     for z in [0., 4.] {
         for y in [0., 3.] {
             for x in [0., 2.] {
-                points.push_str(&format!("{} {y} {z} ", x + z * 0.25));
+                let _ = write!(points, "{} {y} {z} ", x + z * 0.25);
             }
         }
     }
@@ -153,6 +182,10 @@ fn scientific(f: &mut Fixtures<'_>) -> Result<()> {
     Ok(())
 }
 
+/// Compress bytes with a gzip wrapper or a zlib wrapper at the fixture level.
+///
+/// # Errors
+/// Returns an error if the selected compressor cannot write or finish its data.
 fn zip(raw: &[u8], gzip: bool) -> Result<Vec<u8>> {
     if gzip {
         let mut z = GzEncoder::new(Vec::new(), Compression::fast());
@@ -164,6 +197,14 @@ fn zip(raw: &[u8], gzip: bool) -> Result<Vec<u8>> {
         Ok(z.finish()?)
     }
 }
+/// Encode one tetrahedron with separately base64-encoded zlib VTK arrays.
+///
+/// # Errors
+/// Returns an error if one of the four authored arrays cannot be compressed.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "The four fixed tetrahedron arrays and their compressed payloads are much smaller than the VTK UInt32 length fields."
+)]
 fn compressed_vtu() -> Result<Vec<u8>> {
     let arrays = [
         (
@@ -205,6 +246,10 @@ fn compressed_vtu() -> Result<Vec<u8>> {
     Ok(format!(r#"<VTKFile type="UnstructuredGrid" byte_order="LittleEndian" header_type="UInt32" compressor="vtkZLibDataCompressor"><UnstructuredGrid><Piece NumberOfPoints="4" NumberOfCells="1"><Points>{}</Points><Cells>{}{}{}</Cells></Piece></UnstructuredGrid></VTKFile>"#,tags[0],tags[1],tags[2],tags[3]).into_bytes())
 }
 
+/// Construct a typed HDF5 dataset for one authored topology or coordinate array.
+///
+/// # Errors
+/// Returns an error if the dataset shape and typed values cannot be serialized.
 fn hdf<T: hdf5_writer::H5WriteElement>(
     name: &str,
     shape: &[u64],
@@ -212,6 +257,11 @@ fn hdf<T: hdf5_writer::H5WriteElement>(
 ) -> Result<DatasetBuilder> {
     Ok(DatasetBuilder::typed_data(name, shape.to_vec(), data)?)
 }
+/// Emit filtered VTKHDF and the supported Exodus and scalar `NetCDF` variants.
+///
+/// # Errors
+/// Returns an error if container construction, serialization, writing, or model
+/// geometry validation fails.
 fn containers(f: &mut Fixtures<'_>) -> Result<()> {
     let points = [
         0f32, 0., 0., 2., 0., 0., 0., 3., 0., 0., 0., 4., 0., 0., -2.,
@@ -299,6 +349,11 @@ fn containers(f: &mut Fixtures<'_>) -> Result<()> {
     }
     Ok(())
 }
+/// Serialize two shared-face tetrahedron blocks using a selected `NetCDF` format.
+///
+/// # Errors
+/// Returns an error if dimensions, attributes, variables, or the final Exodus
+/// container cannot be written by the `NetCDF` builder.
 fn exodus(format: NcWriteFormat) -> Result<Vec<u8>> {
     let mut b = NcFileBuilder::new();
     b.add_dimension("num_dim", 3)?;
@@ -324,23 +379,28 @@ fn exodus(format: NcWriteFormat) -> Result<Vec<u8>> {
     }
     Ok(b.to_vec(NcWriteOptions { format })?.1)
 }
+/// Serialize a packed two-time density field with descending, nonuniform axes.
+///
+/// # Errors
+/// Returns an error if the `NetCDF` builder cannot define or write the dataset,
+/// configure compression, or serialize the selected container format.
 fn netcdf(format: NcWriteFormat) -> Result<Vec<u8>> {
-    let mut b = NcFileBuilder::new();
-    let time = b.add_dimension("time", 2)?;
-    let z = b.add_dimension("z", 3)?;
-    let y = b.add_dimension("y", 3)?;
-    let x = b.add_dimension("x", 4)?;
+    let mut builder = NcFileBuilder::new();
+    let time = builder.add_dimension("time", 2)?;
+    let z_axis = builder.add_dimension("z", 3)?;
+    let y_axis = builder.add_dimension("y", 3)?;
+    let x_axis = builder.add_dimension("x", 4)?;
     for (name, dim, values) in [
-        ("x", x, vec![0f64, 1., 3., 6.]),
-        ("y", y, vec![0., 2., 4.]),
-        ("z", z, vec![5., 3., 0.]),
+        ("x", x_axis, vec![0f64, 1., 3., 6.]),
+        ("y", y_axis, vec![0., 2., 4.]),
+        ("z", z_axis, vec![5., 3., 0.]),
     ] {
-        let v = b.add_variable::<f64>(name, &[dim])?;
-        b.write_variable(v, &values)?;
+        let variable = builder.add_variable::<f64>(name, &[dim])?;
+        builder.write_variable(variable, &values)?;
     }
-    let v = b.add_variable::<i16>("density", &[time, z, y, x])?;
-    b.add_variable_attribute(v, "scale_factor", NcAttrValue::Doubles(vec![2.]))?;
-    b.set_variable_fill_value(v, -32767i16)?;
+    let variable = builder.add_variable::<i16>("density", &[time, z_axis, y_axis, x_axis])?;
+    builder.add_variable_attribute(variable, "scale_factor", NcAttrValue::Doubles(vec![2.]))?;
+    builder.set_variable_fill_value(variable, -32767i16)?;
     let mut data = vec![0i16; 72];
     for z in 0..3 {
         for y in 0..3 {
@@ -353,14 +413,15 @@ fn netcdf(format: NcWriteFormat) -> Result<Vec<u8>> {
     }
     data[0] = -32767;
     data[36..].fill(5);
-    b.write_variable(v, &data)?;
+    builder.write_variable(variable, &data)?;
     if matches!(format, NcWriteFormat::Nc4) {
-        b.set_variable_chunking(v, vec![1, 3, 3, 4])?;
-        b.set_variable_deflate(v, Some(6), true)?;
+        builder.set_variable_chunking(variable, vec![1, 3, 3, 4])?;
+        builder.set_variable_deflate(variable, Some(6), true)?;
     }
-    Ok(b.to_vec(NcWriteOptions { format })?.1)
+    Ok(builder.to_vec(NcWriteOptions { format })?.1)
 }
 
+/// Produce a five-cubed scalar grid containing three intersecting occupied planes.
 fn density() -> Vec<u8> {
     let mut values = vec![0; 125];
     for z in 0..5 {
@@ -377,6 +438,11 @@ fn density() -> Vec<u8> {
     }
     values
 }
+/// Emit the same oriented density grid in VTI, NRRD, and `MetaImage` containers.
+///
+/// # Errors
+/// Returns an error if density compression, resource writing, or loaded geometry
+/// validation fails.
 fn volumes(f: &mut Fixtures<'_>) -> Result<()> {
     let values = density();
     let ascii = values
@@ -432,6 +498,7 @@ fn volumes(f: &mut Fixtures<'_>) -> Result<()> {
     Ok(())
 }
 
+/// Serialize a swept STEP box at a nonzero source origin with a fixed header.
 fn step_box(size: [f64; 3]) -> String {
     let vertex = builder::vertex(Point3::new(2., 3., 4.));
     let edge = builder::tsweep(&vertex, Vector3::new(size[0], 0., 0.));
@@ -442,11 +509,15 @@ fn step_box(size: [f64; 3]) -> String {
         StepHeaderDescriptor {
             file_name: "author-created-box".into(),
             time_stamp: "2026-01-01T00:00:00".into(),
-            ..Default::default()
+            ..StepHeaderDescriptor::default()
         },
     )
     .to_string()
 }
+/// Serialize a swept circular disk as a STEP cylinder with a fixed header.
+///
+/// # Errors
+/// Returns an error if the circular wire cannot be attached to a planar disk.
 fn step_cylinder() -> Result<String> {
     let vertex = builder::vertex(Point3::new(1., 0., 0.));
     let circle = builder::rsweep(
@@ -462,12 +533,17 @@ fn step_cylinder() -> Result<String> {
         StepHeaderDescriptor {
             file_name: "author-created-cylinder".into(),
             time_stamp: "2026-01-01T00:00:00".into(),
-            ..Default::default()
+            ..StepHeaderDescriptor::default()
         },
     )
     .to_string())
 }
 
+/// Add placed product occurrences or nested representation mappings to a STEP box.
+///
+/// # Errors
+/// Returns an error if the underlying STEP writer changes the expected part
+/// representation layout or emits no terminating DATA section marker.
 fn step_assembly(occurrences: bool) -> Result<String> {
     let mut source = step_box([2., 3., 4.]);
     let entities = if occurrences {
@@ -546,6 +622,11 @@ fn step_assembly(occurrences: bool) -> Result<String> {
     Ok(format!("{}{entities}\n{}", &source[..end], &source[end..]))
 }
 
+/// Build a translated analytic box, cylinder, or sphere in the CAD kernel.
+///
+/// # Errors
+/// Returns an error if the requested body is unknown or the kernel cannot
+/// construct its bounded analytic geometry.
 fn cad_body(kind: &str) -> Result<(Model, Shape)> {
     let mut model = Model::new();
     let tol = Tolerances::millimetres();
@@ -558,6 +639,15 @@ fn cad_body(kind: &str) -> Result<(Model, Shape)> {
     };
     Ok((model, root.shape))
 }
+/// Emit authored STEP assemblies, IGES bodies, BREP solids, and retained STEP data.
+///
+/// # Errors
+/// Returns an error if CAD construction or serialization, resource writing, or
+/// imported geometry validation fails.
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "The STEP extension list has four entries, so its enumeration indices convert exactly to f64 dimensions."
+)]
 fn cad(f: &mut Fixtures<'_>) -> Result<()> {
     for (i, ext) in ["step", "stpnc", "p21", "210"].into_iter().enumerate() {
         f.add(
@@ -628,10 +718,20 @@ fn cad(f: &mut Fixtures<'_>) -> Result<()> {
     Ok(())
 }
 
+/// Return an IFC4 hollow rectangular extrusion with explicit product placement.
 fn ifc() -> String {
     "ISO-10303-21;HEADER;FILE_SCHEMA(('IFC4'));ENDSEC;DATA;\n#1=IFCCARTESIANPOINT((0.,0.,0.));#2=IFCAXIS2PLACEMENT3D(#1,$,$);#3=IFCLOCALPLACEMENT($,#2);\n#4=IFCBUILDINGELEMENTPROXY('id',$,'shape',$,$,#3,#5,$,$);#5=IFCPRODUCTDEFINITIONSHAPE($,$,(#6));#6=IFCSHAPEREPRESENTATION($,'Body','SolidModel',(#20));\n#20=IFCEXTRUDEDAREASOLID(#21,$,#22,2.);#21=IFCRECTANGLEHOLLOWPROFILEDEF(.AREA.,$,$,4.,4.,1.,$,$);#22=IFCDIRECTION((0.,0.,1.));\nENDSEC;END-ISO-10303-21;".into()
 }
 
+/// Encode a compressed hollow `OpenVDB` leaf as float or reflected half-float data.
+///
+/// # Errors
+/// Returns an error if the fixed leaf values cannot be zlib-compressed.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    reason = "Fixed grid names and one 512-voxel compressed leaf fit their native string and signed payload-length fields."
+)]
 fn vdb(half: bool) -> Result<Vec<u8>> {
     let name = |bytes: &mut Vec<u8>, value: &str| {
         bytes.extend((value.len() as u32).to_le_bytes());
@@ -699,7 +799,7 @@ fn vdb(half: bool) -> Result<Vec<u8>> {
         grid.extend(f64::to_le_bytes(value));
     }
     let mut file = Vec::new();
-    file.extend(0x56444220u64.to_le_bytes());
+    file.extend(0x5644_4220_u64.to_le_bytes());
     for n in [223u32, 12, 1] {
         file.extend(n.to_le_bytes());
     }
@@ -729,22 +829,31 @@ fn vdb(half: bool) -> Result<Vec<u8>> {
     Ok(file)
 }
 
-// Genuine BINFILE/BinXCAF version-12 inline analytic shape serialization.
+/// Append a signed little-endian XBF integer field.
 fn integer(out: &mut Vec<u8>, value: i32) {
     out.extend(value.to_le_bytes());
 }
+/// Append one little-endian XBF geometric real value.
 fn real(out: &mut Vec<u8>, value: f64) {
     out.extend(value.to_le_bytes());
 }
+/// Append a sequence of little-endian XBF geometric real values.
 fn reals(out: &mut Vec<u8>, values: &[f64]) {
     for &v in values {
         real(out, v);
     }
 }
+/// Append a length-prefixed authored ASCII string to an XBF record.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    reason = "All authored XBF strings are short fixed names that fit a signed 32-bit byte count."
+)]
 fn string(out: &mut Vec<u8>, value: &str) {
     integer(out, value.len() as i32);
     out.extend(value.as_bytes());
 }
+/// Append an inline uniform-scale and translation XBF location definition.
 fn xbf_transform(out: &mut Vec<u8>, scale: f64, offset: Vec3) {
     out.push(6);
     reals(
@@ -754,16 +863,28 @@ fn xbf_transform(out: &mut Vec<u8>, scale: f64, offset: Vec3) {
         ],
     );
 }
+/// Append a backward XBF reference to an earlier record in the same small buffer.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "All referenced records belong to the small authored face buffer, whose backward offsets fit u32."
+)]
 fn reference(out: &mut Vec<u8>, offset: usize) {
     let delta = out.len() - offset;
     out.push(3);
     out.extend((delta as u32).to_le_bytes());
 }
+/// Append an oriented XBF vertex with the authored geometric tolerance.
 fn xbf_vertex(out: &mut Vec<u8>, point: Vec3, orientation: u8) {
     out.extend([228 + orientation, 7]);
     reals(out, &[1e-7, point.x, point.y, point.z]);
     out.extend([0, 8, 199]);
 }
+/// Serialize an XBF attribute and an optional length-prefixed direct shape payload.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    reason = "Authored attributes contain one small face or fixed metadata, fitting their signed 32-bit data lengths."
+)]
 fn xbf_attribute(kind: i32, id: i32, data: Vec<u8>, direct: Option<Vec<u8>>) -> Vec<u8> {
     let mut out = Vec::new();
     integer(&mut out, kind);
@@ -776,17 +897,19 @@ fn xbf_attribute(kind: i32, id: i32, data: Vec<u8>, direct: Option<Vec<u8>>) -> 
     }
     out
 }
+/// Serialize an XBF color-tree link using the native tree-node identifier.
 fn xbf_tree(id: i32, father: i32, first: i32) -> Vec<u8> {
     let mut data = Vec::new();
     for value in [father, -1, -1, first] {
         integer(&mut data, value);
     }
-    data.extend(0xefd212e4u32.to_le_bytes());
+    data.extend(0xefd2_12e4_u32.to_le_bytes());
     data.extend([
         0xfd, 0x6d, 0xd4, 0x11, 0xb9, 0xc8, 0, 0x60, 0xb0, 0xee, 0x28, 0x1b,
     ]);
     xbf_attribute(3, id, data, None)
 }
+/// Serialize one sized XBF label with attributes, tagged children, and sentinels.
 fn xbf_label(attributes: Vec<Vec<u8>>, children: Vec<(i32, Vec<u8>)>) -> Vec<u8> {
     let mut out = vec![0; 8];
     for attr in attributes {
@@ -802,7 +925,17 @@ fn xbf_label(attributes: Vec<Vec<u8>>, children: Vec<(i32, Vec<u8>)>) -> Vec<u8>
     out[..8].copy_from_slice(&size.to_le_bytes());
     out
 }
-fn xbf() -> Result<Vec<u8>> {
+/// Encode a BINFILE/`BinXCAF` v12 analytic face with carrier placement and color.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    reason = "The fixed seven-name table and single-face document fit signed 32-bit count and header-offset fields."
+)]
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keep the native inline face, label hierarchy, and binary header assembly together so their offset relationships remain reviewable."
+)]
+fn xbf() -> Vec<u8> {
     let carrier = Vec3::new(1., -2., 0.5);
     let root = Vec3::new(4., 1., 3.);
     let mut geometry = vec![200];
@@ -910,7 +1043,19 @@ fn xbf() -> Result<Vec<u8>> {
     integer(&mut out, 0);
     let start_doc = out.len() as i32;
     let header = [
-        0x04030201, 7, end_info, end_info, start_doc, -1, -1, -1, -1, -1, -1, start_doc, start_doc,
+        0x0403_0201,
+        7,
+        end_info,
+        end_info,
+        start_doc,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        start_doc,
+        start_doc,
     ];
     for (index, value) in header.iter().enumerate() {
         out[7 + index * 4..11 + index * 4].copy_from_slice(&value.to_le_bytes());
@@ -920,5 +1065,5 @@ fn xbf() -> Result<Vec<u8>> {
     out.extend([0; 24]);
     integer(&mut out, 0);
     out.extend(body);
-    Ok(out)
+    out
 }

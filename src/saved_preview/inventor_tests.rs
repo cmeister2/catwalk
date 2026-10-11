@@ -169,7 +169,7 @@ fn bitmap_bottom_up_top_down_and_explicit_alpha_match_pixels() {
             .unwrap(),
         );
         assert_eq!(
-            output.get_pixel(0, if signed_height > 0 { 1 } else { 0 }).0,
+            output.get_pixel(0, u32::from(signed_height > 0)).0,
             [255, 0, 0, 255]
         );
     }
@@ -180,7 +180,7 @@ fn bitmap_bottom_up_top_down_and_explicit_alpha_match_pixels() {
     dib[12..14].copy_from_slice(&1_u16.to_le_bytes());
     dib[14..16].copy_from_slice(&32_u16.to_le_bytes());
     dib[16..20].copy_from_slice(&6_u32.to_le_bytes());
-    for value in [0xff0000_u32, 0xff00, 0xff, 0xff000000, 0x80402010] {
+    for value in [0x00ff_0000_u32, 0x0000_ff00, 0xff, 0xff00_0000, 0x8040_2010] {
         dib.extend_from_slice(&value.to_le_bytes());
     }
     let properties = property_set(&dib, NATIVE_SUMMARY, 17, 8);
@@ -374,7 +374,7 @@ fn malformed_properties_masks_and_container_limits_fail_without_changing_source(
             .to_string()
             .contains("miniFAT")
     );
-    assert!(check_time(Instant::now() - Duration::from_secs(6)).is_err());
+    assert!(check_time(Instant::now().checked_sub(Duration::from_secs(6)).unwrap()).is_err());
     let mut dib = vec![0; 40];
     dib[..4].copy_from_slice(&40_u32.to_le_bytes());
     dib[4..8].copy_from_slice(&1_i32.to_le_bytes());
@@ -382,7 +382,7 @@ fn malformed_properties_masks_and_container_limits_fail_without_changing_source(
     dib[12..14].copy_from_slice(&1_u16.to_le_bytes());
     dib[14..16].copy_from_slice(&32_u16.to_le_bytes());
     dib[16..20].copy_from_slice(&3_u32.to_le_bytes());
-    for value in [0xff0000_u32, 0xff0000, 0xff, 0] {
+    for value in [0x00ff_0000_u32, 0x00ff_0000, 0xff, 0] {
         dib.extend_from_slice(&value.to_le_bytes());
     }
     assert!(bitmap::normalize(&dib, false, Instant::now()).is_err());

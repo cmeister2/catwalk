@@ -1,8 +1,8 @@
 //! Static 3DS triangle meshes and the earliest keys of object hierarchies.
 //!
 //! Format conventions were checked against the primary Assimp and Blender importers:
-//! https://github.com/assimp/assimp/tree/master/code/AssetLib/3DS
-//! https://github.com/blender/blender-addons/blob/main/io_scene_3ds/import_3ds.py
+//! <https://github.com/assimp/assimp/tree/master/code/AssetLib/3DS>
+//! <https://github.com/blender/blender-addons/blob/main/io_scene_3ds/import_3ds.py>
 //! Editor vertices are already in world space; keyframer nodes require undoing
 //! the mesh matrix before applying their pivot and hierarchy transforms.
 
@@ -16,21 +16,29 @@ use std::{
     path::Path,
 };
 
+/// Maximum aggregate 3DS vertices or faces accepted before allocation.
 const MAX_ELEMENTS: usize = 5_000_000;
+/// Maximum parsed objects or hierarchy nodes accepted.
 const MAX_OBJECTS: usize = 65_535;
 
+/// Bounds-checked cursor for 3DS mesh and keyframer hierarchy records.
 struct Reader<'a> {
+    /// Borrowed complete input byte stream.
     bytes: &'a [u8],
+    /// Byte position of the next unread record.
     offset: usize,
 }
 
 impl<'a> Reader<'a> {
+    /// Start a bounds-checked reader at the beginning of the supplied bytes.
     fn new(bytes: &'a [u8]) -> Self {
         Self { bytes, offset: 0 }
     }
+    /// Return the number of unread bytes in this chunk.
     fn remaining(&self) -> usize {
         self.bytes.len() - self.offset
     }
+    /// Consume the requested bytes, rejecting offset overflow and truncated records.
     fn take(&mut self, count: usize) -> Result<&'a [u8]> {
         let end = self
             .offset
@@ -43,12 +51,15 @@ impl<'a> Reader<'a> {
         self.offset = end;
         Ok(bytes)
     }
+    /// Read one unsigned 16-bit word from the current record.
     fn u16(&mut self) -> Result<u16> {
         Ok(u16::from_le_bytes(self.take(2)?.try_into()?))
     }
+    /// Read one unsigned 32-bit word from the current record.
     fn u32(&mut self) -> Result<u32> {
         Ok(u32::from_le_bytes(self.take(4)?.try_into()?))
     }
+    /// Read a finite little-endian 3DS single-precision value.
     fn float(&mut self) -> Result<f64> {
         let value = f64::from(f32::from_le_bytes(self.take(4)?.try_into()?));
         if !value.is_finite() {
@@ -56,9 +67,11 @@ impl<'a> Reader<'a> {
         }
         Ok(value)
     }
+    /// Read three consecutive finite components into a geometry vector.
     fn vector(&mut self) -> Result<Vec3> {
         Ok(Vec3::new(self.float()?, self.float()?, self.float()?))
     }
+    /// Read a bounded NUL-terminated chunk string.
     fn string(&mut self) -> Result<String> {
         let count = self.bytes[self.offset..]
             .iter()
@@ -77,6 +90,7 @@ impl<'a> Reader<'a> {
         self.take(1)?;
         Ok(value)
     }
+    /// Read one child chunk header and return its checked payload.
     fn chunk(&mut self) -> Result<Option<(u16, &'a [u8])>> {
         if self.remaining() == 0 {
             return Ok(None);
@@ -88,6 +102,7 @@ impl<'a> Reader<'a> {
         }
         Ok(Some((id, self.take(length - 6)?)))
     }
+    /// Reject bytes remaining after the expected chunk payload.
     fn finish(self) -> Result<()> {
         if self.remaining() != 0 {
             return Err("3DS field has unexpected trailing bytes".into());
@@ -96,27 +111,44 @@ impl<'a> Reader<'a> {
     }
 }
 
+/// 3DS editor mesh, material groups and stored placement matrix.
 struct Mesh {
+    /// Editor object name used by keyframer instances.
     name: String,
+    /// Stored vertex coordinates before hierarchy placement.
     vertices: Vec<Vec3>,
+    /// Triangle indices into the mesh vertex array.
     faces: Vec<[u16; 3]>,
+    /// Named material assignments and their face indices.
     material_groups: Vec<(String, Vec<u16>)>,
+    /// Stored editor mesh matrix used to recover hierarchy-local geometry.
     matrix: Transform,
+    /// Whether the editor marks this object as hidden.
     hidden: bool,
 }
 
+/// 3DS keyframer node with its earliest static transform.
 struct Node {
+    /// Stored keyframer node chunk kind.
     kind: u16,
+    /// Explicit hierarchy identifier or its ordinal fallback.
     id: u16,
+    /// Referenced editor object name.
     name: String,
+    /// Optional parent node identifier.
     parent: Option<u16>,
+    /// Local pivot subtracted before node placement.
     pivot: Vec3,
+    /// Earliest position-track value.
     position: Vec3,
+    /// Earliest composed clockwise axis-angle rotation.
     rotation: Transform,
+    /// Earliest per-axis scale-track value.
     scale: Vec3,
 }
 
 impl Node {
+    /// Compose a node position, pivot, clockwise rotation and scale into its local transform.
     fn local(&self) -> Transform {
         translation(self.position)
             .then(self.rotation)
@@ -125,20 +157,34 @@ impl Node {
 }
 
 #[derive(Default)]
+/// 3DS editor resources and keyframer nodes before scene instantiation.
 struct Model {
+    /// Decoded editor triangle meshes.
     meshes: Vec<Mesh>,
+    /// Names already declared by editor objects.
     object_names: HashSet<String>,
+    /// Named diffuse material colors, including materials without a color.
     materials: HashMap<String, Option<[u8; 3]>>,
+    /// Decoded static keyframer hierarchy.
     nodes: Vec<Node>,
+    /// Aggregate editor vertex count for allocation limits.
     vertices: usize,
+    /// Aggregate editor face count for allocation limits.
     faces: usize,
+    /// Optional scene-wide editor scale multiplier.
     master_scale: Option<f64>,
 }
 
+/// Read a bounded 3DS mesh and keyframer hierarchy and decode its preview geometry.
+///
+/// # Errors
+/// Returns an error for malformed chunks, unsupported geometry/tracks, invalid
+/// indices/hierarchy/transforms or resource limits.
 pub(super) fn load(path: &Path) -> Result<Scene> {
     parse(&read_file(path)?)
 }
 
+/// Validate the 3DS main chunk and construct a static scene from editor and earliest keyframe data.
 fn parse(bytes: &[u8]) -> Result<Scene> {
     let mut reader = Reader::new(bytes);
     let (id, data) = reader.chunk()?.ok_or("empty 3DS file")?;
@@ -160,9 +206,10 @@ fn parse(bytes: &[u8]) -> Result<Scene> {
             _ => {} // Global view, background, and application metadata.
         }
     }
-    build(model)
+    build(&model)
 }
 
+/// Decode object/material chunks and the optional scene master scale.
 fn editor(data: &[u8], model: &mut Model) -> Result<()> {
     let mut reader = Reader::new(data);
     while let Some((id, data)) = reader.chunk()? {
@@ -196,6 +243,7 @@ fn editor(data: &[u8], model: &mut Model) -> Result<()> {
     Ok(())
 }
 
+/// Decode a named editor object and reject unsupported visible geometry.
 fn object(data: &[u8], model: &mut Model) -> Result<()> {
     let mut reader = Reader::new(data);
     let name = reader.string()?;
@@ -236,6 +284,11 @@ fn object(data: &[u8], model: &mut Model) -> Result<()> {
     Ok(())
 }
 
+/// Decode triangle indices, vertex coordinates, material assignments and the stored mesh matrix.
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keep 3DS vertex, face, flag and material-group chunks together while validating shared indices."
+)]
 fn mesh_data(data: &[u8], name: String) -> Result<Mesh> {
     let mut mesh = Mesh {
         name,
@@ -367,6 +420,7 @@ fn mesh_data(data: &[u8], name: String) -> Result<Mesh> {
     Ok(mesh)
 }
 
+/// Decode a named 3DS material and its optional diffuse color.
 fn material(data: &[u8]) -> Result<(String, Option<[u8; 3]>)> {
     let mut name = None;
     let mut diffuse = None;
@@ -388,6 +442,12 @@ fn material(data: &[u8]) -> Result<(String, Option<[u8; 3]>)> {
     Ok((name.ok_or("3DS material has no name")?, diffuse))
 }
 
+/// Decode byte/float material color chunks with the specified gamma encoding.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Material channels are clamped to the byte range and intentionally rounded before quantization."
+)]
 fn color(data: &[u8]) -> Result<[u8; 3]> {
     let mut encoded = None;
     let mut linear = None;
@@ -419,7 +479,7 @@ fn color(data: &[u8]) -> Result<[u8; 3]> {
         .or_else(|| {
             linear.map(|values| {
                 values.map(|c| {
-                    if c <= 0.0031308 {
+                    if c <= 0.003_130_8 {
                         12.92 * c
                     } else {
                         1.055 * c.powf(1.0 / 2.4) - 0.055
@@ -431,6 +491,11 @@ fn color(data: &[u8]) -> Result<[u8; 3]> {
     Ok(channels.map(|c| (c * 255.0).round() as u8))
 }
 
+/// Decode supported scene hierarchy nodes and reject unsupported geometry-changing tracks.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "The node count is checked against MAX_OBJECTS, at most 65535, before generating the ordinal u16 ID."
+)]
 fn keyframer(data: &[u8], model: &mut Model) -> Result<()> {
     let mut reader = Reader::new(data);
     while let Some((id, data)) = reader.chunk()? {
@@ -448,6 +513,7 @@ fn keyframer(data: &[u8], model: &mut Model) -> Result<()> {
     Ok(())
 }
 
+/// Decode a keyframer node identifier, parent, pivot and earliest transform tracks.
 fn node(data: &[u8], index: u16, kind: u16) -> Result<Node> {
     let mut node = Node {
         kind,
@@ -522,8 +588,8 @@ fn node(data: &[u8], index: u16, kind: u16) -> Result<Node> {
                 value.finish()?;
             }
             0xb014 => {
-                value.vector()?;
-                value.vector()?;
+                let _ = value.vector()?;
+                let _ = value.vector()?;
                 value.finish()?;
             }
             0xb015 => {
@@ -548,6 +614,7 @@ fn node(data: &[u8], index: u16, kind: u16) -> Result<Node> {
     Ok(node)
 }
 
+/// Validate track flags and read the bounded key count.
 fn track_header(reader: &mut Reader<'_>) -> Result<usize> {
     let flags = reader.u16()?;
     if flags & 0x0700 != 0 {
@@ -562,6 +629,7 @@ fn track_header(reader: &mut Reader<'_>) -> Result<usize> {
     Ok(count)
 }
 
+/// Read a keyframe index and consume its optional spline parameters.
 fn key_header(reader: &mut Reader<'_>) -> Result<u32> {
     let frame = reader.u32()?;
     let flags = reader.u16()?;
@@ -576,6 +644,7 @@ fn key_header(reader: &mut Reader<'_>) -> Result<u32> {
     Ok(frame)
 }
 
+/// Read the earliest vector key while validating all later keys.
 fn vector_track(data: &[u8]) -> Result<Option<Vec3>> {
     let mut reader = Reader::new(data);
     let count = track_header(&mut reader)?;
@@ -594,6 +663,7 @@ fn vector_track(data: &[u8]) -> Result<Option<Vec3>> {
     Ok(earliest.map(|(_, value)| value))
 }
 
+/// Read the earliest scalar key while validating all later keys.
 fn scalar_track(data: &[u8]) -> Result<Option<f64>> {
     let mut reader = Reader::new(data);
     let count = track_header(&mut reader)?;
@@ -612,6 +682,7 @@ fn scalar_track(data: &[u8]) -> Result<Option<f64>> {
     Ok(earliest.map(|(_, value)| value))
 }
 
+/// Read and compose the earliest incremental axis-angle rotation keys.
 fn rotation_track(data: &[u8]) -> Result<Transform> {
     let mut reader = Reader::new(data);
     let count = track_header(&mut reader)?;
@@ -635,12 +706,14 @@ fn rotation_track(data: &[u8]) -> Result<Transform> {
     }
 }
 
+/// Construct an affine translation from a position vector.
 fn translation(v: Vec3) -> Transform {
     let mut matrix = Transform::IDENTITY;
     matrix.0[3] = [v.x, v.y, v.z, 1.0];
     matrix
 }
 
+/// Construct a diagonal affine scale from axis factors.
 fn scaling(v: Vec3) -> Transform {
     let mut matrix = Transform::IDENTITY;
     matrix.0[0][0] = v.x;
@@ -649,6 +722,7 @@ fn scaling(v: Vec3) -> Transform {
     matrix
 }
 
+/// Convert a finite axis-angle rotation to the 3DS clockwise transform convention.
 fn rotation(axis: Vec3, angle: f64) -> Result<Transform> {
     if angle == 0.0 {
         return Ok(Transform::IDENTITY);
@@ -672,6 +746,7 @@ fn rotation(axis: Vec3, angle: f64) -> Result<Transform> {
     Ok(matrix)
 }
 
+/// Invert the stored mesh matrix and report whether its determinant reverses orientation.
 fn inverse(matrix: Transform) -> Result<(Transform, bool)> {
     let [a, b, c, t] = matrix
         .0
@@ -697,6 +772,7 @@ fn inverse(matrix: Transform) -> Result<(Transform, bool)> {
     Ok((result, determinant < 0.0))
 }
 
+/// Resolve and cache parent-composed node transforms while rejecting hierarchy cycles.
 fn node_world(
     index: usize,
     nodes: &[Node],
@@ -734,7 +810,8 @@ fn node_world(
     Ok(world)
 }
 
-fn build(model: Model) -> Result<Scene> {
+/// Resolve meshes/materials and instantiate visible editor or keyframer geometry.
+fn build(model: &Model) -> Result<Scene> {
     let mut scene = Scene::default();
     let mut ids = HashMap::new();
     for (index, node) in model.nodes.iter().enumerate() {
@@ -792,6 +869,7 @@ fn build(model: Model) -> Result<Scene> {
     Ok(scene)
 }
 
+/// Append a placed mesh with resolved face colors and the 3DS mirrored-winding convention.
 fn append(
     mesh: &Mesh,
     materials: &HashMap<String, Option<[u8; 3]>>,
@@ -833,6 +911,10 @@ fn append(
 mod tests {
     use super::*;
 
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "Every authored chunk payload is small enough for its u32 format length word."
+    )]
     fn chunk(id: u16, bytes: &[u8]) -> Vec<u8> {
         let mut data = id.to_le_bytes().to_vec();
         data.extend_from_slice(&((bytes.len() + 6) as u32).to_le_bytes());

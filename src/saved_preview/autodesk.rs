@@ -13,11 +13,17 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// Maximum accepted Fusion archive size in bytes.
 const MAX_SOURCE: u64 = 512 * 1024 * 1024;
+/// Maximum compressed or decompressed size of either selected archive member.
 const MAX_MEMBER: u64 = 8 * 1024 * 1024;
+/// Maximum central-directory size accepted before ZIP parsing.
 const MAX_DIRECTORY: u64 = 4 * 1024 * 1024;
+/// Maximum archive entry count admitted by the central-directory preflight.
 const MAX_ENTRIES: usize = 4096;
+/// Qualified path of the root document saved PNG inside a Fusion archive.
 const PREVIEW: &str = "FusionAssetName[Active]/Previews/small.png";
+/// Manifest path used to qualify the root document type and version.
 const ACTIVE_MANIFEST: &str = "FusionAssetName[Active]/Manifest.dat";
 
 /// Extract a saved Fusion PNG without opening or changing the design geometry.
@@ -26,6 +32,11 @@ const ACTIVE_MANIFEST: &str = "FusionAssetName[Active]/Manifest.dat";
 /// active Fusion asset manifest, and stored, Deflate, or Zstandard members.
 /// `None` denotes an absent active-design preview. Unsupported or malformed
 /// carriers return an error; this research API does not implement rendering.
+///
+/// # Errors
+///
+/// Returns an error for I/O failures, malformed or unqualified archive metadata or image data,
+/// unsupported compression, failed checksums, or exceeded extraction budgets.
 pub fn extract_fusion(path: &Path) -> Result<Option<RgbaImage>> {
     let started = Instant::now();
     let mut source = File::open(path)?;
@@ -88,6 +99,7 @@ pub fn extract_fusion(path: &Path) -> Result<Option<RgbaImage>> {
     Ok(Some(image))
 }
 
+/// Enforce the cooperative extraction deadline between reads and parsing stages.
 fn check_time(started: Instant) -> Result<()> {
     if started.elapsed() > Duration::from_secs(5) {
         return Err("Fusion preview processing exceeded the cooperative five-second budget".into());
@@ -95,6 +107,7 @@ fn check_time(started: Instant) -> Result<()> {
     Ok(())
 }
 
+/// Read a checked little-endian 16-bit integer from archive metadata.
 fn u16_le(data: &[u8], offset: usize) -> Result<u16> {
     Ok(u16::from_le_bytes(
         data.get(offset..offset + 2)
@@ -103,6 +116,7 @@ fn u16_le(data: &[u8], offset: usize) -> Result<u16> {
     ))
 }
 
+/// Read a checked little-endian 32-bit integer from archive metadata.
 fn u32_le(data: &[u8], offset: usize) -> Result<u32> {
     Ok(u32::from_le_bytes(
         data.get(offset..offset + 4)
@@ -113,6 +127,7 @@ fn u32_le(data: &[u8], offset: usize) -> Result<u32> {
 
 // Inspect only the bounded ZIP end record before the ZIP reader allocates its
 // member table. ZIP64 and split archives have not been qualified here.
+/// Validate the bounded, single-disk ZIP end record before allocating archive metadata.
 fn check_directory(source: &mut File, source_size: u64) -> Result<usize> {
     let tail_size = source_size.min(65_535 + 22);
     source.seek(SeekFrom::Start(source_size - tail_size))?;
@@ -150,6 +165,7 @@ fn check_directory(source: &mut File, source_size: u64) -> Result<usize> {
     Ok(usize::from(total_count))
 }
 
+/// Require the observed Fusion document version, type and UTF-16 extension fields.
 fn check_manifest(data: &[u8]) -> Result<()> {
     // The observed leading fields are length-prefixed UTF-8 format tag and
     // document type, followed by a length-prefixed UTF-16 filename extension.
@@ -172,6 +188,7 @@ fn check_manifest(data: &[u8]) -> Result<()> {
     Ok(())
 }
 
+/// Read a selected member while enforcing its byte and elapsed-time budgets.
 fn bounded_read(mut reader: impl Read, started: Instant) -> Result<Vec<u8>> {
     let mut output = Vec::new();
     let mut buffer = [0; 8192];
@@ -188,6 +205,7 @@ fn bounded_read(mut reader: impl Read, started: Instant) -> Result<Vec<u8>> {
     }
 }
 
+/// Decode one qualified ZIP compression method and verify its declared length and CRC.
 fn read_member(
     archive: &mut zip::ZipArchive<File>,
     index: usize,
@@ -236,6 +254,10 @@ fn read_member(
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "Test builders serialize small fixed carrier fields and deliberately quantize their sample colors"
+)]
 mod tests {
     use super::*;
     use std::io::Write;

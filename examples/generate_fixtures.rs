@@ -1,27 +1,40 @@
 //! Regenerate the authored, portable format corpus. PNG baselines are updated
 //! separately so fixture regeneration can never silently approve a new image.
 #[path = "fixtures/images_points.rs"]
+/// Generate portable raster and point-cloud fixture encodings.
 mod images_points;
 #[path = "fixtures/mesh_scene.rs"]
+/// Generate authored mesh and scene fixtures and register retained reference assets.
 mod mesh_scene;
 #[path = "fixtures/saved_previews.rs"]
+/// Generate qualified saved-thumbnail carrier fixtures.
 mod saved_previews;
 #[path = "fixtures/scientific_cad.rs"]
+/// Generate scientific datasets and CAD boundary representations.
 mod scientific_cad;
 
 use catwalk::{Result, formats};
 use serde_json::json;
 use std::{collections::BTreeSet, path::Path};
 
+/// One corpus manifest entry describing an input and its provenance.
 pub struct Fixture {
+    /// Stable identifier used for image filenames and manifest lookup.
     pub id: String,
+    /// Lowercase input extension covered by this fixture.
     pub extension: String,
+    /// Human-readable description shown in the example gallery.
     pub title: String,
+    /// Input path relative to the format corpus directory.
     pub input: String,
+    /// Manifest category: model, image or saved-preview.
     pub kind: String,
+    /// Source, authorship and licensing description for the input.
     pub provenance: String,
 }
 
+/// Construct a manifest entry from its identifier, format and provenance strings.
+#[must_use]
 pub fn fixture(
     id: &str,
     extension: &str,
@@ -40,6 +53,7 @@ pub fn fixture(
     }
 }
 
+/// Generate authored inputs and write a manifest after validating complete advertised extension coverage.
 fn main() -> Result<()> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/formats");
     std::fs::create_dir_all(&root)?;

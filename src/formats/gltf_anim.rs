@@ -8,23 +8,35 @@ use ::gltf::accessor::{DataType, Dimensions, Iter};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 
+/// Maximum nodes whose local poses may be evaluated.
 const MAX_NODES: usize = 100_000;
+/// Maximum channels inspected in the first animation.
 const MAX_CHANNELS: usize = 400_000;
+/// Maximum scalar components decoded from animation accessors.
 const MAX_VALUES: usize = 20_000_000;
+/// Maximum combined animation decoding and morph weight work.
 const MAX_WORK: usize = 50_000_000;
 
+/// Local transform and optional morph weights for a node at the selected static pose.
 pub(super) struct Pose {
+    /// Local affine matrix after applying the first animation.
     pub transform: Transform,
+    /// Node or animated morph weights, with mesh defaults supplied later.
     pub weights: Option<Vec<f32>>,
 }
 
 #[derive(Clone, Copy)]
+/// Translation, unit quaternion and scale kept separately for animated nodes.
 struct Trs {
+    /// Local translation in source units.
     translation: [f64; 3],
+    /// Normalized quaternion in x, y, z, w order.
     rotation: [f64; 4],
+    /// Signed scale along each local axis.
     scale: [f64; 3],
 }
 impl Trs {
+    /// Compose a finite local matrix in translation, rotation, scale order.
     fn matrix(self) -> Result<Transform> {
         let [x, y, z, w] = self.rotation;
         let [sx, sy, sz] = self.scale;
@@ -57,18 +69,21 @@ impl Trs {
     }
 }
 
+/// Read a nonnegative animation reference that fits the platform index type.
 fn index(value: Option<&Value>, name: &str) -> Result<usize> {
     value
         .and_then(Value::as_u64)
         .and_then(|n| usize::try_from(n).ok())
         .ok_or_else(|| format!("invalid glTF animation {name} index").into())
 }
+/// Require a named JSON animation member to contain an array.
 fn array<'a>(value: Option<&'a Value>, name: &str) -> Result<&'a [Value]> {
     value
         .and_then(Value::as_array)
         .map(Vec::as_slice)
         .ok_or_else(|| format!("glTF animation {name} must be an array").into())
 }
+/// Find and cache a node mesh's consistent, bounded morph target count.
 fn target_count(raw: &Value, node: usize, cache: &mut HashMap<usize, usize>) -> Result<usize> {
     let nodes = array(raw.get("nodes"), "nodes")?;
     let node = nodes.get(node).ok_or("glTF animation node is missing")?;
@@ -98,6 +113,7 @@ fn target_count(raw: &Value, node: usize, cache: &mut HashMap<usize, usize>) -> 
     Ok(count)
 }
 
+/// Validate an authored unit quaternion and normalize permitted integer rounding error.
 fn quaternion(value: [f32; 4], data_type: DataType) -> Result<[f64; 4]> {
     let value = value.map(f64::from);
     let length = value.iter().map(|v| v * v).sum::<f64>().sqrt();
@@ -117,6 +133,7 @@ fn quaternion(value: [f32; 4], data_type: DataType) -> Result<[f64; 4]> {
     Ok(value.map(|v| v / length))
 }
 
+/// Decode scalar animation output values, including normalized integer weights.
 fn scalar_values(accessor: ::gltf::Accessor<'_>, buffers: &[Vec<u8>]) -> Result<Vec<f32>> {
     macro_rules! read {
         ($ty:ty, $scale:expr, $signed:expr) => {
@@ -137,9 +154,10 @@ fn scalar_values(accessor: ::gltf::Accessor<'_>, buffers: &[Vec<u8>]) -> Result<
         DataType::I16 => read!(i16, 32767., true),
         DataType::U16 => read!(u16, 65535., false),
         DataType::F32 => read!(f32, 1., false),
-        _ => return Err("invalid glTF animation output component type".into()),
+        DataType::U32 => return Err("invalid glTF animation output component type".into()),
     })
 }
+/// Decode supported scalar or vector animation output into scalar component order.
 fn output_values(accessor: ::gltf::Accessor<'_>, buffers: &[Vec<u8>]) -> Result<Vec<f32>> {
     if accessor.dimensions() == Dimensions::Scalar {
         return scalar_values(accessor, buffers);
@@ -172,6 +190,16 @@ fn output_values(accessor: ::gltf::Accessor<'_>, buffers: &[Vec<u8>]) -> Result<
 
 /// Return local poses indexed by node index. Mesh weight defaults remain the
 /// deformation module's responsibility when neither node nor animation sets them.
+///
+/// # Errors
+/// Returns an error for invalid node transforms or morph weights, malformed animation
+/// references, channels or accessors, non-finite keys, and exceeded evaluation budgets.
+#[allow(
+    clippy::too_many_lines,
+    clippy::float_cmp,
+    clippy::cast_possible_truncation,
+    reason = "One bounded animation pass validates channels together; affine constants are exact and f32 casts verify JSON matches typed glTF values."
+)]
 pub(super) fn first_pose(
     model: &::gltf::Gltf,
     buffers: &[Vec<u8>],
@@ -613,6 +641,10 @@ mod tests {
         assert_eq!(pose[0].weights, Some(vec![0.25, 0.75]));
     }
     #[test]
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "The authored fixture uses small accessor offsets and representable quantized rotation components."
+    )]
     fn normalized_integer_rotation_and_weight_outputs_decode_genuine_values() {
         for (kind, maximum, minimum, size) in [
             (5120, 127, -128, 1),
@@ -646,6 +678,10 @@ mod tests {
         }
     }
     #[test]
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "The authored fixture uses small accessor offsets and representable quantized rotation components."
+    )]
     fn rounded_official_simple_skin_rotation_keys_remain_valid() {
         let mut fixture = Fixture::new();
         let input = fixture.times(&[0., 1., 2.]);
@@ -714,7 +750,7 @@ mod tests {
                 }
                 11 => {
                     fixture.raw["nodes"][0]["matrix"] =
-                        json!([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1])
+                        json!([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
                 }
                 12 => {
                     fixture.bytes.pop();
@@ -742,6 +778,10 @@ mod tests {
         assert!(fixture.pose().is_err());
     }
     #[test]
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "The authored fixture uses small accessor offsets and representable quantized rotation components."
+    )]
     fn sparse_animation_outputs_obey_checked_indices_and_ranges() {
         let mut fixture = Fixture::new();
         let t = fixture.times(&[0., 2.]);

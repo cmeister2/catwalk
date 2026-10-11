@@ -1,5 +1,6 @@
 //! Build the gallery from the exact images emitted by the format snapshot test.
 #[path = "../tests/support/format_corpus.rs"]
+/// Shared snapshot manifest validation, rendering and comparison helpers.
 mod corpus;
 
 use catwalk::Result;
@@ -8,6 +9,7 @@ use serde_json::Value;
 use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
+/// Gallery output destination, snapshot-report reuse and explicit local update options.
 struct Args {
     /// Static site destination, suitable for a GitHub Pages artifact.
     #[arg(long, default_value = "target/gallery")]
@@ -23,6 +25,7 @@ struct Args {
     binary: Option<PathBuf>,
 }
 
+/// Collect fixture license and notice files recursively for the published gallery.
 fn collect_licenses(path: &Path, files: &mut Vec<PathBuf>) -> Result<()> {
     for entry in std::fs::read_dir(path)? {
         let entry = entry?;
@@ -38,6 +41,7 @@ fn collect_licenses(path: &Path, files: &mut Vec<PathBuf>) -> Result<()> {
     Ok(())
 }
 
+/// Copy original notice bytes and build a UTF-8 license index for the gallery.
 fn copy_licenses(workspace: &Path, output: &Path) -> Result<()> {
     let mut files = vec![workspace.join("LICENSE")];
     collect_licenses(&workspace.join("tests/fixtures"), &mut files)?;
@@ -51,25 +55,24 @@ fn copy_licenses(workspace: &Path, output: &Path) -> Result<()> {
         text.push_str(&relative.to_string_lossy().replace('\\', "/"));
         text.push_str("\n\n");
         let bytes = std::fs::read(source)?;
-        let content = match std::str::from_utf8(&bytes) {
-            Ok(content) => content.to_owned(),
-            Err(_) => {
-                // Esri's original NOTICE uses a Windows-1252 en dash. Keep
-                // its original bytes above and normalize only this text index.
-                if !bytes.iter().all(|&byte| byte.is_ascii() || byte == 0x96) {
-                    return Err("unsupported fixture license text encoding".into());
-                }
-                bytes
-                    .iter()
-                    .map(|&byte| {
-                        if byte == 0x96 {
-                            '–'
-                        } else {
-                            char::from(byte)
-                        }
-                    })
-                    .collect()
+        let content = if let Ok(content) = std::str::from_utf8(&bytes) {
+            content.to_owned()
+        } else {
+            // Esri's original NOTICE uses a Windows-1252 en dash. Keep
+            // its original bytes above and normalize only this text index.
+            if !bytes.iter().all(|&byte| byte.is_ascii() || byte == 0x96) {
+                return Err("unsupported fixture license text encoding".into());
             }
+            bytes
+                .iter()
+                .map(|&byte| {
+                    if byte == 0x96 {
+                        '–'
+                    } else {
+                        char::from(byte)
+                    }
+                })
+                .collect()
         };
         text.push_str(&content);
         text.push_str("\n\n");
@@ -78,6 +81,7 @@ fn copy_licenses(workspace: &Path, output: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Validate snapshot identities and fingerprints before copying their artifacts into the static gallery.
 fn build(workspace: &Path, report_root: &Path, output: &Path) -> Result<()> {
     let cases = corpus::read_cases(workspace)?;
     let report_bytes = std::fs::read(report_root.join("report.json"))?;
@@ -192,6 +196,7 @@ mod tests {
     }
 }
 
+/// Run or reuse a verified snapshot report and build the gallery at the requested destination.
 fn main() -> Result<()> {
     let args = Args::parse();
     let workspace = Path::new(env!("CARGO_MANIFEST_DIR"));

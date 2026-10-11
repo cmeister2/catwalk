@@ -6,21 +6,33 @@ use std::{
     time::Instant,
 };
 
+/// Compound-file marker for an unused sector or directory link.
 const FREE: u32 = u32::MAX;
+/// Compound-file marker terminating a sector chain.
 const END: u32 = u32::MAX - 1;
+/// Maximum directory, DIFAT and mini-FAT byte budget.
 const MAX_DIRECTORY: usize = 4 * 1024 * 1024;
 
+/// Original compound-file tables retained to validate only selected root property streams.
 pub(super) struct Metadata {
+    /// Regular-sector allocation table from the original file.
     fat: Vec<u32>,
+    /// Mini-sector allocation table from the original file.
     mini_fat: Vec<u32>,
+    /// Root stream names mapped to their original start sector and declared byte size.
     streams: HashMap<String, (u32, u64)>,
+    /// First regular sector of the root mini-stream.
     root_start: u32,
+    /// Declared size of the root mini-stream in bytes.
     root_size: u64,
+    /// Qualified compound-file sector size in bytes.
     sector_size: usize,
+    /// Number of addressable regular sectors in the original file.
     sector_count: usize,
 }
 
 impl Metadata {
+    /// Verify an acyclic sector chain has the declared length and stays within its resource budget.
     fn chain(&self, start: u32, size: u64, mini: bool, limit: u64) -> Result<()> {
         let unit = if mini { 64 } else { self.sector_size as u64 };
         let table = if mini { &self.mini_fat } else { &self.fat };
@@ -54,6 +66,7 @@ impl Metadata {
         Ok(())
     }
 
+    /// Check selected-stream metadata and validate its regular or mini-stream sector chains.
     pub(super) fn validate_stream(&self, name: &str, size: u64) -> Result<()> {
         let &(start, original_size) = self
             .streams
@@ -74,13 +87,18 @@ impl Metadata {
     }
 }
 
+/// File adapter that checks the extraction deadline and bounds seek positions.
 pub(super) struct BudgetFile {
+    /// Opened underlying carrier file.
     source: File,
+    /// Original file size used to bound seek operations.
     size: u64,
+    /// Extraction start time shared by all cooperative deadline checks.
     started: Instant,
 }
 
 impl BudgetFile {
+    /// Wrap an opened file with its original size and extraction start time.
     pub(super) fn new(source: File, size: u64, started: Instant) -> Self {
         Self {
             source,
@@ -88,6 +106,7 @@ impl BudgetFile {
             started,
         }
     }
+    /// Translate the cooperative deadline failure into an I/O error for compound-file readers.
     fn check(&self) -> io::Result<()> {
         check_time(self.started).map_err(|error| io::Error::other(error.to_string()))
     }
@@ -111,6 +130,7 @@ impl Seek for BudgetFile {
     }
 }
 
+/// Read one complete sector after checking its identifier against the original file extent.
 fn sector(source: &mut BudgetFile, id: u32, count: usize, size: usize) -> Result<Vec<u8>> {
     if id as usize >= count {
         return Err("invalid Inventor compound sector index".into());
@@ -123,6 +143,12 @@ fn sector(source: &mut BudgetFile, id: u32, count: usize, size: usize) -> Result
 
 // Bound metadata before cfb allocates its complete FAT/directory tables. It then
 // performs the standard compound-file structural checks during opening.
+/// Validate and bound original compound-file allocation tables before the CFB reader opens them.
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    reason = "Keep metadata validation ordered before allocation; the caller bounds the file to 512 MiB"
+)]
 pub(super) fn preflight(source: &mut BudgetFile, source_size: u64) -> Result<Option<Metadata>> {
     let mut header = [0; 512];
     source.read_exact(&mut header)?;
@@ -171,7 +197,7 @@ pub(super) fn preflight(source: &mut BudgetFile, source_size: u64) -> Result<Opt
             return Err("cyclic Inventor DIFAT".into());
         }
         let data = sector(source, difat, sector_count, sector_size)?;
-        for value in data[..sector_size - 4].as_chunks::<4>().0.iter() {
+        for value in data[..sector_size - 4].as_chunks::<4>().0 {
             let id = u32::from_le_bytes(*value);
             if id != FREE {
                 fat_sectors.push(id);

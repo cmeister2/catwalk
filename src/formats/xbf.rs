@@ -1,7 +1,7 @@
 //! Static XCAF documents, decoded from native OCAF/BinTools binary records.
 //! Layout facts follow the primary OCCT serializers, not an ASCII alias:
-//! https://github.com/Open-Cascade-SAS/OCCT/tree/V7_9_0/src/BinTools
-//! https://github.com/Open-Cascade-SAS/OCCT/tree/V7_9_0/src/BinLDrivers
+//! <https://github.com/Open-Cascade-SAS/OCCT/tree/V7_9_0/src/BinTools>
+//! <https://github.com/Open-Cascade-SAS/OCCT/tree/V7_9_0/src/BinLDrivers>
 use super::transform::Transform;
 use crate::{
     Result,
@@ -13,45 +13,76 @@ use std::{
     path::Path,
 };
 
+/// Maximum native binary CAD document byte length.
 const MAX_BYTES: usize = 16 * 1024 * 1024;
+/// Maximum native table records or expanded occurrences.
 const MAX_RECORDS: usize = 100_000;
+/// Maximum recursive reference, geometry or partition depth.
 const MAX_DEPTH: usize = 64;
+/// Maximum aggregate native geometry components.
 const MAX_COMPONENTS: usize = 1_000_000;
 
+/// Native topology occurrence, including table index, location and orientation.
 #[derive(Clone, Copy, Debug)]
 struct ShapeRef {
+    /// Zero-based native shape-table index.
     node: usize,
+    /// Native placement index; zero selects identity.
     location: usize,
+    /// Native topology orientation code for this occurrence.
     orientation: u8,
 }
 
+/// One native topology record with its geometry and child references.
 struct Shape {
+    /// Native schema or topology kind selecting the record interpretation.
     kind: u8,
+    /// Validated shape geometry encoded in ASCII BREP syntax.
     geometry: String,
+    /// Native topology flags retained in the BREP translation.
     flags: u8,
+    /// Native child shape occurrences with their locations and orientations.
     children: Vec<ShapeRef>,
 }
 
+/// Decoded native geometry/topology tables and quick-part offset indices.
 #[derive(Default)]
 struct Tables {
+    /// Decoded native placement table.
     locations: Vec<Transform>,
+    /// Decoded three-dimensional curves in ASCII BREP syntax.
     curves: Vec<String>,
+    /// Decoded two-dimensional parameter curves in ASCII BREP syntax.
     pcurves: Vec<String>,
+    /// Decoded surface records in ASCII BREP syntax.
     surfaces: Vec<String>,
+    /// Decoded native topology records.
     shapes: Vec<Shape>,
+    /// Quick-part byte offsets mapped to decoded shape indices.
     shape_positions: HashMap<usize, usize>,
+    /// Quick-part byte offsets mapped to decoded location indices.
     location_positions: HashMap<usize, usize>,
+    /// Typed quick-part byte offsets mapped to decoded geometry indices.
     geometry_positions: HashMap<(u8, usize), usize>,
 }
 
+/// Bounds-checked cursor over one binary document payload.
 struct Cursor<'a> {
+    /// Borrowed binary input payload.
     bytes: &'a [u8],
+    /// Byte offset of the next unread native field.
     pos: usize,
 }
 impl<'a> Cursor<'a> {
+    /// Start a bounds-checked cursor at the beginning of a binary payload.
     fn new(bytes: &'a [u8]) -> Self {
         Self { bytes, pos: 0 }
     }
+    /// Consume an exact byte range and advance the cursor.
+    ///
+    /// # Errors
+    ///
+    /// The range overflows or the input is truncated.
     fn take(&mut self, size: usize) -> Result<&'a [u8]> {
         let end = self.pos.checked_add(size).ok_or("XBF offset overflow")?;
         let data = self
@@ -61,9 +92,19 @@ impl<'a> Cursor<'a> {
         self.pos = end;
         Ok(data)
     }
+    /// Read one byte from the binary document.
+    ///
+    /// # Errors
+    ///
+    /// The input is truncated.
     fn byte(&mut self) -> Result<u8> {
         Ok(self.take(1)?[0])
     }
+    /// Read a native boolean encoded as zero or one.
+    ///
+    /// # Errors
+    ///
+    /// The input is truncated or the flag uses another value.
     fn boolean(&mut self) -> Result<u8> {
         let value = self.byte()?;
         if value > 1 {
@@ -71,12 +112,27 @@ impl<'a> Cursor<'a> {
         }
         Ok(value)
     }
+    /// Read a little-endian signed 32-bit value.
+    ///
+    /// # Errors
+    ///
+    /// The input is truncated.
     fn i32(&mut self) -> Result<i32> {
         Ok(i32::from_le_bytes(self.take(4)?.try_into()?))
     }
+    /// Read a little-endian unsigned 64-bit value.
+    ///
+    /// # Errors
+    ///
+    /// The input is truncated.
     fn u64(&mut self) -> Result<u64> {
         Ok(u64::from_le_bytes(self.take(8)?.try_into()?))
     }
+    /// Read a nonnegative count bounded by the supplied limit.
+    ///
+    /// # Errors
+    ///
+    /// The input is truncated, the count is negative or it exceeds the limit.
     fn count(&mut self, limit: usize) -> Result<usize> {
         let count = usize::try_from(self.i32()?).map_err(|_| "negative XBF count")?;
         if count > limit {
@@ -84,6 +140,11 @@ impl<'a> Cursor<'a> {
         }
         Ok(count)
     }
+    /// Read a bounded nonnegative native table index.
+    ///
+    /// # Errors
+    ///
+    /// The value is truncated, negative or outside the supplied index limit.
     fn index(&mut self, limit: usize) -> Result<usize> {
         let index = self.count(limit)?;
         if index == 0 {
@@ -91,6 +152,11 @@ impl<'a> Cursor<'a> {
         }
         Ok(index)
     }
+    /// Read a finite little-endian binary64 value.
+    ///
+    /// # Errors
+    ///
+    /// The input is truncated or the value is non-finite.
     fn real(&mut self) -> Result<f64> {
         let value = f64::from_le_bytes(self.take(8)?.try_into()?);
         if !value.is_finite() {
@@ -98,11 +164,21 @@ impl<'a> Cursor<'a> {
         }
         Ok(value)
     }
+    /// Advance to the next native four-byte attribute alignment boundary.
+    ///
+    /// # Errors
+    ///
+    /// Alignment would advance beyond the payload.
     fn align(&mut self) -> Result<()> {
         let size = (4 - self.pos % 4) % 4;
         self.take(size)?;
         Ok(())
     }
+    /// Decode a bounded string using native one-byte or UTF-16 storage.
+    ///
+    /// # Errors
+    ///
+    /// Length/encoding is invalid or the string payload is truncated.
     fn string(&mut self, width: usize) -> Result<String> {
         let size = self.count(MAX_COMPONENTS)?;
         let data = self.take(size.checked_mul(width).ok_or("XBF string overflow")?)?;
@@ -118,6 +194,11 @@ impl<'a> Cursor<'a> {
             Ok(String::from_utf16(&data)?.trim_end_matches('\0').to_owned())
         }
     }
+    /// Read and validate a named native geometry-table header.
+    ///
+    /// # Errors
+    ///
+    /// The name, record count or table extent is invalid or unsupported.
     fn table_header(&mut self, expected: &str) -> Result<usize> {
         while self
             .bytes
@@ -149,6 +230,11 @@ impl<'a> Cursor<'a> {
         }
         Ok(count)
     }
+    /// Read a bounded native quick-part back-reference.
+    ///
+    /// # Errors
+    ///
+    /// The reference type, offset or cursor position is invalid.
     fn reference(&mut self, kind: u8) -> Result<usize> {
         let start = self.pos.checked_sub(1).ok_or("invalid XBF reference")?;
         let delta = match kind {
@@ -168,6 +254,11 @@ impl<'a> Cursor<'a> {
     }
 }
 
+/// Append finite native real values in the ASCII BREP interchange syntax.
+///
+/// # Errors
+///
+/// The binary values are truncated/non-finite or formatting fails.
 fn real_text(cursor: &mut Cursor<'_>, output: &mut String, count: usize) -> Result<()> {
     if count > MAX_COMPONENTS {
         return Err("XBF geometry exceeds one million components".into());
@@ -181,6 +272,11 @@ fn real_text(cursor: &mut Cursor<'_>, output: &mut String, count: usize) -> Resu
     Ok(())
 }
 
+/// Read a supported bounded spline degree.
+///
+/// # Errors
+///
+/// The degree is truncated, invalid or exceeds the supported bound.
 fn degree(cursor: &mut Cursor<'_>) -> Result<usize> {
     let degree = usize::from(u16::from_le_bytes(cursor.take(2)?.try_into()?));
     if !(1..=64).contains(&degree) {
@@ -189,7 +285,7 @@ fn degree(cursor: &mut Cursor<'_>) -> Result<usize> {
     Ok(degree)
 }
 
-/// BinTools curve payloads have the same actual geometry as their BREP records.
+/// `BinTools` curve payloads have the same actual geometry as their BREP records.
 fn curve(cursor: &mut Cursor<'_>, dimension: usize, depth: usize) -> Result<String> {
     if depth > MAX_DEPTH {
         return Err("XBF nested curves exceed 64 levels".into());
@@ -247,6 +343,11 @@ fn curve(cursor: &mut Cursor<'_>, dimension: usize, depth: usize) -> Result<Stri
     Ok(out)
 }
 
+/// Translate one native surface record to validated BREP text.
+///
+/// # Errors
+///
+/// The surface schema, numeric payload or recursion/spline limits are unsupported or invalid.
 fn surface(cursor: &mut Cursor<'_>, depth: usize) -> Result<String> {
     if depth > MAX_DEPTH {
         return Err("XBF nested surfaces exceed 64 levels".into());
@@ -326,6 +427,11 @@ fn surface(cursor: &mut Cursor<'_>, depth: usize) -> Result<String> {
     Ok(out)
 }
 
+/// Read a finite native affine placement matrix.
+///
+/// # Errors
+///
+/// The matrix payload is truncated or contains non-finite numbers.
 fn read_transform(cursor: &mut Cursor<'_>) -> Result<Transform> {
     let mut transform = Transform::IDENTITY;
     for row in 0..3 {
@@ -336,6 +442,11 @@ fn read_transform(cursor: &mut Cursor<'_>) -> Result<Transform> {
     Ok(transform)
 }
 
+/// Invert a finite nonsingular affine placement.
+///
+/// # Errors
+///
+/// The matrix is singular or its inverse exceeds numeric range.
 fn inverse(transform: Transform) -> Result<Transform> {
     let c = transform.0;
     let a = Vec3::new(c[0][0], c[0][1], c[0][2]);
@@ -362,6 +473,11 @@ fn inverse(transform: Transform) -> Result<Transform> {
     Ok(result)
 }
 
+/// Compose a placement raised to a bounded signed integer power.
+///
+/// # Errors
+///
+/// The exponent exceeds limits or a negative power requires an invalid inverse.
 fn power(mut transform: Transform, exponent: i32) -> Result<Transform> {
     if exponent.unsigned_abs() > 1024 {
         return Err("XBF location power exceeds 1024".into());
@@ -380,6 +496,11 @@ fn power(mut transform: Transform, exponent: i32) -> Result<Transform> {
 }
 
 impl Tables {
+    /// Read or reuse a native quick-part location record.
+    ///
+    /// # Errors
+    ///
+    /// The placement/back-reference is invalid or exceeds nesting/table limits.
     fn location(&mut self, cursor: &mut Cursor<'_>, depth: usize) -> Result<usize> {
         if depth > MAX_DEPTH || self.locations.len() >= MAX_RECORDS {
             return Err("XBF location hierarchy exceeds preview limits".into());
@@ -418,6 +539,11 @@ impl Tables {
         self.location_positions.insert(pos, id);
         Ok(id)
     }
+    /// Read or reuse a native typed geometry-table record.
+    ///
+    /// # Errors
+    ///
+    /// The schema/back-reference is invalid or exceeds geometry limits.
     fn geometry(&mut self, cursor: &mut Cursor<'_>, expected: u8) -> Result<usize> {
         let pos = cursor.pos;
         let kind = cursor.byte()?;
@@ -454,6 +580,11 @@ impl Tables {
         self.geometry_positions.insert((expected, pos), id);
         Ok(id)
     }
+    /// Read or reuse quick-part topology with its native location and orientation.
+    ///
+    /// # Errors
+    ///
+    /// The topology schema, reference or bounded child hierarchy is invalid.
     fn shape(&mut self, cursor: &mut Cursor<'_>, depth: usize) -> Result<Option<ShapeRef>> {
         if depth > MAX_DEPTH || self.shapes.len() >= MAX_RECORDS {
             return Err("XBF shape hierarchy exceeds preview limits".into());
@@ -512,6 +643,15 @@ impl Tables {
             orientation,
         }))
     }
+    /// Translate quick-part shape geometry into the corresponding BREP payload.
+    ///
+    /// # Errors
+    ///
+    /// The shape/representation schema, numbers or geometry references are invalid or unsupported.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Keep the format record dispatch, validation and its resource checks together without changing geometry evaluation."
+    )]
     fn quick_shape_geometry(&mut self, cursor: &mut Cursor<'_>, kind: u8) -> Result<String> {
         let mut out = String::new();
         match kind {
@@ -622,6 +762,11 @@ impl Tables {
     }
 }
 
+/// Map a native continuity enumeration to its BREP spelling.
+///
+/// # Errors
+///
+/// The continuity value is outside the supported enumeration.
 fn continuity_text(kind: u8) -> Result<&'static str> {
     ["C0", "G1", "C1", "G2", "C2", "C3", "CN"]
         .get(usize::from(kind))
@@ -629,39 +774,70 @@ fn continuity_text(kind: u8) -> Result<&'static str> {
         .ok_or_else(|| "invalid XBF continuity".into())
 }
 
+/// Read and render a native binary XCAF/BREP document.
+///
+/// # Errors
+///
+/// File access, binary schema, geometry, document roots or tessellation fail validation.
 pub(super) fn load(path: &Path) -> Result<Scene> {
     let bytes = super::read_file(path)?;
     parse(&bytes)
 }
 
+/// Document label attributes needed for shape ownership, placement and color.
 #[derive(Default)]
 struct Label {
+    /// Native integer label path identifying this document label.
     path: Vec<i32>,
+    /// Native shape occurrences directly stored in this label.
     shapes: Vec<ShapeRef>,
+    /// Native placement index; zero selects identity.
     location: Option<usize>,
+    /// Whether this label declares the document shape-tool attribute.
     shape_tool: bool,
+    /// Native attribute trees indexed by their supported type identifiers.
     trees: HashMap<u32, Tree>,
+    /// Optional inherited RGB surface or line color.
     color: Option<[u8; 3]>,
+    /// Whether this label references externally stored geometry.
     external: bool,
 }
+/// Native attribute-tree links used by shape and color associations.
 struct Tree {
+    /// Native attribute identifier used by tree links.
     id: i32,
+    /// Native parent attribute identifier in the association tree.
     father: i32,
+    /// Native first-child attribute identifier in the association tree.
     first: i32,
 }
+/// Supported binary document metadata and indexed label attributes.
 struct Document {
+    /// Supported native binary document format version.
     version: u32,
+    /// Attribute type names in native table order.
     types: Vec<String>,
+    /// Decoded document labels and their supported attributes.
     labels: Vec<Label>,
+    /// Native attribute identifiers mapped to owning label indices.
     attribute_labels: HashMap<i32, usize>,
 }
 
+/// Resolve binary document attributes and native geometry into a complete scene.
+///
+/// # Errors
+///
+/// Document headers, labels, tables, references or CAD geometry are invalid, unsupported or oversized.
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keep the format record dispatch, validation and its resource checks together without changing geometry evaluation."
+)]
 fn parse(bytes: &[u8]) -> Result<Scene> {
     if bytes.len() > MAX_BYTES {
         return Err("XBF input exceeds the 16 MiB preview limit".into());
     }
     let mut cursor = Cursor::new(bytes);
-    if cursor.take(7)? != b"BINFILE" || cursor.i32()? != 0x04030201 {
+    if cursor.take(7)? != b"BINFILE" || cursor.i32()? != 0x0403_0201 {
         return Err("unsupported XBF binary signature or byte order".into());
     }
     let mut header = [0i32; 12];
@@ -761,6 +937,15 @@ fn parse(bytes: &[u8]) -> Result<Scene> {
 }
 
 impl Tables {
+    /// Read native table-based geometry for supported legacy document versions.
+    ///
+    /// # Errors
+    ///
+    /// Table schemas, references, numeric data or limits are invalid or unsupported.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Keep the format record dispatch, validation and its resource checks together without changing geometry evaluation."
+    )]
     fn read_old(&mut self, cursor: &mut Cursor<'_>) -> Result<()> {
         let start = cursor.pos;
         let prefix = cursor
@@ -879,6 +1064,15 @@ impl Tables {
         }
         Ok(())
     }
+    /// Translate legacy table-based shape representations to BREP syntax.
+    ///
+    /// # Errors
+    ///
+    /// Native representation data or geometry/location references are invalid or unsupported.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Keep the format record dispatch, validation and its resource checks together without changing geometry evaluation."
+    )]
     fn old_shape_geometry(
         &self,
         cursor: &mut Cursor<'_>,
@@ -933,7 +1127,7 @@ impl Tables {
                             let curve = cursor.index(self.curves.len())?;
                             let location = cursor.count(self.locations.len())?;
                             self.check_representation_location(location)?;
-                            write!(out, "{} {} ", curve, location)?;
+                            write!(out, "{curve} {location} ")?;
                             real_text(cursor, &mut out, 2)?;
                         }
                         2 | 3 => {
@@ -949,7 +1143,7 @@ impl Tables {
                             let surface = cursor.index(self.surfaces.len())?;
                             let location = cursor.count(self.locations.len())?;
                             self.check_representation_location(location)?;
-                            write!(out, "{} {} ", surface, location)?;
+                            write!(out, "{surface} {location} ")?;
                             real_text(cursor, &mut out, 2)?;
                             if matches!(version, 2 | 3) {
                                 for _ in 0..4 {
@@ -994,6 +1188,11 @@ impl Tables {
         }
         Ok(out)
     }
+    /// Decode a stored shape reference and its placement/orientation.
+    ///
+    /// # Errors
+    ///
+    /// The encoded shape, location or orientation is invalid or missing.
     fn stored_reference(&self, cursor: &mut Cursor<'_>) -> Result<ShapeRef> {
         cursor.align()?;
         let index = cursor.count(self.shapes.len())?;
@@ -1014,6 +1213,11 @@ impl Tables {
             orientation,
         })
     }
+    /// Resolve a native location table index, including identity index zero.
+    ///
+    /// # Errors
+    ///
+    /// The location index is out of range.
     fn location_transform(&self, index: usize) -> Result<Transform> {
         if index == 0 {
             Ok(Transform::IDENTITY)
@@ -1024,6 +1228,11 @@ impl Tables {
                 .ok_or_else(|| "invalid XBF location index".into())
         }
     }
+    /// Check a representation's native location reference.
+    ///
+    /// # Errors
+    ///
+    /// The location does not resolve to a known placement.
     fn check_representation_location(&self, index: usize) -> Result<()> {
         self.location_transform(index)?;
         Ok(())
@@ -1031,6 +1240,15 @@ impl Tables {
 }
 
 impl Document {
+    /// Read one document label and its supported typed attributes recursively.
+    ///
+    /// # Errors
+    ///
+    /// Attributes, labels, references or nesting limits are malformed or unsupported.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Keep the format record dispatch, validation and its resource checks together without changing geometry evaluation."
+    )]
     fn label(
         &mut self,
         cursor: &mut Cursor<'_>,
@@ -1179,7 +1397,7 @@ impl Document {
                 }
                 "TDataStd_UAttribute"
                     if data.len() == 16
-                        && u32::from_le_bytes(data[..4].try_into()?) == 0x6b896b01 =>
+                        && u32::from_le_bytes(data[..4].try_into()?) == 0x6b89_6b01 =>
                 {
                     self.labels[index].external = true;
                 }
@@ -1213,6 +1431,11 @@ impl Document {
         Ok(())
     }
 
+    /// Resolve a shape label or assembly reference to concrete native shapes.
+    ///
+    /// # Errors
+    ///
+    /// Label/tree references are missing, cyclic or exceed nesting limits.
     fn resolve(&self, index: usize, tables: &mut Tables, depth: usize) -> Result<Vec<ShapeRef>> {
         if depth > MAX_DEPTH {
             return Err("cyclic or overly deep XBF assembly reference".into());
@@ -1221,14 +1444,14 @@ impl Document {
         if label.external {
             return Err("XBF external shape references are unsupported".into());
         }
-        if let Some(tree) = label.trees.get(&0x5b896afe).filter(|tree| tree.father > 0) {
+        if let Some(tree) = label.trees.get(&0x5b89_6afe).filter(|tree| tree.father > 0) {
             let parent = *self
                 .attribute_labels
                 .get(&tree.father)
                 .ok_or("XBF assembly reference target does not exist")?;
             let target_tree = self.labels[parent]
                 .trees
-                .get(&0x5b896afe)
+                .get(&0x5b89_6afe)
                 .ok_or("XBF assembly reference does not target a shape tree")?;
             if target_tree.id != tree.father {
                 return Err("XBF assembly link has the wrong attribute type".into());
@@ -1249,9 +1472,14 @@ impl Document {
         }
     }
 
+    /// Resolve a label's inherited diffuse color.
+    ///
+    /// # Errors
+    ///
+    /// The label/color-tree references are invalid or cyclic.
     fn diffuse(&self, index: usize) -> Result<Option<[u8; 3]>> {
         let label = &self.labels[index];
-        for kind in [0xefd212e5, 0xefd212e4, 0xefd212e6] {
+        for kind in [0xefd2_12e5, 0xefd2_12e4, 0xefd2_12e6] {
             if let Some(tree) = label.trees.get(&kind).filter(|tree| tree.father > 0) {
                 let parent = *self
                     .attribute_labels
@@ -1273,6 +1501,11 @@ impl Document {
         Ok(None)
     }
 
+    /// Render document roots with inherited color and native occurrence placements.
+    ///
+    /// # Errors
+    ///
+    /// Required shapes, roots, placements or CAD tessellation cannot produce a complete bounded scene.
     fn render(&self, tables: &mut Tables) -> Result<Scene> {
         let tools: Vec<_> = self
             .labels
@@ -1310,7 +1543,7 @@ impl Document {
             }
             if label
                 .trees
-                .get(&0x5b896afe)
+                .get(&0x5b89_6afe)
                 .is_some_and(|tree| tree.first > 0)
             {
                 continue;
@@ -1365,8 +1598,14 @@ impl Document {
     }
 }
 
+/// Encode one clamped linear RGB component as an sRGB byte.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Validated zero-to-one color factors are intentionally rounded to bounded RGB bytes."
+)]
 fn linear_color(value: f64) -> u8 {
-    let value = if value <= 0.0031308 {
+    let value = if value <= 0.003_130_8 {
         value * 12.92
     } else {
         1.055 * value.powf(1.0 / 2.4) - 0.055
@@ -1374,9 +1613,18 @@ fn linear_color(value: f64) -> u8 {
     (value * 255.0).round().clamp(0.0, 255.0) as u8
 }
 
+/// A renderable native shape occurrence with world placement and inherited RGB color.
 type Primitive = (ShapeRef, Transform, Option<[u8; 3]>);
 
-#[allow(clippy::too_many_arguments)]
+/// Collect face, free-edge and vertex occurrences with their world placement and color.
+///
+/// # Errors
+///
+/// Shape/location references are invalid or occurrence, nesting or primitive limits are exceeded.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "The bounded shape walk carries distinct placement, color, ownership, and resource state through recursion."
+)]
 fn collect_primitives(
     tables: &Tables,
     reference: ShapeRef,
@@ -1438,6 +1686,10 @@ impl Tables {
     /// The ASCII kernel reader preserves topology placements but resets
     /// edge/surface representation placements. Restore those exact native
     /// records through the public typed geometry API before tessellation.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Keep the format record dispatch, validation and its resource checks together without changing geometry evaluation."
+    )]
     fn restore_representation_locations(
         &self,
         model: &mut ogeom_topo::Model,
@@ -1613,6 +1865,11 @@ impl Tables {
         }
         Ok(())
     }
+    /// Serialize collected native topology and placements as ASCII BREP.
+    ///
+    /// # Errors
+    ///
+    /// Required topology references, geometry or formatting are invalid.
     fn brep(&mut self, primitives: &[Primitive]) -> Result<String> {
         let mut locations = self.locations.clone();
         let mut root_children = Vec::new();
@@ -1690,12 +1947,22 @@ impl Tables {
         Ok(out)
     }
 }
+/// Resolve a native topology kind to its ASCII BREP name.
+///
+/// # Errors
+///
+/// The topology kind is outside the supported enumeration.
 fn shape_name(kind: u8) -> Result<&'static str> {
     ["Co", "CS", "So", "Sh", "Fa", "Wi", "Ed", "Ve"]
         .get(usize::from(kind))
         .copied()
         .ok_or_else(|| "unsupported XBF shape type".into())
 }
+/// Write a native shape occurrence in ASCII BREP reference syntax.
+///
+/// # Errors
+///
+/// The referenced shape index is invalid or formatting fails.
 fn write_reference(out: &mut String, shape: ShapeRef, total: usize) -> Result<()> {
     let orientation = ["+", "-", "i", "e"]
         .get(usize::from(shape.orientation))
@@ -1721,6 +1988,11 @@ mod tests {
             real(out, *value);
         }
     }
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        reason = "Small authored test payload lengths fit their native field widths; preserve the exact binary fixture encoding."
+    )]
     fn string(out: &mut Vec<u8>, value: &str) {
         integer(out, value.len() as i32);
         out.extend(value.as_bytes());
@@ -1733,6 +2005,10 @@ mod tests {
             }
         }
     }
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "Small authored test payload lengths fit their native field widths; preserve the exact binary fixture encoding."
+    )]
     fn reference(out: &mut Vec<u8>, offset: usize) {
         let delta = out.len() - offset;
         out.push(3);
@@ -1788,6 +2064,11 @@ mod tests {
         out.extend([199, 199, 199]);
         out
     }
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        reason = "Small authored test payload lengths fit their native field widths; preserve the exact binary fixture encoding."
+    )]
     fn attribute(kind: i32, id: i32, data: Vec<u8>, direct: Option<Vec<u8>>) -> Vec<u8> {
         let mut out = Vec::new();
         integer(&mut out, kind);
@@ -1805,7 +2086,7 @@ mod tests {
         for value in [father, -1, -1, first] {
             integer(&mut data, value);
         }
-        data.extend(0xefd212e4u32.to_le_bytes());
+        data.extend(0xefd2_12e4u32.to_le_bytes());
         data.extend([
             0xfd, 0x6d, 0xd4, 0x11, 0xb9, 0xc8, 0, 0x60, 0xb0, 0xee, 0x28, 0x1b,
         ]);
@@ -1828,6 +2109,15 @@ mod tests {
         }
         out
     }
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        reason = "Small authored test payload lengths fit their native field widths; preserve the exact binary fixture encoding."
+    )]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Keep the format record dispatch, validation and its resource checks together without changing geometry evaluation."
+    )]
     fn document(geometry: Vec<u8>, version: u32) -> Vec<u8> {
         let quick = version == 12;
         let mut named = Vec::new();
@@ -1903,7 +2193,18 @@ mod tests {
         integer(&mut out, 0);
         let start_doc = out.len() as i32;
         let header = [
-            0x04030201, 7, end_info, end_info, start_doc, -1, -1, -1, -1, -1, -1, start_doc,
+            0x0403_0201,
+            7,
+            end_info,
+            end_info,
+            start_doc,
+            -1,
+            -1,
+            -1,
+            -1,
+            -1,
+            -1,
+            start_doc,
             start_doc,
         ];
         for (index, value) in header.iter().enumerate() {

@@ -1,7 +1,7 @@
 //! Scalar-volume thumbnails as a bounded surface of thresholded density voxels.
-//! NRRD: https://teem.sourceforge.net/nrrd/format.html
-//! MetaImage: https://docs.itk.org/en/latest/learn/metaio.html
-//! VTI: https://docs.vtk.org/en/latest/vtk_file_formats/vtkxml_file_format.html
+//! NRRD: <https://teem.sourceforge.net/nrrd/format.html>
+//! MetaImage: <https://docs.itk.org/en/latest/learn/metaio.html>
+//! VTI: <https://docs.vtk.org/en/latest/vtk_file_formats/vtkxml_file_format.html>
 use crate::{
     Result,
     scene::{Scene, Triangle, Vec3},
@@ -11,11 +11,20 @@ use flate2::read::{MultiGzDecoder, ZlibDecoder};
 use roxmltree::Node;
 use std::{collections::HashMap, io::Read, path::Path};
 
+/// Maximum scalar sample count accepted before array expansion.
 const MAX_SAMPLES: usize = 16_777_216;
+/// Maximum expanded scalar payload bytes.
 const MAX_DECODE_BYTES: usize = 128 * 1024 * 1024;
+/// Maximum volume header bytes examined before finding its payload.
 const MAX_HEADER_BYTES: usize = 1024 * 1024;
+/// Maximum density-preview samples along each spatial axis.
 const PREVIEW_AXIS: usize = 32;
 
+/// Read a bounded NRRD, `MetaImage` or VTK image volume and decode its preview geometry.
+///
+/// # Errors
+/// Returns an error for unsupported scalar/volume encodings, invalid dimensions or placement,
+/// nonfinite samples, malformed payloads or size limits.
 pub(super) fn load(path: &Path) -> Result<Scene> {
     let bytes = super::read_file(path)?;
     let volume = match super::extension(path)?.as_str() {
@@ -27,25 +36,42 @@ pub(super) fn load(path: &Path) -> Result<Scene> {
     volume.surface()
 }
 
+/// Decode VTK image scalars and extract a bounded density surface.
+///
+/// # Errors
+/// Returns an error for unsupported scalar/volume encodings, invalid dimensions or placement,
+/// nonfinite samples, malformed payloads or size limits.
 pub(super) fn vti_scene(bytes: &[u8]) -> Result<Scene> {
     vti(bytes)?.surface()
 }
 
 #[derive(Clone, Copy, Debug)]
+/// Supported scalar storage types for the NRRD, `MetaImage` or VTK image volume.
 enum Scalar {
+    /// Signed eight-bit integer values.
     I8,
+    /// Unsigned eight-bit integer values.
     U8,
+    /// Signed 16-bit integer values.
     I16,
+    /// Unsigned 16-bit integer values.
     U16,
+    /// Signed 32-bit integer values.
     I32,
+    /// Unsigned 32-bit integer values.
     U32,
+    /// Signed 64-bit integer values.
     I64,
+    /// Unsigned 64-bit integer values.
     U64,
+    /// IEEE single-precision floating-point values.
     F32,
+    /// IEEE double-precision floating-point values.
     F64,
 }
 
 impl Scalar {
+    /// Resolve NRRD, `MetaImage` and VTK scalar type aliases.
     fn parse(name: &str) -> Result<Self> {
         let name = name.trim().to_ascii_lowercase().replace(' ', "");
         Ok(match name.as_str() {
@@ -70,6 +96,7 @@ impl Scalar {
             _ => return Err(format!("unsupported scalar volume type {name}").into()),
         })
     }
+    /// Return the on-disk byte width of this scalar representation.
     fn width(self) -> usize {
         match self {
             Self::I8 | Self::U8 => 1,
@@ -78,21 +105,32 @@ impl Scalar {
             _ => 8,
         }
     }
+    /// Parse one ASCII scalar with its declared signedness and numeric width.
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "Integer scalar fields intentionally approximate to f64 density samples, including 64-bit storage."
+    )]
     fn ascii(self, token: &str) -> Result<f64> {
         let value = match self {
-            Self::I8 => token.parse::<i8>()? as f64,
-            Self::U8 => token.parse::<u8>()? as f64,
-            Self::I16 => token.parse::<i16>()? as f64,
-            Self::U16 => token.parse::<u16>()? as f64,
-            Self::I32 => token.parse::<i32>()? as f64,
-            Self::U32 => token.parse::<u32>()? as f64,
+            Self::I8 => f64::from(token.parse::<i8>()?),
+            Self::U8 => f64::from(token.parse::<u8>()?),
+            Self::I16 => f64::from(token.parse::<i16>()?),
+            Self::U16 => f64::from(token.parse::<u16>()?),
+            Self::I32 => f64::from(token.parse::<i32>()?),
+            Self::U32 => f64::from(token.parse::<u32>()?),
             Self::I64 => token.parse::<i64>()? as f64,
             Self::U64 => token.parse::<u64>()? as f64,
-            Self::F32 => token.parse::<f32>()? as f64,
+            Self::F32 => f64::from(token.parse::<f32>()?),
             Self::F64 => token.parse::<f64>()?,
         };
         finite(value)
     }
+    /// Decode one endian-selected scalar and reject nonfinite values.
+    #[allow(
+        clippy::cast_lossless,
+        clippy::cast_precision_loss,
+        reason = "The shared endian macro decodes every scalar width; 64-bit integer densities intentionally approximate to f64."
+    )]
     fn raw(self, bytes: &[u8], big: bool) -> Result<f64> {
         macro_rules! number {
             ($ty:ty) => {{
@@ -105,8 +143,8 @@ impl Scalar {
             }};
         }
         finite(match self {
-            Self::I8 => i8::from_ne_bytes([bytes[0]]) as f64,
-            Self::U8 => bytes[0] as f64,
+            Self::I8 => f64::from(i8::from_ne_bytes([bytes[0]])),
+            Self::U8 => f64::from(bytes[0]),
             Self::I16 => number!(i16),
             Self::U16 => number!(u16),
             Self::I32 => number!(i32),
@@ -119,6 +157,7 @@ impl Scalar {
     }
 }
 
+/// Reject nonfinite values before using them as coordinates or scalar samples.
 fn finite(value: f64) -> Result<f64> {
     if value.is_finite() {
         Ok(value)
@@ -127,6 +166,7 @@ fn finite(value: f64) -> Result<f64> {
     }
 }
 
+/// Normalize one-, two- or three-dimensional volume sizes into a checked three-axis shape.
 fn sizes(values: &[usize]) -> Result<[usize; 3]> {
     if !matches!(values.len(), 2 | 3) {
         return Err("volume reader requires two or three spatial dimensions".into());
@@ -137,6 +177,7 @@ fn sizes(values: &[usize]) -> Result<[usize; 3]> {
     Ok(result)
 }
 
+/// Compute the bounded product of the volume dimensions.
 fn sample_count(dimensions: [usize; 3]) -> Result<usize> {
     let count = dimensions.iter().try_fold(1usize, |total, &n| {
         if n == 0 {
@@ -150,6 +191,7 @@ fn sample_count(dimensions: [usize; 3]) -> Result<usize> {
     Ok(count)
 }
 
+/// Compute the expected scalar byte length within the decoded-volume limit.
 fn payload_size(ty: Scalar, count: usize) -> Result<usize> {
     let bytes = count
         .checked_mul(ty.width())
@@ -160,6 +202,7 @@ fn payload_size(ty: Scalar, count: usize) -> Result<usize> {
     Ok(bytes)
 }
 
+/// Decode an exact-length raw scalar payload with the selected byte order.
 fn raw_values(bytes: &[u8], ty: Scalar, count: usize, big: bool) -> Result<Vec<f64>> {
     let expected = payload_size(ty, count)?;
     let data = bytes
@@ -170,6 +213,7 @@ fn raw_values(bytes: &[u8], ty: Scalar, count: usize, big: bool) -> Result<Vec<f
         .collect()
 }
 
+/// Parse the declared ASCII samples and optionally require exact token consumption.
 fn ascii_values(bytes: &[u8], ty: Scalar, count: usize, exact: bool) -> Result<Vec<f64>> {
     payload_size(ty, count)?;
     let mut tokens = std::str::from_utf8(bytes)?.split_whitespace();
@@ -182,6 +226,7 @@ fn ascii_values(bytes: &[u8], ty: Scalar, count: usize, exact: bool) -> Result<V
     Ok(values)
 }
 
+/// Read exactly the expected decompressed payload without accepting excess output.
 fn unpack<R: Read>(reader: R, expected: usize) -> Result<Vec<u8>> {
     let mut bytes = Vec::new();
     reader.take(expected as u64 + 1).read_to_end(&mut bytes)?;
@@ -191,12 +236,14 @@ fn unpack<R: Read>(reader: R, expected: usize) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 
+/// Parse whitespace-separated finite header numbers.
 fn numbers(text: &str) -> Result<Vec<f64>> {
     text.split_whitespace()
         .map(|s| finite(s.parse()?))
         .collect()
 }
 
+/// Require exactly three finite header components for a spatial vector.
 fn vector(values: &[f64]) -> Result<Vec3> {
     match values {
         [x, y] => Ok(Vec3::new(*x, *y, 0.)),
@@ -205,6 +252,7 @@ fn vector(values: &[f64]) -> Result<Vec3> {
     }
 }
 
+/// Decode row- or column-major direction metadata and reject singular axes.
 fn direction_matrix(values: &[f64], dimensions: usize, columns: bool) -> Result<[Vec3; 3]> {
     if values.len() != dimensions * dimensions {
         return Err("volume direction matrix has the wrong size".into());
@@ -227,6 +275,7 @@ fn direction_matrix(values: &[f64], dimensions: usize, columns: bool) -> Result<
     Ok(result)
 }
 
+/// Return the Cartesian unit axes used when no orientation is supplied.
 fn default_axes() -> [Vec3; 3] {
     [
         Vec3::new(1., 0., 0.),
@@ -235,13 +284,23 @@ fn default_axes() -> [Vec3; 3] {
     ]
 }
 
+/// Finite scalar lattice with an origin and oriented spatial axes.
 struct Volume {
+    /// Number of scalar samples along each axis.
     dimensions: [usize; 3],
+    /// World-space lattice origin.
     origin: Vec3,
+    /// World-space step vectors, including orientation and spacing.
     axes: [Vec3; 3],
+    /// Scalar samples in X-fastest lattice order.
     values: Vec<f64>,
 }
 
+/// Extract a bounded density surface from regularly spaced scalar samples.
+///
+/// # Errors
+/// Returns an error for empty/oversized dimensions, a mismatched or nonfinite scalar array,
+/// invalid spatial axes/origin, or degenerate surface geometry.
 pub(super) fn density_scene(
     dimensions: [usize; 3],
     origin: Vec3,
@@ -257,11 +316,16 @@ pub(super) fn density_scene(
     .surface()
 }
 
+/// Extract a density surface using explicit nonuniform coordinates on each axis.
+///
+/// # Errors
+/// Returns an error for invalid scalar dimensions/values, nonfinite or nonmonotonic coordinate
+/// axes, inconsistent axis lengths, or invalid surface geometry.
 pub(super) fn density_rectilinear_scene(
-    coordinates: [Vec<f64>; 3],
+    coordinates: &[Vec<f64>; 3],
     values: Vec<f64>,
 ) -> Result<Scene> {
-    let dimensions = coordinates.each_ref().map(|axis| axis.len());
+    let dimensions = coordinates.each_ref().map(std::vec::Vec::len);
     Volume {
         dimensions,
         origin: Vec3::new(0., 0., 0.),
@@ -272,11 +336,23 @@ pub(super) fn density_rectilinear_scene(
 }
 
 impl Volume {
+    /// Reduce scalar samples to a bounded preview lattice and extract occupied boundary faces.
     fn surface(self) -> Result<Scene> {
         self.surface_with_coordinates(None)
     }
 
-    fn surface_with_coordinates(self, coordinates: Option<[Vec<f64>; 3]>) -> Result<Scene> {
+    /// Max-pool density while retaining occupied cavities and explicit axis coordinates.
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_precision_loss,
+        clippy::cast_sign_loss,
+        reason = "Max-pool bin indices are bounded by validated dimensions and PREVIEW_AXIS before native/f64 conversion."
+    )]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Keep max-pooling, coordinate resampling and exposed-face construction together to preserve cavity boundaries."
+    )]
+    fn surface_with_coordinates(self, coordinates: Option<&[Vec<f64>; 3]>) -> Result<Scene> {
         if self.values.len() != sample_count(self.dimensions)? {
             return Err("volume scalar count disagrees with dimensions".into());
         }
@@ -291,7 +367,7 @@ impl Volume {
         let mut determinant = self.axes[0]
             .normalized()
             .dot(self.axes[1].normalized().cross(self.axes[2].normalized()));
-        if let Some(coordinates) = &coordinates {
+        if let Some(coordinates) = coordinates {
             for axis in coordinates {
                 if axis.iter().any(|v| !v.is_finite()) {
                     return Err("rectilinear volume coordinates must be finite".into());
@@ -348,7 +424,7 @@ impl Volume {
             }
         }
         let world = |p: [f64; 3]| {
-            let p = if let Some(coordinates) = &coordinates {
+            let p = if let Some(coordinates) = coordinates {
                 std::array::from_fn(|axis| {
                     let values = &coordinates[axis];
                     if values.len() == 1 {
@@ -420,6 +496,7 @@ impl Volume {
     }
 }
 
+/// Require a named volume header field.
 fn required<'a>(fields: &'a HashMap<String, String>, name: &str) -> Result<&'a str> {
     fields
         .get(name)
@@ -427,9 +504,10 @@ fn required<'a>(fields: &'a HashMap<String, String>, name: &str) -> Result<&'a s
         .ok_or_else(|| format!("missing volume header {name}").into())
 }
 
-fn insert(fields: &mut HashMap<String, String>, name: String, value: &str) -> Result<()> {
+/// Store a unique normalized header field and reject duplicates.
+fn insert(fields: &mut HashMap<String, String>, name: &str, value: &str) -> Result<()> {
     if fields
-        .insert(name.clone(), value.trim().to_owned())
+        .insert(name.to_owned(), value.trim().to_owned())
         .is_some()
     {
         return Err(format!("duplicate volume header field {name}").into());
@@ -437,6 +515,7 @@ fn insert(fields: &mut HashMap<String, String>, name: String, value: &str) -> Re
     Ok(())
 }
 
+/// Read an adjacent payload after validating its relative path and byte budget.
 fn detached(path: &Path, filename: &str, header_len: usize) -> Result<Vec<u8>> {
     let filename = filename.trim().trim_matches('"');
     if filename.starts_with("LIST") || filename.contains('%') {
@@ -454,6 +533,7 @@ fn detached(path: &Path, filename: &str, header_len: usize) -> Result<Vec<u8>> {
     Ok(data)
 }
 
+/// Parse parenthesized NRRD axis vectors.
 fn paren_vectors(text: &str) -> Result<Vec<Vec3>> {
     let mut text = text.trim();
     let mut vectors = Vec::new();
@@ -472,6 +552,7 @@ fn paren_vectors(text: &str) -> Result<Vec<Vec3>> {
     Ok(vectors)
 }
 
+/// Apply declared line and byte skips without leaving the payload bounds.
 fn skip_payload(
     data: &[u8],
     lines: usize,
@@ -506,6 +587,11 @@ fn skip_payload(
         .ok_or_else(|| "volume byte skip exceeds payload size".into())
 }
 
+/// Decode NRRD metadata, scalar encodings, detached data and spatial axis vectors.
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keep NRRD header, detached-payload and encoding checks together with the declared scalar layout."
+)]
 fn nrrd(path: &Path, bytes: &[u8]) -> Result<Volume> {
     let mut offset = 0usize;
     let mut fields = HashMap::new();
@@ -515,8 +601,7 @@ fn nrrd(path: &Path, bytes: &[u8]) -> Result<Volume> {
         let end = bytes[offset..]
             .iter()
             .position(|&b| b == b'\n')
-            .map(|n| offset + n)
-            .unwrap_or(bytes.len());
+            .map_or(bytes.len(), |n| offset + n);
         if end > MAX_HEADER_BYTES {
             return Err("NRRD header exceeds the 1 MiB limit".into());
         }
@@ -546,7 +631,7 @@ fn nrrd(path: &Path, bytes: &[u8]) -> Result<Volume> {
             "byteskip" => "byte skip".to_owned(),
             other => other.to_owned(),
         };
-        insert(&mut fields, name, value)?;
+        insert(&mut fields, &name, value)?;
     }
     let dimension: usize = required(&fields, "dimension")?.parse()?;
     let dims = required(&fields, "sizes")?
@@ -684,6 +769,7 @@ fn nrrd(path: &Path, bytes: &[u8]) -> Result<Volume> {
     })
 }
 
+/// Parse the exact `MetaImage` boolean spellings.
 fn boolean(text: &str) -> Result<bool> {
     match text.trim().to_ascii_lowercase().as_str() {
         "true" => Ok(true),
@@ -692,6 +778,11 @@ fn boolean(text: &str) -> Result<bool> {
     }
 }
 
+/// Decode `MetaImage` local/detached scalars, byte order, compression and column-major placement.
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keep MetaImage header termination and local/detached scalar layout validation together."
+)]
 fn metaimage(path: &Path, bytes: &[u8]) -> Result<Volume> {
     let mut fields = HashMap::new();
     let mut offset = 0usize;
@@ -699,8 +790,7 @@ fn metaimage(path: &Path, bytes: &[u8]) -> Result<Volume> {
         let end = bytes[offset..]
             .iter()
             .position(|&b| b == b'\n')
-            .map(|n| offset + n)
-            .unwrap_or(bytes.len());
+            .map_or(bytes.len(), |n| offset + n);
         if end > MAX_HEADER_BYTES {
             return Err("MetaImage header exceeds the 1 MiB limit".into());
         }
@@ -719,7 +809,7 @@ fn metaimage(path: &Path, bytes: &[u8]) -> Result<Volume> {
             name => name.to_owned(),
         };
         let done = name == "elementdatafile";
-        insert(&mut fields, name, value)?;
+        insert(&mut fields, &name, value)?;
         if done {
             break;
         }
@@ -832,12 +922,14 @@ fn metaimage(path: &Path, bytes: &[u8]) -> Result<Volume> {
     })
 }
 
+/// Require a direct VTK image XML child.
 fn xml_child<'a, 'b>(node: Node<'a, 'b>, name: &str) -> Result<Node<'a, 'b>> {
     node.children()
         .find(|n| n.has_tag_name(name))
         .ok_or_else(|| format!("missing VTI {name}").into())
 }
 
+/// Read ordered VTK image extents with exactly six integer values.
 fn xml_extent(node: Node<'_, '_>, name: &str) -> Result<[i64; 6]> {
     let values = node
         .attribute(name)
@@ -850,6 +942,7 @@ fn xml_extent(node: Node<'_, '_>, name: &str) -> Result<[i64; 6]> {
         .map_err(|_| "VTI extent requires six integers".into())
 }
 
+/// Decode bounded inline/appended VTK base64 segments.
 fn base64_bytes(text: &str) -> Result<Vec<u8>> {
     if text.len() > (MAX_DECODE_BYTES + 8 * MAX_HEADER_BYTES).div_ceil(3) * 4 {
         return Err("VTI binary array exceeds decoded payload limit".into());
@@ -876,6 +969,7 @@ fn base64_bytes(text: &str) -> Result<Vec<u8>> {
     Ok(result)
 }
 
+/// Expand VTK image numeric payloads with size headers and optional multiblock zlib.
 fn vtk_binary(
     data: &[u8],
     expected: usize,
@@ -897,9 +991,9 @@ fn vtk_binary(
         } else {
             let a = bytes.try_into()?;
             if big {
-                u32::from_be_bytes(a) as u64
+                u64::from(u32::from_be_bytes(a))
             } else {
-                u32::from_le_bytes(a) as u64
+                u64::from(u32::from_le_bytes(a))
             }
         };
         Ok(usize::try_from(n)?)
@@ -956,6 +1050,15 @@ fn vtk_binary(
     Ok(result)
 }
 
+/// Decode static VTK `ImageData` point/cell scalars and their extent, origin and direction.
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "VTK image extents are checked before their lattice offsets become f64 coordinates."
+)]
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keep VTK image extents, scalar association and binary-array validation together."
+)]
 fn vti(bytes: &[u8]) -> Result<Volume> {
     let doc = roxmltree::Document::parse(std::str::from_utf8(bytes)?)?;
     let root = doc.root_element();
@@ -1188,7 +1291,7 @@ mod tests {
             area += normal.length() * 0.5;
         }
         assert_eq!(area, 52.);
-        assert!(crate::render::render(&scene, &Default::default()).is_ok());
+        assert!(crate::render::render(&scene, &crate::render::RenderOptions::default()).is_ok());
     }
 
     #[test]
@@ -1241,9 +1344,9 @@ mod tests {
         for z in 0..32 {
             for y in 0..32 {
                 for x in 0..32 {
-                    let squared = (x as f64 - 16.).powi(2)
-                        + (y as f64 - 16.).powi(2)
-                        + (z as f64 - 16.).powi(2);
+                    let squared = (f64::from(x) - 16.).powi(2)
+                        + (f64::from(y) - 16.).powi(2)
+                        + (f64::from(z) - 16.).powi(2);
                     values.push(if (25. ..=81.).contains(&squared) {
                         100.
                     } else {
@@ -1290,6 +1393,10 @@ mod tests {
     }
 
     #[test]
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "This test intentionally compares parser output with the same documented i64-to-f64 scalar approximation."
+    )]
     fn scalar_types_respect_binary_endianness_and_ascii_ranges() {
         for (ty, big, bytes, expected) in [
             (Scalar::I8, false, vec![0xfe], -2.),
@@ -1332,6 +1439,7 @@ mod tests {
 
     #[test]
     fn nrrd_raw_ascii_hex_and_gzip_preserve_real_density() {
+        use std::fmt::Write as _;
         let raw = density()
             .iter()
             .flat_map(|&v| u16::from(v).to_be_bytes())
@@ -1341,7 +1449,10 @@ mod tests {
             .map(u8::to_string)
             .collect::<Vec<_>>()
             .join(" ");
-        let hex = raw.iter().map(|v| format!("{v:02x} ")).collect::<String>();
+        let mut hex = String::new();
+        for value in &raw {
+            write!(hex, "{value:02x} ").unwrap();
+        }
         for (encoding, ty, payload) in [
             ("raw", "ushort", raw.clone()),
             ("gzip", "ushort", compressed(&raw, true)),
@@ -1424,6 +1535,10 @@ mod tests {
     }
 
     #[test]
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "The authored VTK array payload fits every tested 32- or 64-bit header width."
+    )]
     fn vti_inline_binary_and_multiblock_zlib_headers_decode() {
         let raw = density()
             .iter()

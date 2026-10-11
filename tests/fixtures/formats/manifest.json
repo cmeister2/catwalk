@@ -402,11 +402,51 @@
     },
     {
       "extension": "glb",
+      "id": "glb-alpha-blend-overlaps",
+      "input": "mesh_scene/glb-alpha-blend-overlaps.glb",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "GLB translucent depth overlaps over opaque backing"
+    },
+    {
+      "extension": "glb",
       "id": "glb-draco-google-cube",
       "input": "mesh_scene/glb-draco-google-cube.glb",
       "kind": "model",
       "provenance": "Google Draco testdata cube_att.obj.edgebreaker.cl4.2.2.drc; Apache-2.0; https://github.com/google/draco/tree/main/testdata; original license retained in mesh_scene/GOOGLE-DRACO-LICENSE",
       "title": "GLB native Draco compressed geometry"
+    },
+    {
+      "extension": "glb",
+      "id": "glb-gpu-instanced-translation",
+      "input": "mesh_scene/glb-gpu-instanced-translation.glb",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "GLB translation-only GPU instances with default rotation and scale"
+    },
+    {
+      "extension": "glb",
+      "id": "glb-khronos-alpha-modes",
+      "input": "mesh_scene/glb-khronos-alpha-modes.glb",
+      "kind": "model",
+      "provenance": "Unmodified KhronosGroup/glTF-Sample-Assets Models/AlphaBlendModeTest/glTF-Binary/AlphaBlendModeTest.glb at commit edc7c9e67c639d230715049ee31f9a96a6babbbe; Ed Mackey, Analytical Graphics, Inc., 2018; separately CC-BY-4.0 licensed model and textures. Original notice, metadata and full license retained in mesh_scene/KHRONOS-*LICENSE*; exact source hash in mesh_scene/README.md. https://github.com/KhronosGroup/glTF-Sample-Assets/blob/edc7c9e67c639d230715049ee31f9a96a6babbbe/Models/AlphaBlendModeTest/glTF-Binary/AlphaBlendModeTest.glb",
+      "title": "Khronos original opaque, mask and blend material model"
+    },
+    {
+      "extension": "glb",
+      "id": "glb-khronos-simple-instancing",
+      "input": "mesh_scene/glb-khronos-simple-instancing.glb",
+      "kind": "model",
+      "provenance": "Unmodified KhronosGroup/glTF-Sample-Assets Models/SimpleInstancing/glTF-Binary/SimpleInstancing.glb at commit edc7c9e67c639d230715049ee31f9a96a6babbbe; Marco Hutter, JglTF generator; separately CC0-1.0 licensed model with 125 GPU instances and varying TRS, extensionsUsed without extensionsRequired. Original notice and metadata retained; full CC0 and CC-BY metadocumentation licenses in mesh_scene/KHRONOS-*LICENSE*; exact source hash in mesh_scene/README.md. https://github.com/KhronosGroup/glTF-Sample-Assets/blob/edc7c9e67c639d230715049ee31f9a96a6babbbe/Models/SimpleInstancing/glTF-Binary/SimpleInstancing.glb",
+      "title": "Khronos original 125 GPU-instanced cubes"
+    },
+    {
+      "extension": "glb",
+      "id": "glb-khronos-texture-settings",
+      "input": "mesh_scene/glb-khronos-texture-settings.glb",
+      "kind": "model",
+      "provenance": "Unmodified KhronosGroup/glTF-Sample-Assets Models/TextureSettingsTest/glTF-Binary/TextureSettingsTest.glb at commit edc7c9e67c639d230715049ee31f9a96a6babbbe; Ed Mackey, Analytical Graphics, Inc., 2017; separately CC-BY-4.0 licensed model and textures. Original notice, metadata and full license retained in mesh_scene/KHRONOS-*LICENSE*; exact source hash in mesh_scene/README.md. https://github.com/KhronosGroup/glTF-Sample-Assets/blob/edc7c9e67c639d230715049ee31f9a96a6babbbe/Models/TextureSettingsTest/glTF-Binary/TextureSettingsTest.glb",
+      "title": "Khronos original sampler wrapping and sidedness model"
     },
     {
       "extension": "glb",
@@ -423,6 +463,22 @@
       "kind": "model",
       "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
       "title": "GLB skin and morph animation"
+    },
+    {
+      "extension": "glb",
+      "id": "glb-textured-buffer-view-cube",
+      "input": "mesh_scene/glb-textured-buffer-view-cube.glb",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "GLB embedded PNG buffer view, vertex colors and normals"
+    },
+    {
+      "extension": "gltf",
+      "id": "gltf-alpha-mask-backed",
+      "input": "mesh_scene/gltf-alpha-mask-backed.gltf",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "glTF alpha cutoff holes reveal opaque backing geometry"
     },
     {
       "extension": "gltf",
@@ -450,11 +506,59 @@
     },
     {
       "extension": "gltf",
+      "id": "gltf-gpu-instanced-hierarchy",
+      "input": "mesh_scene/gltf-gpu-instanced-hierarchy.gltf",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "glTF GPU instance TRS composed with ancestor and node transforms"
+    },
+    {
+      "extension": "gltf",
+      "id": "gltf-khronos-texture-coordinates",
+      "input": "mesh_scene/gltf-khronos-texture-coordinates.gltf",
+      "kind": "model",
+      "provenance": "Unmodified KhronosGroup/glTF-Sample-Assets Models/TextureCoordinateTest/glTF/TextureCoordinateTest.gltf and original BIN/PNG at commit edc7c9e67c639d230715049ee31f9a96a6babbbe; Ed Mackey, Analytical Graphics, Inc., 2017; model and textures CC0-1.0, upstream metadocumentation CC-BY-4.0. Original notices and full licenses retained in mesh_scene/KHRONOS-*LICENSE*; exact source hashes in mesh_scene/README.md. https://github.com/KhronosGroup/glTF-Sample-Assets/tree/edc7c9e67c639d230715049ee31f9a96a6babbbe/Models/TextureCoordinateTest/glTF",
+      "title": "Khronos original texture-coordinate orientation model"
+    },
+    {
+      "extension": "gltf",
+      "id": "gltf-normal-interpolation",
+      "input": "mesh_scene/gltf-normal-interpolation.gltf",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "glTF smooth normals under nonuniform scale and rotation"
+    },
+    {
+      "extension": "gltf",
       "id": "gltf-skin-morph-animation",
       "input": "mesh_scene/gltf-skin-morph-animation.gltf",
       "kind": "model",
       "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
       "title": "glTF skin, morph, normalized influences and earliest animation"
+    },
+    {
+      "extension": "gltf",
+      "id": "gltf-texture-transform-uv1",
+      "input": "mesh_scene/gltf-texture-transform-uv1.gltf",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "glTF texture transform with UV1 override and negative scale"
+    },
+    {
+      "extension": "gltf",
+      "id": "gltf-textured-external-cube",
+      "input": "mesh_scene/gltf-textured-external-cube.gltf",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "glTF external texture, vertex colors and transformed normals"
+    },
+    {
+      "extension": "gltf",
+      "id": "gltf-uv1-sampler-wrapping",
+      "input": "mesh_scene/gltf-uv1-sampler-wrapping.gltf",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "glTF selected UV1 and repeat, mirror, clamp samplers"
     },
     {
       "extension": "gml",

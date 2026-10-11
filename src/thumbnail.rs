@@ -1,3 +1,5 @@
+//! Preview dispatch and aspect-preserving placement of raster and saved images.
+
 use crate::{
     Result, formats,
     render::{self, RenderOptions},
@@ -7,12 +9,19 @@ use image::{DynamicImage, Rgba, RgbaImage};
 use std::path::Path;
 
 /// Render a model or fit a raster image or saved document preview to a canvas.
+///
+/// Raster and saved-image canvases require width and height between 1 and 4096.
+/// Model previews follow the dimensions and work budgets of [`render::render`].
+///
+/// # Errors
+/// Returns an error for unsupported or malformed inputs, I/O or codec failures,
+/// an absent saved preview, invalid output dimensions, or importer/render limits.
 pub fn thumbnail(path: &Path, options: &RenderOptions) -> Result<RgbaImage> {
     let extension = formats::extension(path)?;
     if saved_preview::EXTENSIONS.contains(&extension.as_str()) {
         validate_dimensions(options)?;
         let source = saved_preview::extract(path)?.ok_or(saved_preview::NoSavedPreview)?;
-        return fit_image(DynamicImage::ImageRgba8(source), options);
+        return Ok(fit_image(&DynamicImage::ImageRgba8(source), options));
     }
     if formats::IMAGE_EXTENSIONS.contains(&extension.as_str()) {
         return image_thumbnail(path, options);
@@ -20,6 +29,7 @@ pub fn thumbnail(path: &Path, options: &RenderOptions) -> Result<RgbaImage> {
     render::render(&formats::load(path)?, options)
 }
 
+/// Require a nonzero canvas no larger than 4096 pixels in either dimension.
 fn validate_dimensions(options: &RenderOptions) -> Result<()> {
     if options.width == 0 || options.height == 0 || options.width > 4096 || options.height > 4096 {
         return Err("thumbnail dimensions must be between 1 and 4096".into());
@@ -27,6 +37,7 @@ fn validate_dimensions(options: &RenderOptions) -> Result<()> {
     Ok(())
 }
 
+/// Decode one image frame under codec limits, then fit it onto the preview canvas.
 fn image_thumbnail(path: &Path, options: &RenderOptions) -> Result<RgbaImage> {
     validate_dimensions(options)?;
     let source = if formats::extension(path)? == "dcm" {
@@ -43,10 +54,11 @@ fn image_thumbnail(path: &Path, options: &RenderOptions) -> Result<RgbaImage> {
         reader.limits(limits);
         reader.decode()?
     };
-    fit_image(source, options)
+    Ok(fit_image(&source, options))
 }
 
-fn fit_image(source: DynamicImage, options: &RenderOptions) -> Result<RgbaImage> {
+/// Center an aspect-preserving Lanczos resize on the requested RGBA background.
+fn fit_image(source: &DynamicImage, options: &RenderOptions) -> RgbaImage {
     let source = source
         .resize(
             options.width,
@@ -68,13 +80,13 @@ fn fit_image(source: DynamicImage, options: &RenderOptions) -> Result<RgbaImage>
     image::imageops::overlay(
         &mut canvas,
         &source,
-        ((options.width - source.width()) / 2) as i64,
-        ((options.height - source.height()) / 2) as i64,
+        i64::from((options.width - source.width()) / 2),
+        i64::from((options.height - source.height()) / 2),
     );
     if !options.transparent {
         for pixel in canvas.pixels_mut() {
             pixel[3] = 255;
         }
     }
-    Ok(canvas)
+    canvas
 }

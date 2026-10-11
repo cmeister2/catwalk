@@ -1,7 +1,9 @@
 //! Temporary research probe; no production format dispatch is changed.
 #[path = "saved_previews/blend_dwg.rs"]
+/// Blender and DWG saved-preview qualification readers.
 mod blend_dwg;
 
+/// Extract a Blender or DWG saved preview and print its dimensions and output path.
 fn main() -> catwalk::Result<()> {
     let mut arguments = std::env::args_os().skip(1);
     let input = std::path::PathBuf::from(arguments.next().ok_or("expected input file")?);

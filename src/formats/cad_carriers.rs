@@ -10,18 +10,34 @@ use ogeom_topo::{
 };
 use std::collections::HashMap;
 
+/// Native topology kind and carrier-placement references for one BREP record.
 struct Record {
+    /// Native schema or topology kind selecting the record interpretation.
     kind: ShapeType,
+    /// Representation-kind tags paired with native carrier-location indices.
     placements: Vec<(u8, usize)>,
 }
 
+/// Native carrier transforms and record associations needed to restore imported BREP geometry.
 pub(super) struct Metadata {
+    /// Decoded native carrier transforms; index zero is identity.
     transforms: Vec<Transform>,
+    /// Canonical transform indices shared by exactly equivalent native placements.
     canonical: Vec<usize>,
+    /// Native topology/carrier records in authored import order.
     records: Vec<Record>,
 }
 
 impl Metadata {
+    /// Read native carrier placements and topology-record associations.
+    ///
+    /// # Errors
+    ///
+    /// Missing tables, invalid locations, scaled carriers or malformed representation references are rejected.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Keep the format record dispatch, validation and its resource checks together without changing geometry evaluation."
+    )]
     pub(super) fn parse(text: &str) -> Result<Self> {
         let tokens: Vec<_> = text.split_whitespace().collect();
         let number = |at: usize| -> Result<usize> {
@@ -218,6 +234,15 @@ impl Metadata {
         })
     }
 
+    /// Materialize carrier transforms into shared curve/surface geometry and restore pcurves.
+    ///
+    /// # Errors
+    ///
+    /// Imported topology differs from native records, placements are unsupported or exact pcurve restoration fails.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Keep the format record dispatch, validation and its resource checks together without changing geometry evaluation."
+    )]
     pub(super) fn restore(
         &self,
         model: &mut Model,
@@ -386,6 +411,11 @@ impl Metadata {
         Ok(())
     }
 
+    /// Find or create the surface geometry transformed by a canonical carrier.
+    ///
+    /// # Errors
+    ///
+    /// The surface or placement is missing, or transforming the geometry fails.
     fn placed_surface(
         &self,
         model: &mut Model,
@@ -415,6 +445,11 @@ impl Metadata {
 
 // A native pcurve is usable only where its surface carrier composed with
 // its edge occurrence is the same placed surface as the face carrier.
+/// Compare native placement matrices within kernel tolerances.
+///
+/// # Errors
+///
+/// Accessing or evaluating either transform fails.
 fn same_placement(a: &Transform, b: &Transform, tolerances: Tolerances) -> Result<bool> {
     let av = a.translation_vector();
     let bv = b.translation_vector();
@@ -436,6 +471,11 @@ fn same_placement(a: &Transform, b: &Transform, tolerances: Tolerances) -> Resul
 // OCCT intentionally omits pcurves on planes and derives them lazily.
 // The exact projection must preserve the original edge parameterization;
 // proving coplanarity avoids flattening a malformed off-surface boundary.
+/// Derive an omitted planar pcurve only after proving exact coplanarity.
+///
+/// # Errors
+///
+/// Required geometry is missing, relative scale is unsupported or the boundary cannot be projected exactly.
 fn restore_planar_pcurve(
     model: &mut Model,
     face: &Shape,
@@ -493,6 +533,7 @@ fn restore_planar_pcurve(
     Ok(true)
 }
 
+/// Prove supported curve bounds lie in a plane within the supplied tolerance.
 fn lies_in_plane(
     curve: &Curve,
     range: (f64, f64),

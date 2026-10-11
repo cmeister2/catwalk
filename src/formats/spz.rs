@@ -8,14 +8,23 @@ use std::{
     path::Path,
 };
 
+/// Maximum declared point count accepted before geometry allocation.
 const MAX_POINTS: usize = 20_000_000;
+/// Maximum sampled points retained in the preview scene.
 const PREVIEW_POINTS: usize = 1_000_000;
-const SH_C0: f64 = 0.28209479177387814;
+/// Degree-zero spherical-harmonic normalization used to reconstruct splat RGB.
+const SH_C0: f64 = 0.282_094_791_773_878_14;
 
+/// Read a bounded SPZ splat-center stream and decode its preview geometry.
+///
+/// # Errors
+/// Returns an error for unsupported headers, malformed gzip/Zstandard data, invalid point
+/// counts, nonfinite coordinates or stream-size mismatches.
 pub(super) fn load(path: &Path) -> Result<Scene> {
     decode(&super::read_file(path)?)
 }
 
+/// Read a little-endian SPZ header word at a checked offset.
 fn u32_at(bytes: &[u8], offset: usize) -> Result<u32> {
     Ok(u32::from_le_bytes(
         bytes
@@ -25,6 +34,7 @@ fn u32_at(bytes: &[u8], offset: usize) -> Result<u32> {
     ))
 }
 
+/// Validate version, point count, harmonic degree, coordinate precision and reserved header fields.
 fn header(bytes: &[u8], legacy: bool) -> Result<(usize, u32, usize, u8)> {
     if bytes.len() < if legacy { 16 } else { 32 } || &bytes[..4] != b"NGSP" {
         return Err("missing SPZ NGSP header".into());
@@ -50,6 +60,7 @@ fn header(bytes: &[u8], legacy: bool) -> Result<(usize, u32, usize, u8)> {
     Ok((count, version, degree * (degree + 2) * 3, bytes[13]))
 }
 
+/// Decompress exactly the declared attribute bytes without exceeding the decoded-input limit.
 fn bounded_decode(mut reader: impl Read, expected: usize) -> Result<Vec<u8>> {
     if expected as u64 > super::MAX_INPUT_BYTES {
         return Err("SPZ decoded attributes exceed 512 MiB".into());
@@ -65,12 +76,13 @@ fn bounded_decode(mut reader: impl Read, expected: usize) -> Result<Vec<u8>> {
     Ok(output)
 }
 
+/// Expand an IEEE binary16 coordinate, preserving subnormal and nonfinite encodings.
 fn half(value: u16) -> f64 {
     let sign = if value & 0x8000 != 0 { -1.0 } else { 1.0 };
     let exponent = (value >> 10) & 31;
     let mantissa = value & 1023;
     sign * match exponent {
-        0 => (mantissa as f64) * 2f64.powi(-24),
+        0 => f64::from(mantissa) * 2f64.powi(-24),
         31 => {
             if mantissa == 0 {
                 f64::INFINITY
@@ -78,15 +90,22 @@ fn half(value: u16) -> f64 {
                 f64::NAN
             }
         }
-        _ => (1.0 + mantissa as f64 / 1024.0) * 2f64.powi(exponent as i32 - 15),
+        _ => (1.0 + f64::from(mantissa) / 1024.0) * 2f64.powi(i32::from(exponent) - 15),
     }
 }
 
+/// Sample visible SPZ centers, convert Y-up coordinates and reconstruct RGB from degree-zero
+/// harmonics.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Reconstructed color channels are clamped to the byte range and intentionally rounded before quantization."
+)]
 fn scene(count: usize, version: u32, fractional: u8, attributes: &[Vec<u8>]) -> Result<Scene> {
     let mut scene = Scene::default();
     let stride = count.div_ceil(PREVIEW_POINTS);
     let bytes_per_coordinate = if version == 1 { 2 } else { 3 };
-    let factor = 2f64.powi(-(fractional as i32));
+    let factor = 2f64.powi(-i32::from(fractional));
     for index in 0..count {
         let mut coordinates = [0.0; 3];
         for (axis, value) in coordinates.iter_mut().enumerate() {
@@ -98,8 +117,8 @@ fn scene(count: usize, version: u32, fractional: u8, attributes: &[Vec<u8>]) -> 
             } else {
                 let b = &attributes[0][offset..offset + 3];
                 // Signed 24-bit fixed point, sign extended before scaling.
-                let packed = b[0] as i32 | (b[1] as i32) << 8 | (b[2] as i32) << 16;
-                ((packed << 8) >> 8) as f64 * factor
+                let packed = i32::from(b[0]) | i32::from(b[1]) << 8 | i32::from(b[2]) << 16;
+                f64::from((packed << 8) >> 8) * factor
             };
         }
         let [x, y, z] = coordinates;
@@ -109,7 +128,7 @@ fn scene(count: usize, version: u32, fractional: u8, attributes: &[Vec<u8>]) -> 
         }
         if index.is_multiple_of(stride) && attributes[1][index] != 0 {
             let color = std::array::from_fn(|channel| {
-                let encoded = attributes[2][index * 3 + channel] as f64 / 255.0;
+                let encoded = f64::from(attributes[2][index * 3 + channel]) / 255.0;
                 ((0.5 + SH_C0 * (encoded - 0.5) / 0.15).clamp(0.0, 1.0) * 255.0).round() as u8
             });
             scene.points.push(Point {
@@ -122,6 +141,8 @@ fn scene(count: usize, version: u32, fractional: u8, attributes: &[Vec<u8>]) -> 
     Ok(scene)
 }
 
+/// Decode gzip SPZ versions one through three or independently compressed Zstandard v4
+/// attribute streams.
 fn decode(bytes: &[u8]) -> Result<Scene> {
     if bytes.starts_with(&[0x1f, 0x8b]) {
         let mut decoder = flate2::bufread::GzDecoder::new(bytes);
@@ -243,6 +264,10 @@ mod tests {
         writer.finish().unwrap()
     }
     // Independent Zstandard raw-block framing; does not use the decoder as an encoder.
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "The authored raw Zstandard test payload fits the intentionally encoded single-byte frame size."
+    )]
     fn raw_zstd(data: &[u8]) -> Vec<u8> {
         let mut frame = vec![0x28, 0xb5, 0x2f, 0xfd, 0x20, data.len() as u8];
         let block = ((data.len() as u32) << 3) | 1;
@@ -275,7 +300,9 @@ mod tests {
             assert_eq!(scene.points.len(), 1);
             assert_eq!(scene.points[0].position, Vec3::new(-1., -3., 2.));
             assert_eq!(scene.points[0].color, Some([128, 249, 8]));
-            assert!(crate::render::render(&scene, &Default::default()).is_ok());
+            assert!(
+                crate::render::render(&scene, &crate::render::RenderOptions::default()).is_ok()
+            );
         }
         assert_eq!(half(0xbc00), -1.0);
         assert_eq!(half(0x4000), 2.0);

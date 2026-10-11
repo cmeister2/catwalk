@@ -1,3 +1,5 @@
+//! Headless CLI input, output, resource isolation and saved-preview behavior tests.
+
 use base64::Engine;
 use catwalk::{formats, render::write_png, scene::Vec3};
 use image::{Rgba, RgbaImage};
@@ -22,7 +24,7 @@ impl FixtureDirectory {
                 std::env::temp_dir().join(format!("catwalk cli {} {id}", std::process::id()));
             match fs::create_dir(&path) {
                 Ok(()) => return Self(path),
-                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
                 Err(error) => panic!("cannot create fixture directory: {error}"),
             }
         }
@@ -69,7 +71,7 @@ fn assert_success(output: &Output) {
         "CLI failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(output.stderr.is_empty());
+    assert_eq!(output.stderr, [] as [u8; 0]);
 }
 
 fn decode(bytes: &[u8]) -> RgbaImage {
@@ -117,7 +119,7 @@ fn obj_and_ascii_and_binary_stl_render_without_a_display() {
             &["--transparent", "--resolution", "96x64"],
         );
         assert_success(&output);
-        assert!(output.stdout.is_empty());
+        assert_eq!(output.stdout, [] as [u8; 0]);
         assert_model_thumbnail(&decode(&fs::read(destination).unwrap()), 96, 64);
     }
 }
@@ -152,6 +154,10 @@ fn gltf_document(uri: Option<&str>) -> Value {
     })
 }
 
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "Generated test JSON and binary buffers are small and fit GLB 32-bit chunk lengths"
+)]
 fn glb(document: &Value, buffer: &[u8]) -> Vec<u8> {
     let mut json = serde_json::to_vec(document).unwrap();
     while !json.len().is_multiple_of(4) {
@@ -355,7 +361,7 @@ fn stdout_contains_only_png_bytes_and_file_output_is_deterministic() {
     let destination = fixtures.path("thumbnail.png");
     let file = run(&input, &destination, &["--transparent"]);
     assert_success(&file);
-    assert!(file.stdout.is_empty());
+    assert_eq!(file.stdout, [] as [u8; 0]);
     assert_eq!(stdout.stdout, fs::read(destination).unwrap());
 }
 
@@ -428,7 +434,7 @@ fn failures_preserve_existing_output_and_input_cannot_be_overwritten() {
     let destination = fixtures.write("existing.png", "keep this output");
     let output = run(&input, &destination, &[]);
     assert!(!output.status.success());
-    assert!(output.stdout.is_empty());
+    assert_eq!(output.stdout, [] as [u8; 0]);
     assert_eq!(fs::read(&destination).unwrap(), b"keep this output");
     let input = fixtures.write("model.obj", OBJ);
     let output = run(&input, &input, &[]);
@@ -441,7 +447,7 @@ fn failures_preserve_existing_output_and_input_cannot_be_overwritten() {
 fn no_arguments_has_clean_error_and_format_listing_is_available() {
     let no_args = command().output().unwrap();
     assert!(!no_args.status.success());
-    assert!(no_args.stdout.is_empty());
+    assert_eq!(no_args.stdout, [] as [u8; 0]);
     assert!(String::from_utf8_lossy(&no_args.stderr).contains("provide an input"));
     let formats = command().arg("--list-formats").output().unwrap();
     assert_success(&formats);
@@ -501,7 +507,7 @@ fn absent_saved_preview_has_a_distinct_exit_status_and_preserves_old_output() {
     let destination = fixtures.write("existing.png", "keep previous usable preview");
     let result = run(&input, &destination, &[]);
     assert_eq!(result.status.code(), Some(3));
-    assert!(result.stdout.is_empty());
+    assert_eq!(result.stdout, [] as [u8; 0]);
     assert!(String::from_utf8_lossy(&result.stderr).contains("no supported saved preview"));
     assert_eq!(
         fs::read(&destination).unwrap(),
@@ -513,7 +519,7 @@ fn absent_saved_preview_has_a_distinct_exit_status_and_preserves_old_output() {
     );
     let result = run(&malformed, &destination, &[]);
     assert_eq!(result.status.code(), Some(1));
-    assert!(result.stdout.is_empty());
+    assert_eq!(result.stdout, [] as [u8; 0]);
     assert_eq!(
         fs::read(destination).unwrap(),
         b"keep previous usable preview"

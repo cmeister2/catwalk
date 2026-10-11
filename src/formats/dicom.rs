@@ -5,10 +5,20 @@ use dicom_pixeldata::{ConvertOptions, PixelDecoder, VoiLutOption};
 use image::DynamicImage;
 use std::{io::Cursor, path::Path};
 
+/// Read a bounded DICOM file and decode its first image frame.
+///
+/// # Errors
+/// Returns an error for missing or unsupported pixel metadata, malformed RLE/native data,
+/// image-size limits or file-read failures.
 pub(crate) fn load(path: &Path) -> Result<DynamicImage> {
     decode(&super::read_file(path)?)
 }
 
+/// Validate scalar/RGB image metadata and decode only the first native or RLE-compressed frame.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "Validated dimensions contain at most 16,777,216 scalar samples before native-size conversion."
+)]
 fn decode(bytes: &[u8]) -> Result<DynamicImage> {
     let mut object = dicom_object::from_reader(Cursor::new(bytes))?;
     let rows = object.element_by_name("Rows")?.to_int::<u64>()?;
@@ -62,9 +72,9 @@ fn decode(bytes: &[u8]) -> Result<DynamicImage> {
     // Decode the selected frame only; a multi-frame file need not allocate an
     // entire study merely to show one representative image.
     let decoded = object.decode_pixel_data_frame(0)?;
-    if decoded.rows() as u64 != rows
-        || decoded.columns() as u64 != columns
-        || decoded.samples_per_pixel() as u64 != samples
+    if u64::from(decoded.rows()) != rows
+        || u64::from(decoded.columns()) != columns
+        || u64::from(decoded.samples_per_pixel()) != samples
     {
         return Err("DICOM decoded dimensions do not match image metadata".into());
     }
@@ -74,6 +84,12 @@ fn decode(bytes: &[u8]) -> Result<DynamicImage> {
     Ok(decoded.to_dynamic_image_with_options(0, &options)?)
 }
 
+/// Expand DICOM `PackBits` segments and interleave their component byte planes.
+#[allow(
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    reason = "PackBits uses a signed control byte; positive runs and negative repeat lengths are checked before native indexing."
+)]
 fn rle_frame(
     fragment: &[u8],
     pixels: usize,
@@ -113,7 +129,7 @@ fn rle_frame(
             let run = if control >= 0 {
                 control as usize + 1
             } else {
-                (1i16 - control as i16) as usize
+                (1i16 - i16::from(control)) as usize
             };
             if run > pixels - decoded.len() {
                 return Err("DICOM RLE run exceeds its scalar plane".into());
@@ -143,14 +159,18 @@ fn rle_frame(
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn element(out: &mut Vec<u8>, group: u16, tag: u16, vr: &[u8; 2], mut data: Vec<u8>) {
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "The authored DICOM test elements contain tiny fixed-width values, so their length words fit u16/u32."
+    )]
+    fn element(out: &mut Vec<u8>, group: u16, tag: u16, vr: [u8; 2], mut data: Vec<u8>) {
         if !data.len().is_multiple_of(2) {
-            data.push(if vr == b"UI" { 0 } else { b' ' });
+            data.push(if vr == *b"UI" { 0 } else { b' ' });
         }
         out.extend(group.to_le_bytes());
         out.extend(tag.to_le_bytes());
         out.extend(vr);
-        if [b"OB", b"OW", b"SQ", b"UN", b"UT"].contains(&vr) {
+        if [*b"OB", *b"OW", *b"SQ", *b"UN", *b"UT"].contains(&vr) {
             out.extend([0, 0]);
             out.extend((data.len() as u32).to_le_bytes());
         } else {
@@ -158,6 +178,14 @@ mod tests {
         }
         out.extend(data);
     }
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "The authored DICOM dimensions, segment offsets and pixel values are small fixed constants."
+    )]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Keep the complete authored DICOM metadata and pixel-payload construction in one test helper."
+    )]
     fn fixture(rgb: bool, frames: u8, rle: bool) -> Vec<u8> {
         let mut meta = Vec::new();
         for (tag, vr, value) in [
@@ -175,7 +203,7 @@ mod tests {
             ),
             (0x12, b"UI", b"1.2.3.4".to_vec()),
         ] {
-            element(&mut meta, 2, tag, vr, value);
+            element(&mut meta, 2, tag, *vr, value);
         }
         let mut out = vec![0; 128];
         out.extend(b"DICM");
@@ -183,7 +211,7 @@ mod tests {
             &mut out,
             2,
             0,
-            b"UL",
+            *b"UL",
             (meta.len() as u32).to_le_bytes().to_vec(),
         );
         out.extend(meta);
@@ -191,22 +219,22 @@ mod tests {
             &mut out,
             8,
             0x16,
-            b"UI",
+            *b"UI",
             b"1.2.840.10008.5.1.4.1.1.7".to_vec(),
         );
-        element(&mut out, 8, 0x18, b"UI", b"1.2.3.4.5".to_vec());
+        element(&mut out, 8, 0x18, *b"UI", b"1.2.3.4.5".to_vec());
         element(
             &mut out,
             0x28,
             2,
-            b"US",
+            *b"US",
             (if rgb { 3u16 } else { 1u16 }).to_le_bytes().to_vec(),
         );
         element(
             &mut out,
             0x28,
             4,
-            b"CS",
+            *b"CS",
             if rgb {
                 b"RGB".to_vec()
             } else {
@@ -214,9 +242,9 @@ mod tests {
             },
         );
         if rgb {
-            element(&mut out, 0x28, 6, b"US", 0u16.to_le_bytes().to_vec());
+            element(&mut out, 0x28, 6, *b"US", 0u16.to_le_bytes().to_vec());
         }
-        element(&mut out, 0x28, 8, b"IS", frames.to_string().into_bytes());
+        element(&mut out, 0x28, 8, *b"IS", frames.to_string().into_bytes());
         for (tag, value) in [
             (0x10, 2u16),
             (0x11, 3),
@@ -225,7 +253,7 @@ mod tests {
             (0x102, 7),
             (0x103, 0),
         ] {
-            element(&mut out, 0x28, tag, b"US", value.to_le_bytes().to_vec());
+            element(&mut out, 0x28, tag, *b"US", value.to_le_bytes().to_vec());
         }
         let pixels = if rgb {
             vec![
@@ -263,7 +291,7 @@ mod tests {
             for _ in 1..frames {
                 all.extend(vec![255; if rgb { 18 } else { 6 }]);
             }
-            element(&mut out, 0x7fe0, 0x10, b"OB", all);
+            element(&mut out, 0x7fe0, 0x10, *b"OB", all);
         }
         out
     }

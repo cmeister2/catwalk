@@ -1,18 +1,26 @@
 //! Bounded BSP operations on closed, consistently oriented triangle solids.
 use crate::scene::{Triangle, Vec3};
 use crate::{Error, Result};
+/// Maximum BSP polygon count retained during a Boolean operation.
 const MAX_POLYGONS: usize = 100_000;
+/// Maximum recursive reference, geometry or partition depth.
 const MAX_DEPTH: usize = 256;
+/// Maximum charged spline or Boolean-processing work.
 const MAX_WORK: usize = 10_000_000;
+/// Construct a solid-operation error from its diagnostic text.
 fn error(message: &str) -> Error {
     message.into()
 }
+/// Oriented BSP plane defined by a unit normal and signed distance.
 #[derive(Clone, Copy)]
 struct Plane {
+    /// Oriented unit normal of the polygon partition plane.
     normal: Vec3,
+    /// Signed plane distance satisfying normal dot point equals distance.
     distance: f64,
 }
 impl Plane {
+    /// Reverse the oriented surface's normal and sidedness.
     fn flipped(self) -> Self {
         Self {
             normal: self.normal * -1.,
@@ -20,23 +28,36 @@ impl Plane {
         }
     }
 }
+/// An oriented convex polygon retaining its source triangle color.
 struct Polygon {
+    /// Ordered spatial vertices defining this polygon boundary.
     vertices: Vec<Vec3>,
+    /// Oriented plane supporting this convex polygon.
     plane: Plane,
+    /// Optional inherited RGB surface or line color.
     color: Option<[u8; 3]>,
 }
 impl Polygon {
+    /// Reverse the oriented surface's normal and sidedness.
     fn flipped(mut self) -> Self {
         self.vertices.reverse();
         self.plane = self.plane.flipped();
         self
     }
 }
+/// Numerical coincidence tolerance and shared Boolean-operation work counter.
 struct Budget {
+    /// Distance tolerance for classifying points on a partition plane.
     epsilon: f64,
+    /// Accumulated processing work charged against the preview budget.
     work: usize,
 }
 impl Budget {
+    /// Charge polygon-processing work against the shared Boolean-operation budget.
+    ///
+    /// # Errors
+    ///
+    /// The accumulated work overflows or exceeds the limit.
     fn use_work(&mut self, n: usize) -> Result<()> {
         self.work = self
             .work
@@ -48,12 +69,22 @@ impl Budget {
         Ok(())
     }
 }
+/// Polygon buckets classified relative to one BSP plane.
 struct Split {
+    /// Coplanar polygons whose normal agrees with the partition plane.
     coplanar_front: Vec<Polygon>,
+    /// Coplanar polygons whose normal opposes the partition plane.
     coplanar_back: Vec<Polygon>,
+    /// Polygons or subtree in front of the partition plane.
     front: Vec<Polygon>,
+    /// Polygons or subtree behind the partition plane.
     back: Vec<Polygon>,
 }
+/// Classify and split a polygon against a BSP plane.
+///
+/// # Errors
+///
+/// Intersection coordinates overflow or work/polygon limits are exceeded.
 fn split(plane: Plane, polygon: Polygon, budget: &mut Budget, out: &mut Split) -> Result<()> {
     budget.use_work(polygon.vertices.len())?;
     let distances: Vec<_> = polygon
@@ -124,6 +155,7 @@ fn split(plane: Plane, polygon: Polygon, budget: &mut Budget, out: &mut Split) -
     Ok(())
 }
 impl Split {
+    /// Create empty front/back and coplanar polygon buckets.
     fn new() -> Self {
         Self {
             coplanar_front: Vec::new(),
@@ -132,18 +164,29 @@ impl Split {
             back: Vec::new(),
         }
     }
+    /// Count polygons across every split bucket.
     fn count(&self) -> usize {
         self.coplanar_front.len() + self.coplanar_back.len() + self.front.len() + self.back.len()
     }
 }
+/// One bounded BSP partition with coplanar polygons and front/back children.
 #[derive(Default)]
 struct Node {
+    /// Oriented plane supporting this convex polygon.
     plane: Option<Plane>,
+    /// Coplanar polygons stored at this BSP partition.
     polygons: Vec<Polygon>,
+    /// Polygons or subtree in front of the partition plane.
     front: Option<Box<Node>>,
+    /// Polygons or subtree behind the partition plane.
     back: Option<Box<Node>>,
 }
 impl Node {
+    /// Insert polygons into a bounded binary-space-partition tree.
+    ///
+    /// # Errors
+    ///
+    /// Polygon count, processing work or tree depth exceeds supported limits.
     fn build(&mut self, polygons: Vec<Polygon>, budget: &mut Budget, depth: usize) -> Result<()> {
         if polygons.is_empty() {
             return Ok(());
@@ -173,6 +216,7 @@ impl Node {
         }
         Ok(())
     }
+    /// Reverse every polygon/plane and exchange front/back BSP subtrees.
     fn invert(&mut self) {
         self.plane = self.plane.map(Plane::flipped);
         self.polygons = std::mem::take(&mut self.polygons)
@@ -187,6 +231,11 @@ impl Node {
         }
         std::mem::swap(&mut self.front, &mut self.back);
     }
+    /// Clip polygons through the BSP tree and return the surviving set.
+    ///
+    /// # Errors
+    ///
+    /// Splitting exceeds numeric, polygon, work or depth bounds.
     fn clip(
         &self,
         polygons: Vec<Polygon>,
@@ -221,6 +270,11 @@ impl Node {
         }
         Ok(front)
     }
+    /// Clip this tree's polygons against another solid's BSP tree.
+    ///
+    /// # Errors
+    ///
+    /// Clipping exceeds numeric, polygon, work or depth bounds.
     fn clip_to(&mut self, other: &Self, budget: &mut Budget) -> Result<()> {
         self.polygons = other.clip(std::mem::take(&mut self.polygons), budget, 0)?;
         if let Some(child) = &mut self.front {
@@ -231,6 +285,11 @@ impl Node {
         }
         Ok(())
     }
+    /// Collect all tree polygons while enforcing the output limit.
+    ///
+    /// # Errors
+    ///
+    /// The collected polygon count exceeds its limit.
     fn take_polygons(self, out: &mut Vec<Polygon>) -> Result<()> {
         out.extend(self.polygons);
         if out.len() > MAX_POLYGONS {
@@ -245,6 +304,11 @@ impl Node {
         Ok(())
     }
 }
+/// Convert valid triangle faces to oriented BSP polygons.
+///
+/// # Errors
+///
+/// Triangle count exceeds the limit or geometry is non-finite/degenerate.
 fn polygons(triangles: Vec<Triangle>) -> Result<Vec<Polygon>> {
     if triangles.len() > MAX_POLYGONS {
         return Err(error("IFC solid operands exceed 100000 triangles"));
@@ -269,6 +333,11 @@ fn polygons(triangles: Vec<Triangle>) -> Result<Vec<Polygon>> {
         })
         .collect()
 }
+/// Evaluate a supported union, intersection or difference of closed triangle solids.
+///
+/// # Errors
+///
+/// The operator/operands are invalid or BSP/numeric/geometry budgets are exceeded.
 pub(super) fn boolean(
     mut a: Vec<Triangle>,
     mut b: Vec<Triangle>,

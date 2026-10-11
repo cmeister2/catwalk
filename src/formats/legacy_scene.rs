@@ -9,9 +9,16 @@ use super::transform::Transform;
 use crate::scene::{Scene, Triangle, Vec3};
 use crate::{Error, Result};
 
+/// Maximum parsed scalar and index values in a COLLADA document.
 const MAX_ITEMS: usize = 20_000_000;
+/// Maximum geometry instances expanded while traversing the scene.
 const MAX_INSTANCES: usize = 100_000;
 
+/// Load static COLLADA geometry, node transforms and material colors.
+///
+/// # Errors
+/// Returns an error for invalid XML, missing references, malformed numeric arrays,
+/// unsupported transforms or primitives, excessive instances, and invalid geometry.
 pub(super) fn load(path: &Path) -> Result<Scene> {
     let bytes = super::read_file(path)?;
     match super::extension(path)?.as_str() {
@@ -20,14 +27,17 @@ pub(super) fn load(path: &Path) -> Result<Scene> {
     }
 }
 
+/// Attach COLLADA context to an import error.
 fn error(message: impl Into<String>) -> Error {
     message.into().into()
 }
+/// Iterate element children with the requested local tag name.
 fn children<'a, 'i>(node: Node<'a, 'i>, name: &str) -> impl Iterator<Item = Node<'a, 'i>> {
     let name = name.to_owned();
     node.children()
         .filter(move |n| n.is_element() && n.tag_name().name() == name)
 }
+/// Require the first element child with the requested tag name.
 fn child<'a, 'i>(node: Node<'a, 'i>, name: &str) -> Result<Node<'a, 'i>> {
     children(node, name).next().ok_or_else(|| {
         error(format!(
@@ -36,10 +46,12 @@ fn child<'a, 'i>(node: Node<'a, 'i>, name: &str) -> Result<Node<'a, 'i>> {
         ))
     })
 }
-fn attribute<'a, 'i>(node: Node<'a, 'i>, name: &str) -> Result<&'a str> {
+/// Require an XML attribute by name.
+fn attribute<'a>(node: Node<'a, '_>, name: &str) -> Result<&'a str> {
     node.attribute(name)
         .ok_or_else(|| error(format!("COLLADA <{}> lacks {name}", node.tag_name().name())))
 }
+/// Parse a nonnegative count and enforce the scalar item budget.
 fn item_count(value: &str) -> Result<usize> {
     let count: usize = value.parse()?;
     if count > MAX_ITEMS {
@@ -47,6 +59,7 @@ fn item_count(value: &str) -> Result<usize> {
     }
     Ok(count)
 }
+/// Parse finite whitespace-separated floating point values.
 fn numbers(node: Node<'_, '_>) -> Result<Vec<f64>> {
     let mut values = Vec::new();
     for word in node.text().unwrap_or("").split_whitespace() {
@@ -61,6 +74,7 @@ fn numbers(node: Node<'_, '_>) -> Result<Vec<f64>> {
     }
     Ok(values)
 }
+/// Parse bounded nonnegative index values.
 fn indices(node: Node<'_, '_>) -> Result<Vec<usize>> {
     let mut values = Vec::new();
     for word in node.text().unwrap_or("").split_whitespace() {
@@ -71,6 +85,7 @@ fn indices(node: Node<'_, '_>) -> Result<Vec<usize>> {
     }
     Ok(values)
 }
+/// Resolve a local fragment reference without allowing external resources.
 fn reference(value: &str) -> Result<&str> {
     value
         .strip_prefix('#')
@@ -79,14 +94,21 @@ fn reference(value: &str) -> Result<&str> {
 }
 
 #[derive(Debug)]
+/// Numeric source accessor into a COLLADA float array.
 struct Source {
+    /// Underlying finite scalar values.
     values: Vec<f64>,
+    /// Number of accessible source entries.
     count: usize,
+    /// Scalar spacing between entries.
     stride: usize,
+    /// First scalar used by the accessor.
     offset: usize,
+    /// Named source components mapped to their positions within an entry.
     components: Vec<Option<String>>,
 }
 impl Source {
+    /// Read a three-component source entry by semantic names and validate its range.
     fn vector(&self, index: usize, names: [&str; 3]) -> Result<Vec3> {
         if index >= self.count {
             return Err(error("COLLADA source index out of bounds"));
@@ -113,11 +135,18 @@ impl Source {
         }
         Ok(Vec3::new(components[0], components[1], components[2]))
     }
+    /// Read an RGB source entry and encode it for display.
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "Color components are clamped and rounded to the inclusive byte range before conversion."
+    )]
     fn color(&self, index: usize) -> Result<[u8; 3]> {
         let c = self.vector(index, ["R", "G", "B"])?;
         Ok([c.x, c.y, c.z].map(|c| (c * 255.0).clamp(0.0, 255.0).round() as u8))
     }
 }
+/// Parse a float source and validate its accessor count, stride, offset and parameters.
 fn parse_source(node: Node<'_, '_>, ids: &HashMap<&str, Node<'_, '_>>) -> Result<Source> {
     let technique = child(node, "technique_common")?;
     let accessor = child(technique, "accessor")?;
@@ -177,17 +206,27 @@ fn parse_source(node: Node<'_, '_>, ids: &HashMap<&str, Node<'_, '_>>) -> Result
 }
 
 #[derive(Clone)]
+/// One decoded mesh triangle before node transforms and material binding.
 struct MeshTriangle {
+    /// Vertices in mesh-local coordinates.
     vertices: [Vec3; 3],
+    /// Optional average vertex color.
     color: Option<[u8; 3]>,
+    /// Material symbol referenced by the primitive.
     material: Option<String>,
 }
+/// One primitive input identifying a source, semantic and interleaved index offset.
 struct Input {
+    /// Resolved source ID without the fragment marker.
     source: String,
+    /// COLLADA input semantic such as vertex, position or color.
     semantic: String,
+    /// Offset within each interleaved index tuple.
     offset: usize,
+    /// Attribute set used to choose among multiple color inputs.
     set: usize,
 }
+/// Parse primitive inputs and validate bounded offsets and attribute sets.
 fn inputs(node: Node<'_, '_>) -> Result<Vec<Input>> {
     children(node, "input")
         .map(|input| {
@@ -208,6 +247,12 @@ fn inputs(node: Node<'_, '_>) -> Result<Vec<Input>> {
         })
         .collect()
 }
+/// Decode indexed triangles, polygons, strips and fans from a COLLADA mesh.
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    reason = "The bounded primitive parser keeps index and source validation together; averages of byte colors stay within byte range."
+)]
 fn parse_mesh(node: Node<'_, '_>, ids: &HashMap<&str, Node<'_, '_>>) -> Result<Vec<MeshTriangle>> {
     let mut sources = HashMap::new();
     for source in children(node, "source") {
@@ -221,7 +266,7 @@ fn parse_mesh(node: Node<'_, '_>, ids: &HashMap<&str, Node<'_, '_>>) -> Result<V
         vertex_inputs.insert(attribute(vertices, "id")?.to_owned(), inputs(vertices)?);
     }
     let mut result = Vec::new();
-    for primitive in node.children().filter(|n| n.is_element()) {
+    for primitive in node.children().filter(roxmltree::Node::is_element) {
         let name = primitive.tag_name().name();
         if matches!(name, "source" | "vertices" | "extra") {
             continue;
@@ -402,8 +447,8 @@ fn parse_mesh(node: Node<'_, '_>, ids: &HashMap<&str, Node<'_, '_>>) -> Result<V
                 None
             } else {
                 Some(std::array::from_fn(|i| {
-                    (colors.iter().map(|color| color[i] as u64).sum::<u64>() / colors.len() as u64)
-                        as u8
+                    (colors.iter().map(|color| u64::from(color[i])).sum::<u64>()
+                        / colors.len() as u64) as u8
                 }))
             };
             for vertices in triangulate_polygon(&vertices)? {
@@ -421,9 +466,14 @@ fn parse_mesh(node: Node<'_, '_>, ids: &HashMap<&str, Node<'_, '_>>) -> Result<V
     Ok(result)
 }
 
+/// Compose a node's ordered affine transform elements.
+#[allow(
+    clippy::float_cmp,
+    reason = "The COLLADA matrix affine row requires exact protocol constants."
+)]
 fn node_transform(node: Node<'_, '_>) -> Result<Transform> {
     let mut result = Transform::IDENTITY;
-    for element in node.children().filter(|n| n.is_element()) {
+    for element in node.children().filter(roxmltree::Node::is_element) {
         let name = element.tag_name().name();
         if !matches!(
             name,
@@ -511,17 +561,27 @@ fn node_transform(node: Node<'_, '_>) -> Result<Transform> {
     Ok(result)
 }
 
+/// Resolved COLLADA resources and traversal state for the selected visual scene.
 struct Collada<'a, 'i> {
+    /// XML elements indexed by their unique IDs.
     ids: HashMap<&'a str, Node<'a, 'i>>,
+    /// Decoded triangles indexed by geometry ID.
     meshes: HashMap<String, Vec<MeshTriangle>>,
+    /// Display colors indexed by material ID.
     materials: HashMap<String, [u8; 3]>,
+    /// Source up-axis conversion into the renderer coordinate system.
     axis: String,
+    /// Source length unit in meters.
     unit: f64,
+    /// Active node IDs for cyclic instance detection.
     active: HashSet<NodeId>,
+    /// Number of expanded geometry instances.
     instances: usize,
+    /// Accumulated transformed geometry.
     scene: Scene,
 }
 impl Collada<'_, '_> {
+    /// Transform a source position and apply declared units and up-axis conversion.
     fn world_position(&self, position: Vec3) -> Vec3 {
         let p = position * self.unit;
         match self.axis.as_str() {
@@ -530,6 +590,7 @@ impl Collada<'_, '_> {
             _ => p,
         }
     }
+    /// Instantiate one decoded geometry with node material bindings and transform.
     fn geometry(
         &mut self,
         id: &str,
@@ -561,6 +622,7 @@ impl Collada<'_, '_> {
         }
         Ok(())
     }
+    /// Walk visual scene nodes and referenced node instances with cycle and depth bounds.
     fn walk(&mut self, node: Node<'_, '_>, parent: Transform, depth: usize) -> Result<()> {
         if depth > 256 || self.instances >= MAX_INSTANCES {
             return Err(error("COLLADA scene nesting or instance limit exceeded"));
@@ -570,7 +632,7 @@ impl Collada<'_, '_> {
         }
         self.instances += 1;
         let world = parent.then(node_transform(node)?);
-        for element in node.children().filter(|n| n.is_element()) {
+        for element in node.children().filter(roxmltree::Node::is_element) {
             match element.tag_name().name() {
                 "instance_geometry" => {
                     let id = reference(attribute(element, "url")?)?;
@@ -619,6 +681,13 @@ impl Collada<'_, '_> {
     }
 }
 
+/// Resolve document resources and render the referenced visual scene.
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Resource resolution and scene setup form one bounded pass; material colors are clamped and rounded to byte range."
+)]
 fn collada(source: &str) -> Result<Scene> {
     let document = Document::parse(source)?;
     let root = document.root_element();
@@ -631,7 +700,7 @@ fn collada(source: &str) -> Result<Scene> {
         return Err(error("expected COLLADA 1.4 or 1.5 document"));
     }
     let mut ids = HashMap::new();
-    for node in root.descendants().filter(|n| n.is_element()) {
+    for node in root.descendants().filter(roxmltree::Node::is_element) {
         if let Some(id) = node.attribute("id")
             && ids.insert(id, node).is_some()
         {

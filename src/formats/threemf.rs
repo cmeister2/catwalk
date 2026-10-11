@@ -1,3 +1,4 @@
+//! Unit-normalized 3MF meshes and multipart production-extension assembly builds.
 use super::{MAX_INPUT_BYTES, transform::Transform};
 use crate::{
     Result,
@@ -9,42 +10,73 @@ use std::{
     path::Path,
 };
 
+/// XML namespace of the supported 3MF core model schema.
 const CORE: &str = "http://schemas.microsoft.com/3dmanufacturing/core/2015/02";
+/// XML namespace of the supported 3MF material resource extension.
 const MATERIAL: &str = "http://schemas.microsoft.com/3dmanufacturing/material/2015/02";
+/// XML namespace of the supported multipart 3MF production extension.
 const PRODUCTION: &str = "http://schemas.microsoft.com/3dmanufacturing/production/2015/06";
+/// Open Packaging Conventions relationship XML namespace.
 const RELATIONSHIPS: &str = "http://schemas.openxmlformats.org/package/2006/relationships";
+/// Relationship type identifying a 3MF model XML part.
 const MODEL_RELATIONSHIP: &str = "http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel";
+/// Maximum source or expanded preview triangle count.
 const MAX_TRIANGLES: usize = 5_000_000;
+/// Maximum model parts referenced by a multipart package.
 const MAX_PARTS: usize = 256;
+/// Maximum aggregate resources or physical ZIP directory entries.
 const MAX_RESOURCES: usize = 100_000;
+/// Maximum aggregate source object references.
 const MAX_REFERENCES: usize = 1_000_000;
+/// Maximum recursive reference, geometry or partition depth.
 const MAX_DEPTH: usize = 256;
 
+/// A local or production-part object reference with its unit-normalized placement.
 struct Reference {
+    /// Optional canonical production-part path; absence refers to the current part.
     part: Option<String>,
+    /// Object resource identifier scoped to the referenced model part.
     object: u32,
+    /// Local-to-parent affine placement in normalized scene units.
     transform: Transform,
 }
 
+/// One mesh or component object with its part-local resource identity.
 struct Object {
+    /// Authored unit-normalized mesh triangles belonging to the object.
     triangles: Vec<Triangle>,
+    /// Placed references to component objects contained by this object.
     components: Vec<Reference>,
 }
 
+/// Part-local objects and build references decoded from one model XML part.
 struct ModelPart {
+    /// Decoded objects indexed by identifiers local to this XML part.
     objects: HashMap<u32, Object>,
+    /// Authored build-item references; only the root part drives instantiation.
     build: Vec<Reference>,
 }
 
+/// Aggregate source/decompression/resource limits shared across referenced model parts.
 #[derive(Default)]
 struct Budget {
+    /// Aggregate decompressed XML bytes read across referenced package parts.
     bytes: u64,
+    /// Aggregate source mesh vertex count across decoded model parts.
     vertices: usize,
+    /// Aggregate source mesh triangle count across decoded model parts.
     triangles: usize,
+    /// Aggregate number of decoded resource records.
     resources: usize,
+    /// Aggregate number of decoded object references.
     references: usize,
 }
 
+/// Increment one aggregate model count without crossing its limit.
+///
+/// # Errors
+///
+/// The count overflows or exceeds the supplied budget.
 fn consume(count: &mut usize, limit: usize, label: &str) -> Result<()> {
     *count = count.checked_add(1).ok_or("3MF count overflow")?;
     if *count > limit {
@@ -53,6 +85,11 @@ fn consume(count: &mut usize, limit: usize, label: &str) -> Result<()> {
     Ok(())
 }
 
+/// Read a fixed-width raw ZIP directory field.
+///
+/// # Errors
+///
+/// The requested byte range is truncated or cannot represent the fixed-size field.
 fn zip_number<const N: usize>(bytes: &[u8], offset: usize) -> Result<[u8; N]> {
     Ok(bytes
         .get(offset..)
@@ -61,18 +98,38 @@ fn zip_number<const N: usize>(bytes: &[u8], offset: usize) -> Result<[u8; N]> {
         .try_into()?)
 }
 
+/// Decode a little-endian 16-bit ZIP directory field.
+///
+/// # Errors
+///
+/// The requested field is truncated.
 fn zip_u16(bytes: &[u8], offset: usize) -> Result<u16> {
     Ok(u16::from_le_bytes(zip_number(bytes, offset)?))
 }
 
+/// Decode a little-endian 32-bit ZIP directory field.
+///
+/// # Errors
+///
+/// The requested field is truncated.
 fn zip_u32(bytes: &[u8], offset: usize) -> Result<u32> {
     Ok(u32::from_le_bytes(zip_number(bytes, offset)?))
 }
 
+/// Decode a little-endian 64-bit ZIP directory field.
+///
+/// # Errors
+///
+/// The requested field is truncated.
 fn zip_u64(bytes: &[u8], offset: usize) -> Result<u64> {
     Ok(u64::from_le_bytes(zip_number(bytes, offset)?))
 }
 
+/// Seek and read an exact raw package byte range.
+///
+/// # Errors
+///
+/// Seeking or reading fails, including a truncated requested range.
 fn zip_read(reader: &mut (impl Read + Seek), offset: u64, length: usize) -> Result<Vec<u8>> {
     reader.seek(SeekFrom::Start(offset))?;
     let mut bytes = vec![0; length];
@@ -80,6 +137,11 @@ fn zip_read(reader: &mut (impl Read + Seek), offset: u64, length: usize) -> Resu
     Ok(bytes)
 }
 
+/// Locate a valid ZIP64 end record, including prefixed/extensible archives.
+///
+/// # Errors
+///
+/// The end record is missing, inconsistent, truncated or unreadable.
 fn zip64_end(
     reader: &mut (impl Read + Seek),
     locator: u64,
@@ -128,10 +190,14 @@ fn zip64_end(
     Err("invalid 3MF ZIP64 end-of-directory record".into())
 }
 
-/// Inspect the raw central directory before ZipArchive coalesces identical
+/// Inspect the raw central directory before `ZipArchive` coalesces identical
 /// names. PKWARE APPNOTE sections 4.3.12--4.3.16 define these fixed headers;
 /// compressed entry data and ZIP64 per-entry extras remain the ZIP reader's
 /// responsibility. Count and name checks apply to every physical record.
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keep the format record dispatch, validation and its resource checks together without changing geometry evaluation."
+)]
 fn validate_zip_directory(reader: &mut (impl Read + Seek), length: u64) -> Result<usize> {
     if !(22..=MAX_INPUT_BYTES).contains(&length) {
         return Err("invalid or oversized 3MF ZIP package".into());
@@ -261,11 +327,18 @@ fn validate_zip_directory(reader: &mut (impl Read + Seek), length: u64) -> Resul
 /// Model part names are OPC package URIs, never filesystem paths. Cache the
 /// indexed ZIP entries so aliases cannot select an ambiguous duplicate part.
 struct Package {
+    /// Opened ZIP reader retaining the package file handle.
     archive: zip::ZipArchive<std::fs::File>,
+    /// Canonical package part names mapped to unambiguous ZIP entry indices.
     entries: HashMap<String, usize>,
 }
 
 impl Package {
+    /// Open a bounded ZIP package and index unambiguous canonical part names.
+    ///
+    /// # Errors
+    ///
+    /// File/ZIP validation, duplicate names or package limits fail.
     fn open(path: &Path) -> Result<Self> {
         let mut file = std::fs::File::open(path)?;
         let length = file.metadata()?.len();
@@ -299,10 +372,16 @@ impl Package {
         Ok(Self { archive, entries })
     }
 
+    /// Test whether the canonical package part name exists in the archive index.
     fn contains(&self, path: &str) -> bool {
         self.entries.contains_key(path)
     }
 
+    /// Read a referenced UTF-8 XML part within the aggregate decompression budget.
+    ///
+    /// # Errors
+    ///
+    /// The part is missing, unreadable, invalidly encoded or exceeds decompression limits.
     fn read(&mut self, path: &str, budget: &mut Budget) -> Result<String> {
         let index = *self
             .entries
@@ -326,6 +405,11 @@ impl Package {
     }
 }
 
+/// Load the root 3MF build and referenced production-extension model parts.
+///
+/// # Errors
+///
+/// ZIP/XML structure, local references, resources, geometry or preview budgets are invalid or unsupported.
 pub(super) fn load(path: &Path) -> Result<Scene> {
     let mut package = Package::open(path)?;
     let mut budget = Budget::default();
@@ -378,6 +462,11 @@ pub(super) fn load(path: &Path) -> Result<Scene> {
     render_parts(&root, &parts)
 }
 
+/// Percent-decode a package URI without permitting filesystem/remote targets.
+///
+/// # Errors
+///
+/// Escapes, UTF-8, delimiters or forbidden path characters are invalid.
 fn decode_uri(target: &str) -> Result<String> {
     let bytes = target.as_bytes();
     let mut decoded = Vec::new();
@@ -400,6 +489,11 @@ fn decode_uri(target: &str) -> Result<String> {
     Ok(String::from_utf8(decoded)?)
 }
 
+/// Validate and canonicalize an already decoded package part name.
+///
+/// # Errors
+///
+/// The name contains invalid, empty, relative or traversal segments.
 fn part_name(value: &str) -> Result<String> {
     let path = value.strip_prefix('/').unwrap_or(value);
     if value.contains([':', '\0', '\\', '?', '#'])
@@ -411,10 +505,20 @@ fn part_name(value: &str) -> Result<String> {
     Ok(path.to_ascii_lowercase())
 }
 
+/// Decode and canonicalize a package-local model part URI.
+///
+/// # Errors
+///
+/// The URI is malformed, external or contains invalid/traversal segments.
 fn package_path(target: &str) -> Result<String> {
     part_name(&decode_uri(target)?)
 }
 
+/// Resolve a relationship target relative to its package part directory.
+///
+/// # Errors
+///
+/// The target is external, malformed or cannot resolve to a valid package-local part.
 fn relationship_target(target: &str, directory: &str) -> Result<String> {
     let target = decode_uri(target)?;
     if target.contains([':', '\0', '\\', '?', '#']) || target.starts_with("//") {
@@ -440,6 +544,11 @@ fn relationship_target(target: &str, directory: &str) -> Result<String> {
     part_name(&segments.join("/"))
 }
 
+/// Collect supported internal model-part relationship targets.
+///
+/// # Errors
+///
+/// XML relationships are invalid, external, duplicated or above the part limit.
 fn model_relationships(xml: &str, directory: &str) -> Result<HashSet<String>> {
     let doc = roxmltree::Document::parse(xml)?;
     let root = doc.root_element();
@@ -476,15 +585,30 @@ fn model_relationships(xml: &str, directory: &str) -> Result<HashSet<String>> {
     Ok(targets)
 }
 
-fn attribute<'a, 'input>(node: roxmltree::Node<'a, 'input>, name: &str) -> Result<&'a str> {
+/// Read a required unqualified 3MF XML attribute.
+///
+/// # Errors
+///
+/// The element lacks the named attribute.
+fn attribute<'a>(node: roxmltree::Node<'a, '_>, name: &str) -> Result<&'a str> {
     node.attribute(name)
         .ok_or_else(|| format!("3MF {} is missing {name}", node.tag_name().name()).into())
 }
 
+/// Parse a required numeric 3MF resource/reference identifier.
+///
+/// # Errors
+///
+/// The attribute is missing or is not an unsigned 32-bit integer.
 fn id(node: roxmltree::Node<'_, '_>, name: &str) -> Result<u32> {
     Ok(attribute(node, name)?.parse()?)
 }
 
+/// Find an optional unique child in the 3MF core namespace.
+///
+/// # Errors
+///
+/// The element contains duplicate core children of the requested name.
 fn core_child<'a, 'input>(
     node: roxmltree::Node<'a, 'input>,
     name: &str,
@@ -497,6 +621,11 @@ fn core_child<'a, 'input>(
     Ok(child)
 }
 
+/// Decode supported #RRGGBB or #RRGGBBAA color syntax to its RGB channels.
+///
+/// # Errors
+///
+/// The spelling has an invalid prefix, length, character set or hexadecimal components.
 fn color(value: &str) -> Result<[u8; 3]> {
     let value = value
         .strip_prefix('#')
@@ -511,6 +640,11 @@ fn color(value: &str) -> Result<[u8; 3]> {
     ])
 }
 
+/// Resolve a supported 3MF model unit to millimetres.
+///
+/// # Errors
+///
+/// The unit spelling is unsupported.
 fn unit_scale(model: roxmltree::Node<'_, '_>) -> Result<f64> {
     match model.attribute("unit").unwrap_or("millimeter") {
         "micron" => Ok(0.001),
@@ -523,6 +657,11 @@ fn unit_scale(model: roxmltree::Node<'_, '_>) -> Result<f64> {
     }
 }
 
+/// Read a placed component/build reference with package-local production-path rules.
+///
+/// # Errors
+///
+/// Paths, namespaces, identifiers or transforms are invalid/unsupported, or reference limits are exceeded.
 fn reference(
     node: roxmltree::Node<'_, '_>,
     root: bool,
@@ -560,6 +699,19 @@ fn reference(
     })
 }
 
+/// Read one unit-normalized model part with resource identifiers scoped to that part.
+///
+/// # Errors
+///
+/// Core/extension XML, resources, meshes, materials or aggregate budgets are invalid or unsupported.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "The mean of three bounded RGB bytes remains within the byte range."
+)]
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keep the format record dispatch, validation and its resource checks together without changing geometry evaluation."
+)]
 fn parse_part(xml: &str, root: bool, budget: &mut Budget) -> Result<ModelPart> {
     let doc = roxmltree::Document::parse(xml)?;
     let model = doc.root_element();
@@ -579,7 +731,7 @@ fn parse_part(xml: &str, root: bool, budget: &mut Budget) -> Result<ModelPart> {
     let resources = core_child(model, "resources")?.ok_or("3MF model has no resources")?;
     let mut all_ids = HashSet::new();
     let mut colors: HashMap<u32, Vec<[u8; 3]>> = HashMap::new();
-    for resource in resources.children().filter(|n| n.is_element()) {
+    for resource in resources.children().filter(roxmltree::Node::is_element) {
         consume(&mut budget.resources, MAX_RESOURCES, "resource")?;
         let resource_id = id(resource, "id")?;
         if resource_id == 0 {
@@ -592,7 +744,7 @@ fn parse_part(xml: &str, root: bool, budget: &mut Budget) -> Result<ModelPart> {
             "basematerials" | "colorgroup" => {
                 let palette = resource
                     .children()
-                    .filter(|n| n.is_element())
+                    .filter(roxmltree::Node::is_element)
                     .map(|n| {
                         color(attribute(
                             n,
@@ -624,7 +776,7 @@ fn parse_part(xml: &str, root: bool, budget: &mut Budget) -> Result<ModelPart> {
         .filter(|n| n.has_tag_name((CORE, "object")))
     {
         let object_id = id(resource, "id")?;
-        let object_pid: Option<u32> = resource.attribute("pid").map(str::parse).transpose()?;
+        let property_group: Option<u32> = resource.attribute("pid").map(str::parse).transpose()?;
         let object_pindex: usize = resource
             .attribute("pindex")
             .map(str::parse)
@@ -671,7 +823,7 @@ fn parse_part(xml: &str, root: bool, budget: &mut Budget) -> Result<ModelPart> {
                     .attribute("pid")
                     .map(str::parse)
                     .transpose()?
-                    .or(object_pid);
+                    .or(property_group);
                 let triangle_color = if let Some(pid) = pid {
                     let palette = colors
                         .get(&pid)
@@ -695,9 +847,9 @@ fn parse_part(xml: &str, root: bool, budget: &mut Budget) -> Result<ModelPart> {
                         return Err("3MF color index is out of range".into());
                     }
                     Some(std::array::from_fn(|channel| {
-                        ((palette[p1][channel] as u32
-                            + palette[p2][channel] as u32
-                            + palette[p3][channel] as u32)
+                        ((u32::from(palette[p1][channel])
+                            + u32::from(palette[p2][channel])
+                            + u32::from(palette[p3][channel]))
                             / 3) as u8
                     }))
                 } else {
@@ -736,6 +888,11 @@ fn parse_part(xml: &str, root: bool, budget: &mut Budget) -> Result<ModelPart> {
     Ok(ModelPart { objects, build })
 }
 
+/// Validate the multipart object graph and instantiate only the root build items.
+///
+/// # Errors
+///
+/// Parts/objects are missing, cyclic or exceed nesting/output limits.
 fn render_parts(root: &str, parts: &HashMap<String, ModelPart>) -> Result<Scene> {
     let mut heights = HashMap::new();
     let mut active = HashSet::new();
@@ -761,6 +918,11 @@ fn render_parts(root: &str, parts: &HashMap<String, ModelPart>) -> Result<Scene>
     Ok(scene)
 }
 
+/// Validate reachable component dependencies and memoize their bounded expanded triangle counts.
+///
+/// # Errors
+///
+/// Object/part references are missing, cyclic or exceed depth/triangle limits.
 fn validate_object(
     part: &str,
     id: u32,
@@ -801,6 +963,11 @@ fn validate_object(
     Ok(height)
 }
 
+/// Append one placed object and recursively expand its referenced components.
+///
+/// # Errors
+///
+/// References or transforms are invalid, cyclic or exceed recursion/output limits.
 fn instantiate(
     part: &str,
     id: u32,
@@ -842,6 +1009,7 @@ fn instantiate(
 }
 
 #[cfg(test)]
+/// Parse a single authored XML part without constructing a ZIP test package.
 fn parse(xml: &str) -> Result<Scene> {
     let part = parse_part(xml, true, &mut Budget::default())?;
     render_parts("root.model", &HashMap::from([("root.model".into(), part)]))
@@ -850,6 +1018,7 @@ fn parse(xml: &str) -> Result<Scene> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fmt::Write as _;
     use std::io::Write;
 
     fn model(resources: &str, build: &str) -> String {
@@ -920,15 +1089,16 @@ mod tests {
     }
 
     fn relationships(targets: &[&str]) -> String {
-        let relations: String = targets
+        let relations = targets
             .iter()
             .enumerate()
-            .map(|(i, target)| {
-                format!(
+            .fold(String::new(), |mut text, (i, target)| {
+                let _ = write!(
+                    text,
                     "<Relationship Type=\"{MODEL_RELATIONSHIP}\" Target=\"{target}\" Id=\"r{i}\"/>"
-                )
-            })
-            .collect();
+                );
+                text
+            });
         format!("<Relationships xmlns=\"{RELATIONSHIPS}\">{relations}</Relationships>")
     }
 
@@ -1216,9 +1386,10 @@ mod tests {
 
     #[test]
     fn production_model_part_count_is_bounded() {
-        let build: String = (0..MAX_PARTS)
-            .map(|n| format!("<item p:path=\"/3D/{n}.model\" objectid=\"1\"/>"))
-            .collect();
+        let build = (0..MAX_PARTS).fold(String::new(), |mut text, n| {
+            let _ = write!(text, "<item p:path=\"/3D/{n}.model\" objectid=\"1\"/>");
+            text
+        });
         let root = production_model("millimeter", "", Some(&build));
         let error = package_scene(&[("3D/3dmodel.model", &root)])
             .unwrap_err()
@@ -1230,7 +1401,11 @@ mod tests {
     fn deep_and_exponentially_instanced_components_are_bounded() {
         let mut resources = MESH.to_owned();
         for id in 2..=MAX_DEPTH + 1 {
-            resources.push_str(&format!("<object id=\"{id}\"><components><component objectid=\"{}\"/></components></object>", id - 1));
+            let _ = write!(
+                resources,
+                "<object id=\"{id}\"><components><component objectid=\"{}\"/></components></object>",
+                id - 1
+            );
         }
         assert!(
             parse(&model(
@@ -1241,7 +1416,12 @@ mod tests {
         );
         let mut resources = "<object id=\"1\"><components/></object>".to_owned();
         for id in 2..=21 {
-            resources.push_str(&format!("<object id=\"{id}\"><components><component objectid=\"{}\"/><component objectid=\"{}\"/></components></object>", id - 1, id - 1));
+            let _ = write!(
+                resources,
+                "<object id=\"{id}\"><components><component objectid=\"{}\"/><component objectid=\"{}\"/></components></object>",
+                id - 1,
+                id - 1
+            );
         }
         let error = parse(&model(&resources, "<item objectid=\"21\"/>"))
             .unwrap_err()
@@ -1276,6 +1456,10 @@ mod tests {
     }
 
     #[test]
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "Small authored test payload lengths fit their native field widths; preserve the exact binary fixture encoding."
+    )]
     fn raw_zip_duplicates_are_rejected_before_library_coalescing() {
         let mut bytes = zip_bytes(None);
         let eocd = eocd_offset(&bytes);
@@ -1324,6 +1508,10 @@ mod tests {
     }
 
     #[test]
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "Small authored test payload lengths fit their native field widths; preserve the exact binary fixture encoding."
+    )]
     fn raw_zip_directory_counts_and_extents_are_bounded() {
         let original = zip_bytes(None);
         for length in 0..original.len() {

@@ -1,7 +1,9 @@
 //! Small qualification runner; saved-preview research remains outside readers.
 #[path = "saved_previews/autodesk.rs"]
+/// Fusion saved-preview qualification reader.
 mod autodesk;
 
+/// Report saved-preview outcomes for Inventor and Fusion inputs and save successful images.
 fn main() -> catwalk::Result<()> {
     for input in std::env::args_os().skip(1) {
         let path = std::path::Path::new(&input);

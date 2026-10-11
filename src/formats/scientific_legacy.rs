@@ -4,23 +4,29 @@ use super::{MAX_ITEMS, append_grid, append_line, append_polydata, append_structu
 use crate::Result;
 use crate::scene::{Scene, Vec3};
 
+/// Bounds-checked cursor for legacy VTK dataset records.
 struct Reader<'a> {
+    /// Borrowed complete input byte stream.
     data: &'a [u8],
+    /// Byte position of the next unread record.
     at: usize,
+    /// Whether the legacy payload uses binary numeric words.
     binary: bool,
+    /// Whether legacy cells use separate offset/connectivity arrays.
     split_cells: bool,
 }
 impl Reader<'_> {
+    /// Consume the next UTF-8 legacy header line.
     fn line(&mut self) -> Result<&str> {
         let end = self.data[self.at..]
             .iter()
             .position(|&b| b == b'\n')
-            .map(|n| n + self.at)
-            .unwrap_or(self.data.len());
+            .map_or(self.data.len(), |n| n + self.at);
         let start = self.at;
         self.at = (end + 1).min(self.data.len());
         Ok(std::str::from_utf8(&self.data[start..end])?.trim_end_matches('\r'))
     }
+    /// Consume the next whitespace-delimited legacy ASCII token.
     fn token(&mut self) -> Result<&str> {
         while self.data.get(self.at).is_some_and(u8::is_ascii_whitespace) {
             self.at += 1;
@@ -38,15 +44,18 @@ impl Reader<'_> {
         }
         Ok(std::str::from_utf8(&self.data[start..self.at])?)
     }
+    /// Check whether only trailing whitespace remains in the dataset.
     fn end(&self) -> bool {
         self.data[self.at..].iter().all(u8::is_ascii_whitespace)
     }
+    /// Require the next token to match a legacy VTK keyword.
     fn expect(&mut self, expected: &str) -> Result<()> {
         if !self.token()?.eq_ignore_ascii_case(expected) {
             return Err(format!("expected VTK {expected}").into());
         }
         Ok(())
     }
+    /// Read a nonnegative record count within the geometry item limit.
     fn count(&mut self) -> Result<usize> {
         let n: usize = self.token()?.parse()?;
         if n > MAX_ITEMS {
@@ -54,6 +63,7 @@ impl Reader<'_> {
         }
         Ok(n)
     }
+    /// Read a finite ASCII coordinate.
     fn coordinate(&mut self) -> Result<f64> {
         let n: f64 = self.token()?.parse()?;
         if !n.is_finite() {
@@ -61,6 +71,7 @@ impl Reader<'_> {
         }
         Ok(n)
     }
+    /// Consume exactly the requested binary words with checked payload sizing.
     fn raw(&mut self, count: usize, ty: Scalar) -> Result<&[u8]> {
         while self
             .data
@@ -87,6 +98,7 @@ impl Reader<'_> {
         self.at = end;
         Ok(bytes)
     }
+    /// Decode ASCII or big-endian numeric coordinates and attribute values.
     fn floats(&mut self, count: usize, ty: Scalar) -> Result<Vec<f64>> {
         if self.binary {
             self.raw(count, ty)?
@@ -97,6 +109,7 @@ impl Reader<'_> {
             (0..count).map(|_| self.coordinate()).collect()
         }
     }
+    /// Decode nonnegative connectivity indices from ASCII or binary words.
     fn indices(&mut self, count: usize, ty: Scalar) -> Result<Vec<usize>> {
         if count > MAX_ITEMS {
             return Err("VTK connectivity array exceeds geometry limit".into());
@@ -116,6 +129,7 @@ impl Reader<'_> {
             (0..count).map(|_| self.count()).collect()
         }
     }
+    /// Decode count-prefixed or VTK v5 offset/connectivity cell records.
     fn cells(&mut self) -> Result<Vec<Vec<usize>>> {
         let count = self.count()?;
         let total = self.count()?;
@@ -163,6 +177,7 @@ impl Reader<'_> {
             Ok(cells)
         }
     }
+    /// Skip supported attribute metadata while rejecting hidden/ghost geometry.
     fn metadata(&mut self) -> Result<()> {
         // vtkDataWriter terminates array metadata with an empty line.
         self.line()?;
@@ -177,6 +192,7 @@ impl Reader<'_> {
         }
         Err("VTK metadata exceeds limit or is not terminated".into())
     }
+    /// Validate and consume the arrays in a legacy FIELD block.
     fn field(&mut self) -> Result<()> {
         self.token()?;
         let count = self.count()?;
@@ -203,6 +219,24 @@ impl Reader<'_> {
     }
 }
 
+/// Parse legacy ASCII or binary POLYDATA, unstructured and structured datasets into visible
+/// geometry.
+///
+/// # Errors
+/// Returns an error for invalid legacy syntax, unsupported/hidden geometry, truncated arrays or
+/// out-of-range topology.
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "Structured dimensions are bounded by MAX_ITEMS before their lattice indices become f64 coordinates."
+)]
+#[allow(
+    clippy::float_cmp,
+    reason = "Exact duplicate axis coordinates violate strict monotonicity and must not be hidden by a tolerance."
+)]
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keep legacy VTK sections together because geometry and attribute records share the same byte cursor."
+)]
 pub(super) fn parse(bytes: &[u8]) -> Result<Scene> {
     let mut reader = Reader {
         data: bytes,
@@ -303,24 +337,24 @@ pub(super) fn parse(bytes: &[u8]) -> Result<Scene> {
             "X_COORDINATES" | "Y_COORDINATES" | "Z_COORDINATES"
                 if dataset == "RECTILINEAR_GRID" =>
             {
-                let axis = match keyword.as_str() {
+                let axis_index = match keyword.as_str() {
                     "X_COORDINATES" => 0,
                     "Y_COORDINATES" => 1,
                     _ => 2,
                 };
-                if axes[axis].is_some() {
+                if axes[axis_index].is_some() {
                     return Err("duplicate VTK coordinate axis".into());
                 }
                 let count = reader.count()?;
                 let ty = Scalar::parse(&reader.token()?.to_ascii_lowercase())?;
-                axes[axis] = Some(reader.floats(count, ty)?);
+                axes[axis_index] = Some(reader.floats(count, ty)?);
             }
             "ORIGIN" if dataset == "STRUCTURED_POINTS" => {
                 origin = Vec3::new(
                     reader.coordinate()?,
                     reader.coordinate()?,
                     reader.coordinate()?,
-                )
+                );
             }
             "SPACING" | "ASPECT_RATIO" if dataset == "STRUCTURED_POINTS" => {
                 spacing = Vec3::new(
@@ -358,19 +392,20 @@ pub(super) fn parse(bytes: &[u8]) -> Result<Scene> {
             let positions = if dataset == "STRUCTURED_GRID" {
                 positions.ok_or("VTK structured grid has no POINTS")?
             } else {
-                for axis in 0..3 {
+                for axis_index in 0..3 {
                     if dataset == "STRUCTURED_POINTS" {
                         let (o, s) = [
                             (origin.x, spacing.x),
                             (origin.y, spacing.y),
                             (origin.z, spacing.z),
-                        ][axis];
-                        axes[axis] = Some((0..dims[axis]).map(|i| o + i as f64 * s).collect());
+                        ][axis_index];
+                        axes[axis_index] =
+                            Some((0..dims[axis_index]).map(|i| o + i as f64 * s).collect());
                     }
-                    let values = axes[axis]
+                    let values = axes[axis_index]
                         .as_ref()
                         .ok_or("VTK rectilinear coordinate axis is missing")?;
-                    if values.len() != dims[axis] {
+                    if values.len() != dims[axis_index] {
                         return Err("VTK coordinate count disagrees with dimensions".into());
                     }
                     if values

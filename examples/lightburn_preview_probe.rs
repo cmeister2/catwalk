@@ -1,7 +1,9 @@
-//! Reproducible LightBurn saved-preview qualification runner.
+//! Reproducible `LightBurn` saved-preview qualification runner.
 #[path = "saved_previews/lightburn.rs"]
+/// `LightBurn` saved-preview qualification reader.
 mod lightburn;
 
+/// Emit JSON qualification outcomes and save extracted `LightBurn` thumbnails.
 fn main() -> catwalk::Result<()> {
     for input in std::env::args_os().skip(1) {
         let path = std::path::Path::new(&input);

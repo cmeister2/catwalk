@@ -1,3 +1,5 @@
+//! STEP surface, mapped placement, assembly ownership and unit-conversion qualification.
+
 use catwalk::formats;
 use std::{fs, path::PathBuf, process::Command};
 use truck_modeling::{Point3, Vector3, builder};
@@ -45,7 +47,7 @@ fn all_f3d_step_aliases_render_a_cad_solid_without_a_display() {
             "{extension}: {}",
             String::from_utf8_lossy(&result.stderr)
         );
-        assert!(result.stderr.is_empty());
+        assert_eq!(result.stderr, [] as [u8; 0]);
         let bytes = fs::read(output).unwrap();
         let thumbnail = image::load_from_memory(&bytes).unwrap().to_rgba8();
         assert_eq!(thumbnail.dimensions(), (64, 64));
@@ -124,6 +126,10 @@ fn load_text(source: &str, name: &str) -> catwalk::scene::Scene {
     formats::load(&path).unwrap()
 }
 
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "Small authored reference coordinates are intentionally rounded to integer micro-units for comparison"
+)]
 fn transformed_vertices(
     scene: &catwalk::scene::Scene,
     transform: impl Fn(catwalk::scene::Vec3) -> catwalk::scene::Vec3,

@@ -1,11 +1,15 @@
+//! Static glTF and GLB scenes with bounded resources, first-pose deformation,
+//! mesh instances and base-color texture appearance.
 use super::{read_file, relative_resource, transform::Transform};
 use crate::{
     Result,
     scene::{Line, Point, Scene, Triangle, Vec3},
 };
+use ::gltf::json::validation::Validate;
 use base64::Engine;
 use std::{collections::HashSet, path::Path};
 
+/// Maximum decoded elements in any geometry accessor.
 const MAX_ELEMENTS: usize = 5_000_000;
 
 #[path = "gltf_deform.rs"]
@@ -14,6 +18,21 @@ mod deform;
 #[path = "gltf_anim.rs"]
 mod animation;
 
+#[path = "gltf_instancing.rs"]
+mod instancing;
+
+#[path = "gltf_material.rs"]
+mod material;
+
+/// Load a glTF or GLB model into the selected scene and first animation pose.
+///
+/// # Errors
+/// Returns an error for invalid references, unsupported required extensions, malformed
+/// accessors or resources, non-finite geometry, and exceeded decoding budgets.
+#[allow(
+    clippy::too_many_lines,
+    reason = "The bounded importer keeps required-extension, resource and scene selection validation in one pipeline."
+)]
 pub(super) fn load(path: &Path) -> Result<Scene> {
     let source = read_file(path)?;
     // Keep the original JSON: newer morph attribute semantics are absent from
@@ -60,7 +79,7 @@ pub(super) fn load(path: &Path) -> Result<Scene> {
         let blob = if source.starts_with(b"glTF") {
             ::gltf::binary::Glb::from_slice(&source)?
                 .bin
-                .map(|bin| bin.into_owned())
+                .map(std::borrow::Cow::into_owned)
         } else {
             None
         };
@@ -73,6 +92,8 @@ pub(super) fn load(path: &Path) -> Result<Scene> {
             "KHR_materials_unlit",
             "KHR_draco_mesh_compression",
             "KHR_mesh_quantization",
+            "KHR_texture_transform",
+            "EXT_mesh_gpu_instancing",
         ]
         .contains(&required)
         {
@@ -82,7 +103,6 @@ pub(super) fn load(path: &Path) -> Result<Scene> {
     // Preserve all core validation. The crate's extension allowlist predates
     // our separate Draco decoder, so its already-checked required names are
     // the only unsupported-extension reports we handle ourselves.
-    use ::gltf::json::validation::Validate;
     let root = model.document.as_json();
     let compressed_accessors = compressed_accessors(&raw);
     let mut errors = Vec::new();
@@ -156,6 +176,7 @@ pub(super) fn load(path: &Path) -> Result<Scene> {
             .collect()
     };
     let globals = deform::global_transforms(&model, &roots, &poses)?;
+    let materials = material::load(&model, &raw, parent, &buffers, &globals)?;
     let context = LoadContext {
         buffers: &buffers,
         views: &views,
@@ -167,6 +188,8 @@ pub(super) fn load(path: &Path) -> Result<Scene> {
             .any(|name| name == "KHR_mesh_quantization"),
         globals: &globals,
         raw: &raw,
+        materials: &materials,
+        work: std::cell::Cell::new(0),
     };
     for node in roots {
         visit(node, &context, &mut output)?;
@@ -223,6 +246,7 @@ fn compressed_accessors(root: &serde_json::Value) -> HashSet<usize> {
     result
 }
 
+/// Validate the byte range occupied by a strided accessor without overflowing.
 fn bounded_range(
     offset: usize,
     count: usize,
@@ -248,6 +272,7 @@ fn bounded_range(
     Ok(())
 }
 
+/// Check accessor counts, alignment, buffer ranges and ordered sparse indices before iteration.
 fn check_accessors(model: &::gltf::Gltf, buffers: &[Vec<u8>]) -> Result<()> {
     for view in model.views() {
         let end = view
@@ -259,6 +284,9 @@ fn check_accessors(model: &::gltf::Gltf, buffers: &[Vec<u8>]) -> Result<()> {
         }
     }
     for accessor in model.accessors() {
+        if accessor.count() == 0 {
+            return Err("glTF accessor count must be positive".into());
+        }
         if accessor.count() > MAX_ELEMENTS {
             return Err("glTF accessor exceeds the element limit".into());
         }
@@ -272,10 +300,13 @@ fn check_accessors(model: &::gltf::Gltf, buffers: &[Vec<u8>]) -> Result<()> {
             )?;
         }
         if let Some(sparse) = accessor.sparse() {
-            if sparse.count() > accessor.count() {
+            if sparse.count() == 0 || sparse.count() > accessor.count() {
                 return Err("glTF sparse accessor count exceeds accessor count".into());
             }
             let indices = sparse.indices();
+            if indices.view().stride().is_some() || sparse.values().view().stride().is_some() {
+                return Err("glTF sparse accessor views must not have strides".into());
+            }
             let size = indices.index_type().size();
             bounded_range(
                 indices.offset(),
@@ -316,11 +347,17 @@ fn check_accessors(model: &::gltf::Gltf, buffers: &[Vec<u8>]) -> Result<()> {
     Ok(())
 }
 
+/// Convert a linear RGB vertex color to display bytes.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Color components are clamped and rounded to the inclusive byte range before conversion."
+)]
 fn rgb(value: [f32; 4]) -> [u8; 3] {
     // glTF color factors are linear; PNG stores sRGB.
     std::array::from_fn(|i| {
         let c = value[i].clamp(0., 1.);
-        let srgb = if c <= 0.0031308 {
+        let srgb = if c <= 0.003_130_8 {
             12.92 * c
         } else {
             1.055 * c.powf(1. / 2.4) - 0.055
@@ -329,30 +366,60 @@ fn rgb(value: [f32; 4]) -> [u8; 3] {
     })
 }
 
+/// Decoded attributes and indices for one mesh primitive before morphing and skinning.
 struct PrimitiveData {
+    /// Vertex positions in the primitive coordinate system.
     positions: Vec<Vec3>,
+    /// Authored vertex normals, retained at their original lengths until deformation.
+    normals: Option<Vec<Vec3>>,
+    /// Coordinates from the texture coordinate set selected by the material.
+    texcoords: Option<Vec<[f64; 2]>>,
+    /// Primitive vertex indices in source order.
     indices: Vec<u32>,
+    /// Optional vertex colors with three or four components.
     colors: Option<Vec<[f32; 4]>>,
+    /// Whether the attributes came from Draco decompression.
     compressed: bool,
+    /// Paired joint-index and weight sets for each vertex.
     influences: Vec<deform::InfluenceSet>,
 }
 
+/// Shared validated resources and decoding budgets used while traversing a glTF scene.
 struct LoadContext<'a, 'b> {
+    /// Decoded bytes for each glTF buffer.
     buffers: &'a [Vec<u8>],
+    /// Buffer views indexed by their document indices.
     views: &'a [::gltf::buffer::View<'b>],
+    /// Accessors indexed by their document indices.
     accessors: &'a [::gltf::Accessor<'b>],
+    /// Validated morph target counts indexed by mesh.
     morph_counts: &'a [usize],
+    /// Local node transforms and morph weights evaluated at the first animation pose.
     poses: &'a [animation::Pose],
+    /// Whether the required mesh quantization extension permits integer geometry attributes.
     quantized: bool,
+    /// World transforms for nodes reachable from the selected scene.
     globals: &'a [Option<Transform>],
+    /// Original JSON retaining attributes absent from the typed glTF representation.
     raw: &'a serde_json::Value,
+    /// Materials used by selected nodes, including the default material.
+    materials: &'a material::Materials,
+    /// Accumulated vertex deformation and instance expansion work.
+    work: std::cell::Cell<usize>,
 }
 
+/// Find a decompressed attribute by its extension ID and validate its semantic layout.
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "glTF accessors are cheap document handles passed by value consistently with the reader API."
+)]
 fn decoded_attribute(
     geometry: &super::draco::DecodedGeometry,
     id: &serde_json::Value,
     accessor: ::gltf::Accessor<'_>,
 ) -> Result<super::draco::DecodedAttribute> {
+    use ::gltf::accessor::DataType as A;
+    use draco_core::DataType as D;
     let id = u32::try_from(
         id.as_u64()
             .ok_or("glTF Draco attribute ID must be an integer")?,
@@ -363,8 +430,6 @@ fn decoded_attribute(
     {
         return Err("glTF Draco attribute layout differs from its accessor".into());
     }
-    use ::gltf::accessor::DataType as A;
-    use draco_core::DataType as D;
     if !matches!(
         (accessor.data_type(), attribute.data_type),
         (A::I8, D::Int8)
@@ -379,11 +444,19 @@ fn decoded_attribute(
     Ok(attribute)
 }
 
+/// Decode a primitive and validate matching attribute counts, component layouts and indices.
+#[allow(
+    clippy::too_many_lines,
+    clippy::needless_pass_by_value,
+    clippy::cast_possible_truncation,
+    reason = "Cheap glTF handles follow reader ownership; geometry budgets bound index casts, and decoded colors retain glTF f32 storage."
+)]
 fn primitive_data(
     primitive: ::gltf::mesh::Primitive<'_>,
     buffers: &[Vec<u8>],
     views: &[::gltf::buffer::View<'_>],
     quantized: bool,
+    texcoord_set: Option<u32>,
 ) -> Result<PrimitiveData> {
     let reader = primitive.reader(|b| buffers.get(b.index()).map(Vec::as_slice));
     let fallback_colors = || {
@@ -495,8 +568,37 @@ fn primitive_data(
         }
         let influences =
             deform::read_influences(primitive.clone(), buffers, Some(&geometry), positions.len())?;
+        let normals = if let Some(accessor) = primitive.get(&::gltf::Semantic::Normals) {
+            Some(if let Some(id) = attributes.get("NORMAL") {
+                deform::normal_layout(&accessor, quantized)?;
+                decoded_attribute(&geometry, id, accessor.clone())?
+                    .values
+                    .as_chunks::<3>()
+                    .0
+                    .iter()
+                    .map(|v| deform::normal_vector([v[0], v[1], v[2]], &accessor))
+                    .collect()
+            } else {
+                deform::read_normals(accessor, buffers, quantized)?
+            })
+        } else {
+            None
+        };
+        let texcoords = texcoord_set
+            .map(|set| {
+                material::read_texcoords(
+                    primitive.clone(),
+                    buffers,
+                    Some(&geometry),
+                    quantized,
+                    set,
+                )
+            })
+            .transpose()?;
         Ok(PrimitiveData {
             positions,
+            normals,
+            texcoords,
             indices,
             colors,
             compressed: true,
@@ -507,14 +609,23 @@ fn primitive_data(
             .get(&::gltf::Semantic::Positions)
             .ok_or("glTF primitive has no POSITION accessor")?;
         let positions = deform::read_positions(accessor, buffers, quantized, false)?;
-        let indices = reader
-            .read_indices()
-            .map(|v| v.into_u32().collect())
-            .unwrap_or_else(|| (0..positions.len() as u32).collect());
+        let indices = reader.read_indices().map_or_else(
+            || (0..positions.len() as u32).collect(),
+            |v| v.into_u32().collect(),
+        );
         let influences =
             deform::read_influences(primitive.clone(), buffers, None, positions.len())?;
+        let normals = primitive
+            .get(&::gltf::Semantic::Normals)
+            .map(|accessor| deform::read_normals(accessor, buffers, quantized))
+            .transpose()?;
+        let texcoords = texcoord_set
+            .map(|set| material::read_texcoords(primitive.clone(), buffers, None, quantized, set))
+            .transpose()?;
         Ok(PrimitiveData {
             positions,
+            normals,
+            texcoords,
             indices,
             colors: fallback_colors(),
             compressed: false,
@@ -523,116 +634,243 @@ fn primitive_data(
     }
 }
 
+/// Traverse a selected node, deform its geometry and expand bounded mesh instances into the scene.
+#[allow(
+    clippy::too_many_lines,
+    clippy::needless_pass_by_value,
+    clippy::manual_midpoint,
+    reason = "The bounded node visitor handles primitive modes together; cheap node handles follow glTF readers, and color averaging preserves snapshot rounding order."
+)]
 fn visit(node: ::gltf::Node<'_>, context: &LoadContext<'_, '_>, scene: &mut Scene) -> Result<()> {
     let transform = context.globals[node.index()].ok_or("glTF node has no scene transform")?;
     let skin = node
         .skin()
         .map(|skin| deform::skin_matrices(skin, context.buffers, context.globals))
         .transpose()?;
+    let instances = instancing::transforms(
+        context.raw,
+        node.index(),
+        context.accessors,
+        context.buffers,
+    )?;
+    if instances.is_some() && skin.is_some() {
+        return Err("glTF skin combined with EXT_mesh_gpu_instancing is not implemented".into());
+    }
+    let instances = instances.unwrap_or_else(|| vec![Transform::IDENTITY]);
     if let Some(mesh) = node.mesh() {
         for primitive in mesh.primitives() {
+            let material = context
+                .materials
+                .get(&primitive.material().index())
+                .ok_or("glTF selected material is missing")?;
             let mut data = primitive_data(
                 primitive.clone(),
                 context.buffers,
                 context.views,
                 context.quantized,
+                material.texcoord_set,
             )?;
             deform::apply_morphs(&node, &mesh, primitive.index(), context, &mut data)?;
-            let world =
-                deform::apply_skin(data.positions, &data.influences, skin.as_deref(), transform)?;
-            let vertices: Vec<_> = world
-                .into_iter()
-                .map(|v| Vec3::new(v.x, -v.z, v.y))
-                .collect();
-            let indices = data.indices;
-            if indices.iter().any(|&i| i as usize >= vertices.len()) {
-                return Err("glTF triangle references a missing vertex".into());
+            if data
+                .normals
+                .as_ref()
+                .is_some_and(|n| n.len() != data.positions.len())
+                || data
+                    .texcoords
+                    .as_ref()
+                    .is_some_and(|uv| uv.len() != data.positions.len())
+            {
+                return Err("glTF normal/texture coordinate count does not match positions".into());
             }
-            let factor = primitive
-                .material()
-                .pbr_metallic_roughness()
-                .base_color_factor();
-            let colors: Option<Vec<_>> = data.colors.map(|v| {
-                v.into_iter()
-                    .map(|c| std::array::from_fn::<_, 4, _>(|i| c[i] * factor[i]))
-                    .collect()
-            });
-            if colors.as_ref().is_some_and(|c| c.len() != vertices.len()) {
-                return Err("glTF color count does not match position count".into());
+            if let Some(texcoords) = &mut data.texcoords {
+                material::apply_uv_morphs(
+                    &node,
+                    &mesh,
+                    primitive.index(),
+                    context,
+                    material
+                        .texcoord_set
+                        .ok_or("glTF texture coordinates lack a selected set")?,
+                    texcoords,
+                )?;
+                material.transform_uvs(texcoords)?;
             }
-            let face_color = |face: [u32; 3]| -> [u8; 3] {
-                if let Some(colors) = &colors {
-                    rgb(std::array::from_fn(|channel| {
-                        face.iter()
-                            .map(|&i| colors[i as usize][channel])
-                            .sum::<f32>()
-                            / 3.
-                    }))
-                } else {
-                    rgb(factor)
-                }
-            };
-            let mut add_triangle = |face: [u32; 3]| -> Result<()> {
-                if scene.triangles.len() >= MAX_ELEMENTS {
-                    return Err("glTF scene exceeds triangle limit".into());
-                }
-                scene.triangles.push(Triangle {
-                    vertices: face.map(|i| vertices[i as usize]),
-                    color: Some(face_color(face)),
-                });
-                Ok(())
-            };
+            if data.colors.as_ref().is_some_and(|colors| {
+                colors.len() != data.positions.len()
+                    || colors
+                        .iter()
+                        .flatten()
+                        .any(|v| !v.is_finite() || !(0.0..=1.0).contains(v))
+            }) {
+                return Err("glTF vertex colors must match positions and contain finite RGBA values between zero and one".into());
+            }
+            let work = data
+                .positions
+                .len()
+                .checked_mul(instances.len())
+                .and_then(|n| context.work.get().checked_add(n))
+                .ok_or("glTF instanced vertex work overflow")?;
+            if work > 50_000_000 {
+                return Err("glTF exceeds the expanded vertex work limit".into());
+            }
+            context.work.set(work);
             let mode = if data.compressed {
                 ::gltf::mesh::Mode::Triangles
             } else {
                 primitive.mode()
             };
-            match mode {
-                ::gltf::mesh::Mode::Triangles => {
-                    if indices.len() % 3 != 0 {
-                        return Err("glTF triangle index count is not a multiple of three".into());
-                    }
-                    for face in indices.as_chunks::<3>().0.iter() {
-                        add_triangle([face[0], face[1], face[2]])?;
+            let count = match mode {
+                ::gltf::mesh::Mode::Triangles => data.indices.len() / 3,
+                ::gltf::mesh::Mode::TriangleStrip | ::gltf::mesh::Mode::TriangleFan => {
+                    data.indices.len().saturating_sub(2)
+                }
+                ::gltf::mesh::Mode::Points => data.indices.len(),
+                ::gltf::mesh::Mode::Lines => data.indices.len() / 2,
+                ::gltf::mesh::Mode::LineStrip => data.indices.len().saturating_sub(1),
+                ::gltf::mesh::Mode::LineLoop => {
+                    if data.indices.len() > 1 {
+                        data.indices.len()
+                    } else {
+                        0
                     }
                 }
-                ::gltf::mesh::Mode::TriangleStrip => {
-                    for (i, face) in indices.windows(3).enumerate() {
-                        add_triangle(if i % 2 == 0 {
-                            [face[0], face[1], face[2]]
-                        } else {
-                            [face[1], face[0], face[2]]
-                        })?;
-                    }
+            };
+            let existing = scene.triangles.len() + scene.lines.len() + scene.points.len();
+            if count
+                .checked_mul(instances.len())
+                .and_then(|n| n.checked_add(existing))
+                .is_none_or(|n| n > MAX_ELEMENTS)
+            {
+                return Err("glTF scene exceeds the expanded geometry limit".into());
+            }
+            for instance in &instances {
+                let transform = transform.then(*instance);
+                let normals = data
+                    .normals
+                    .as_ref()
+                    .map(|normals| {
+                        deform::apply_normals(normals, &data.influences, skin.as_deref(), transform)
+                            .map(|normals| {
+                                normals
+                                    .into_iter()
+                                    .map(|v| Vec3::new(v.x, -v.z, v.y))
+                                    .collect::<Vec<_>>()
+                            })
+                    })
+                    .transpose()?;
+                let world = deform::apply_skin(
+                    data.positions.clone(),
+                    &data.influences,
+                    skin.as_deref(),
+                    transform,
+                )?;
+                let vertices: Vec<_> = world
+                    .into_iter()
+                    .map(|v| Vec3::new(v.x, -v.z, v.y))
+                    .collect();
+                let indices = &data.indices;
+                if indices.iter().any(|&i| i as usize >= vertices.len()) {
+                    return Err("glTF triangle references a missing vertex".into());
                 }
-                ::gltf::mesh::Mode::TriangleFan => {
-                    if let Some(&first) = indices.first() {
-                        for face in indices[1..].windows(2) {
-                            add_triangle([first, face[0], face[1]])?;
+                let factor = primitive
+                    .material()
+                    .pbr_metallic_roughness()
+                    .base_color_factor();
+                let colors: Option<Vec<_>> = data.colors.as_ref().map(|v| {
+                    v.iter()
+                        .map(|c| std::array::from_fn::<_, 4, _>(|i| c[i] * factor[i]))
+                        .collect()
+                });
+                if colors.as_ref().is_some_and(|c| c.len() != vertices.len()) {
+                    return Err("glTF color count does not match position count".into());
+                }
+                let face_color = |face: [u32; 3]| -> [u8; 3] {
+                    if let Some(colors) = &colors {
+                        rgb(std::array::from_fn(|channel| {
+                            face.iter()
+                                .map(|&i| colors[i as usize][channel])
+                                .sum::<f32>()
+                                / 3.
+                        }))
+                    } else {
+                        rgb(factor)
+                    }
+                };
+                let mut add_triangle = |face: [u32; 3]| -> Result<()> {
+                    if scene.triangles.len() >= MAX_ELEMENTS {
+                        return Err("glTF scene exceeds triangle limit".into());
+                    }
+                    let mut face = face;
+                    // glTF reverses front-face winding for mirrored node transforms.
+                    if skin.is_none() && mirrored(transform) {
+                        face.swap(1, 2);
+                    }
+                    let mut appearance = material.appearance.clone();
+                    appearance.colors = data
+                        .colors
+                        .as_ref()
+                        .map(|colors| face.map(|i| colors[i as usize].map(f64::from)));
+                    appearance.texcoords = data
+                        .texcoords
+                        .as_ref()
+                        .map(|uvs| face.map(|i| uvs[i as usize]));
+                    appearance.normals = normals.as_ref().and_then(|normals| {
+                        let values = face.map(|i| normals[i as usize]);
+                        values.iter().all(|n| n.length() > 0.).then_some(values)
+                    });
+                    scene.appearances.insert(scene.triangles.len(), appearance);
+                    scene.triangles.push(Triangle {
+                        vertices: face.map(|i| vertices[i as usize]),
+                        color: Some(face_color(face)),
+                    });
+                    Ok(())
+                };
+                match mode {
+                    ::gltf::mesh::Mode::Triangles => {
+                        if indices.len() % 3 != 0 {
+                            return Err(
+                                "glTF triangle index count is not a multiple of three".into()
+                            );
+                        }
+                        for face in indices.as_chunks::<3>().0 {
+                            add_triangle([face[0], face[1], face[2]])?;
                         }
                     }
-                }
-                ::gltf::mesh::Mode::Points => {
-                    for i in indices {
-                        if scene.points.len() >= MAX_ELEMENTS {
-                            return Err("glTF scene exceeds point limit".into());
+                    ::gltf::mesh::Mode::TriangleStrip => {
+                        for (i, face) in indices.windows(3).enumerate() {
+                            add_triangle(if i % 2 == 0 {
+                                [face[0], face[1], face[2]]
+                            } else {
+                                [face[1], face[0], face[2]]
+                            })?;
                         }
-                        scene.points.push(Point {
-                            position: vertices[i as usize],
-                            color: Some(
-                                colors
-                                    .as_ref()
-                                    .map(|c| rgb(c[i as usize]))
-                                    .unwrap_or_else(|| rgb(factor)),
-                            ),
-                        });
                     }
-                }
-                ::gltf::mesh::Mode::Lines
-                | ::gltf::mesh::Mode::LineStrip
-                | ::gltf::mesh::Mode::LineLoop => {
-                    let edges: Vec<[u32; 2]> = match mode {
-                        ::gltf::mesh::Mode::Lines => {
+                    ::gltf::mesh::Mode::TriangleFan => {
+                        if let Some(&first) = indices.first() {
+                            for face in indices[1..].windows(2) {
+                                add_triangle([first, face[0], face[1]])?;
+                            }
+                        }
+                    }
+                    ::gltf::mesh::Mode::Points => {
+                        for &i in indices {
+                            if scene.points.len() >= MAX_ELEMENTS {
+                                return Err("glTF scene exceeds point limit".into());
+                            }
+                            scene.points.push(Point {
+                                position: vertices[i as usize],
+                                color: Some(
+                                    colors
+                                        .as_ref()
+                                        .map_or_else(|| rgb(factor), |c| rgb(c[i as usize])),
+                                ),
+                            });
+                        }
+                    }
+                    ::gltf::mesh::Mode::Lines
+                    | ::gltf::mesh::Mode::LineStrip
+                    | ::gltf::mesh::Mode::LineLoop => {
+                        let edges: Vec<[u32; 2]> = if mode == ::gltf::mesh::Mode::Lines {
                             if !indices.len().is_multiple_of(2) {
                                 return Err("glTF line index count is not a multiple of two".into());
                             }
@@ -642,33 +880,32 @@ fn visit(node: ::gltf::Node<'_>, context: &LoadContext<'_, '_>, scene: &mut Scen
                                 .iter()
                                 .map(|v| [v[0], v[1]])
                                 .collect()
-                        }
-                        _ => {
+                        } else {
                             let mut edges: Vec<_> =
                                 indices.windows(2).map(|v| [v[0], v[1]]).collect();
                             if mode == ::gltf::mesh::Mode::LineLoop && indices.len() > 1 {
                                 edges.push([*indices.last().unwrap(), indices[0]]);
                             }
                             edges
+                        };
+                        if scene.lines.len() + edges.len() > MAX_ELEMENTS {
+                            return Err("glTF scene exceeds line limit".into());
                         }
-                    };
-                    if scene.lines.len() + edges.len() > MAX_ELEMENTS {
-                        return Err("glTF scene exceeds line limit".into());
-                    }
-                    for edge in edges {
-                        let color = colors
-                            .as_ref()
-                            .map(|colors| {
-                                rgb(std::array::from_fn(|i| {
-                                    (colors[edge[0] as usize][i] + colors[edge[1] as usize][i])
-                                        / 2.0
-                                }))
-                            })
-                            .unwrap_or_else(|| rgb(factor));
-                        scene.lines.push(Line {
-                            vertices: edge.map(|i| vertices[i as usize]),
-                            color: Some(color),
-                        });
+                        for edge in edges {
+                            let color = colors.as_ref().map_or_else(
+                                || rgb(factor),
+                                |colors| {
+                                    rgb(std::array::from_fn(|i| {
+                                        (colors[edge[0] as usize][i] + colors[edge[1] as usize][i])
+                                            / 2.0
+                                    }))
+                                },
+                            );
+                            scene.lines.push(Line {
+                                vertices: edge.map(|i| vertices[i as usize]),
+                                color: Some(color),
+                            });
+                        }
                     }
                 }
             }
@@ -680,11 +917,31 @@ fn visit(node: ::gltf::Node<'_>, context: &LoadContext<'_, '_>, scene: &mut Scen
     Ok(())
 }
 
+/// Detect whether the linear transform reverses orientation.
+fn mirrored(transform: Transform) -> bool {
+    let columns: [Vec3; 3] =
+        std::array::from_fn(|i| Vec3::new(transform.0[i][0], transform.0[i][1], transform.0[i][2]));
+    // Scale before the sign test to avoid overflow for large finite transforms.
+    let largest = columns
+        .iter()
+        .flat_map(|v| [v.x.abs(), v.y.abs(), v.z.abs()])
+        .fold(0., f64::max);
+    if largest == 0. {
+        return false;
+    }
+    let columns = columns.map(|v| Vec3::new(v.x / largest, v.y / largest, v.z / largest));
+    columns[0].dot(columns[1].cross(columns[2])) < 0.
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "The authored GLB test fixture has chunk and container sizes far below u32 limits."
+    )]
     fn compressed_gltf_and_glb_keep_transforms_and_core_validation() {
         use serde_json::json;
         let bytes = include_bytes!("../../tests/fixtures/draco/cube-valence.drc");
@@ -741,24 +998,24 @@ mod tests {
         }
         let mut glb = Vec::new();
         for word in [
-            0x46546c67u32,
+            0x4654_6c67_u32,
             2,
             (28 + json.len() + binary.len()) as u32,
             json.len() as u32,
-            0x4e4f534a,
+            0x4e4f_534a,
         ] {
             glb.extend(word.to_le_bytes());
         }
         glb.extend(json);
         glb.extend((binary.len() as u32).to_le_bytes());
-        glb.extend(0x004e4942u32.to_le_bytes());
+        glb.extend(0x004e_4942_u32.to_le_bytes());
         glb.extend(binary);
         let glb_path = directory.join("cube.glb");
         std::fs::write(&glb_path, glb).unwrap();
         let other = load(&glb_path).unwrap();
         assert_eq!(
-            crate::render::render(&scene, &Default::default()).unwrap(),
-            crate::render::render(&other, &Default::default()).unwrap()
+            crate::render::render(&scene, &crate::render::RenderOptions::default()).unwrap(),
+            crate::render::render(&other, &crate::render::RenderOptions::default()).unwrap()
         );
         document["buffers"][0]["uri"] = json!(format!(
             "data:application/octet-stream;base64,{}",

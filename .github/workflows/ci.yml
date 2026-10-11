@@ -21,6 +21,10 @@ jobs:
         run: cargo fmt --all -- --check
       - name: Check warnings
         run: cargo clippy --all-targets --locked -- -D warnings
+      - name: Check documentation
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --no-deps --document-private-items --locked
 
   tests:
     strategy:

@@ -13,14 +13,19 @@ use std::{
     process::Command,
 };
 
+/// Fixed corpus thumbnail width in pixels.
 pub const WIDTH: u32 = 256;
+/// Fixed corpus thumbnail height in pixels.
 pub const HEIGHT: u32 = 256;
+/// Maximum accepted premultiplied RGBA channel difference in snapshot comparisons.
 pub const CHANNEL_TOLERANCE: u8 = 2;
 
+/// Describe the deterministic render and comparison settings recorded in reports.
 pub fn render_settings() -> Value {
     json!({"width":WIDTH,"height":HEIGHT,"transparent":true,"samples":2,"channelTolerance":CHANNEL_TOLERANCE})
 }
 
+/// Collect regular fingerprint inputs, recording missing paths and rejecting symlinks.
 fn collect_files(path: &Path, files: &mut Vec<PathBuf>) -> Result<()> {
     let metadata = match std::fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
@@ -47,6 +52,7 @@ fn collect_files(path: &Path, files: &mut Vec<PathBuf>) -> Result<()> {
     Ok(())
 }
 
+/// Convert an input path to a portable UTF-8 name relative to the fingerprint root.
 fn relative_name(root: &Path, path: &Path) -> Result<String> {
     // Portable names make identical checked-out bytes hash identically on all
     // platforms; absolute workspace paths and directory timestamps are omitted.
@@ -63,6 +69,7 @@ fn relative_name(root: &Path, path: &Path) -> Result<String> {
         .map(|parts| parts.join("/"))
 }
 
+/// Hash sorted portable names, existence, lengths and complete contents of input trees.
 fn fingerprint(root: &Path, paths: &[&str]) -> Result<String> {
     let mut files = Vec::new();
     for path in paths {
@@ -75,7 +82,7 @@ fn fingerprint(root: &Path, paths: &[&str]) -> Result<String> {
     names.sort_by(|a, b| a.0.cmp(&b.0));
     let mut digest = Sha256::new();
     digest.update(b"catwalk-snapshot-files-v1\0");
-    let mut buffer = [0u8; 64 * 1024];
+    let mut buffer = vec![0_u8; 64 * 1024];
     for (name, path) in names {
         digest.update((name.len() as u64).to_be_bytes());
         digest.update(name.as_bytes());
@@ -102,6 +109,10 @@ fn fingerprint(root: &Path, paths: &[&str]) -> Result<String> {
 
 /// Include every corpus file, so detached buffers, materials and scalar arrays
 /// cannot change unnoticed merely because the top-level input stayed the same.
+///
+/// # Errors
+/// Returns an error if an input tree cannot be read or contains a symlink, special file
+/// or non-UTF-8 path that cannot be fingerprinted portably.
 pub fn verification_context(workspace: &Path) -> Result<Value> {
     Ok(json!({
         "schema": 1,
@@ -111,6 +122,7 @@ pub fn verification_context(workspace: &Path) -> Result<Value> {
     }))
 }
 
+/// Read the optional CI commit identifier and reject non-hexadecimal or incorrectly sized values.
 fn tested_commit() -> Result<Option<String>> {
     match std::env::var("GITHUB_SHA") {
         Ok(commit)
@@ -127,6 +139,10 @@ fn tested_commit() -> Result<Option<String>> {
 
 /// A reused report must describe these inputs, baselines, implementation and
 /// settings, and the same image artifacts that the snapshot runner emitted.
+///
+/// # Errors
+/// Returns an error for unreadable fingerprint inputs, changed settings, stale corpus or renderer
+/// bytes, changed image artifacts, or a report from a different CI commit.
 pub fn validate_report(workspace: &Path, artifacts: &Path, report: &Value) -> Result<()> {
     if report["settings"] != render_settings() {
         return Err("snapshot report uses different render/comparison settings".into());
@@ -146,30 +162,45 @@ pub fn validate_report(workspace: &Path, artifacts: &Path, report: &Value) -> Re
 }
 
 #[derive(Clone, Debug)]
+/// Validated corpus entry identifying one input and its committed image baseline.
 pub struct Case {
+    /// Stable, validated identifier used for artifact and baseline filenames.
     pub id: String,
+    /// Lowercase advertised input extension.
     pub extension: String,
+    /// Human-readable gallery description.
     pub title: String,
+    /// Validated relative input path inside the corpus.
     pub input: String,
+    /// Manifest category: model, image or saved-preview.
     pub kind: String,
+    /// Authorship, source and licensing description.
     pub provenance: String,
 }
 
+/// Decoded, premultiplied RGBA difference statistics for one image pair.
 pub struct Comparison {
+    /// Largest absolute difference among all premultiplied RGBA channels.
     pub max_delta: u8,
+    /// Number of pixels with at least one differing premultiplied channel.
     pub changed_pixels: usize,
+    /// Mean absolute channel difference across the complete image.
     pub mean_delta: f64,
 }
 
 impl Comparison {
+    /// Whether the maximum channel difference stays within the committed corpus tolerance.
+    #[must_use]
     pub fn matches(&self) -> bool {
         self.max_delta <= CHANNEL_TOLERANCE
     }
+    /// Serialize the comparison metrics for the snapshot report and gallery.
     fn json(&self) -> Value {
         json!({"max_delta":self.max_delta,"changed_pixels":self.changed_pixels,"mean_delta":self.mean_delta})
     }
 }
 
+/// Read a required nonempty string field from a corpus manifest entry.
 fn string(value: &Value, key: &str) -> Result<String> {
     let value = value
         .get(key)
@@ -179,6 +210,11 @@ fn string(value: &Value, key: &str) -> Result<String> {
     Ok(value.to_owned())
 }
 
+/// Read the manifest and validate input paths, fixture identities and complete extension coverage.
+///
+/// # Errors
+/// Returns an error for I/O or JSON failures, unsupported schema or settings, invalid or duplicate
+/// identifiers, missing or escaping inputs, mismatched kinds, or incomplete extension coverage.
 pub fn read_cases(workspace: &Path) -> Result<Vec<Case>> {
     let root = workspace.join("tests/fixtures/formats");
     let manifest: Value = serde_json::from_slice(&std::fs::read(root.join("manifest.json"))?)?;
@@ -263,7 +299,12 @@ pub fn read_cases(workspace: &Path) -> Result<Vec<Case>> {
     Ok(cases)
 }
 
-fn premultiplied(pixel: &Rgba<u8>) -> [u8; 4] {
+/// Convert straight-alpha byte colors to rounded premultiplied channels for stable comparisons.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "Rounded premultiplication of two byte channels always produces a value from zero to 255"
+)]
+fn premultiplied(pixel: Rgba<u8>) -> [u8; 4] {
     std::array::from_fn(|i| {
         if i == 3 {
             pixel[3]
@@ -273,6 +314,14 @@ fn premultiplied(pixel: &Rgba<u8>) -> [u8; 4] {
     })
 }
 
+/// Compare decoded images in premultiplied RGBA and create an amplified opaque difference image.
+///
+/// # Errors
+/// Returns an error when the expected and actual image dimensions differ.
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "The reported mean channel delta is an approximate floating-point statistic"
+)]
 pub fn compare(expected: &RgbaImage, actual: &RgbaImage) -> Result<(Comparison, RgbaImage)> {
     if expected.dimensions() != actual.dimensions() {
         return Err(format!(
@@ -291,10 +340,10 @@ pub fn compare(expected: &RgbaImage, actual: &RgbaImage) -> Result<(Comparison, 
         .zip(actual.pixels())
         .zip(difference.pixels_mut())
     {
-        let expected = premultiplied(expected);
-        let actual = premultiplied(actual);
+        let expected = premultiplied(*expected);
+        let actual = premultiplied(*actual);
         let deltas: [u8; 4] = std::array::from_fn(|i| expected[i].abs_diff(actual[i]));
-        let maximum = *deltas.iter().max().unwrap();
+        let maximum = deltas.into_iter().fold(0, u8::max);
         max_delta = max_delta.max(maximum);
         changed_pixels += usize::from(maximum != 0);
         total_delta += deltas.iter().map(|&v| u64::from(v)).sum::<u64>();
@@ -309,12 +358,14 @@ pub fn compare(expected: &RgbaImage, actual: &RgbaImage) -> Result<(Comparison, 
         Comparison {
             max_delta,
             changed_pixels,
-            mean_delta: total_delta as f64 / (actual.width() as f64 * actual.height() as f64 * 4.),
+            mean_delta: total_delta as f64
+                / (f64::from(actual.width()) * f64::from(actual.height()) * 4.),
         },
         difference,
     ))
 }
 
+/// Decode a PNG artifact as RGBA8 for snapshot comparison.
 fn load_png(path: &Path) -> Result<RgbaImage> {
     Ok(
         image::load_from_memory_with_format(&std::fs::read(path)?, image::ImageFormat::Png)?
@@ -322,6 +373,7 @@ fn load_png(path: &Path) -> Result<RgbaImage> {
     )
 }
 
+/// Create parent directories and write an RGBA snapshot artifact as PNG.
 fn save_png(path: &Path, image: &RgbaImage) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -329,6 +381,7 @@ fn save_png(path: &Path, image: &RgbaImage) -> Result<()> {
     write_png(image, std::fs::File::create(path)?)
 }
 
+/// Render a corpus input through the library or a silent headless CLI and return its decoded PNG.
 fn render(
     case: &Case,
     workspace: &Path,
@@ -364,7 +417,7 @@ fn render(
                 height: HEIGHT,
                 transparent: true,
                 supersampling: 2,
-                ..Default::default()
+                ..RenderOptions::default()
             },
         )?;
         save_png(output, &image)?;
@@ -374,6 +427,11 @@ fn render(
 
 /// Run every registered fixture, recording all failures rather than stopping at
 /// the first. Baselines are immutable unless an explicit local update is asked.
+///
+/// # Errors
+/// Returns an error for an invalid manifest, artifact or baseline I/O failures, an invalid CI commit
+/// identifier, or input changes during rendering. Per-case render and comparison failures are
+/// recorded in the report and returned in the failure list.
 pub fn run(
     workspace: &Path,
     artifacts: &Path,
@@ -471,10 +529,10 @@ pub fn run(
     Ok(failures)
 }
 
+/// Resolve the artifact-directory override or use the workspace snapshot target directory.
 pub fn artifact_directory(workspace: &Path) -> PathBuf {
     std::env::var_os("CATWALK_SNAPSHOT_ARTIFACTS")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| workspace.join("target/format-snapshots"))
+        .map_or_else(|| workspace.join("target/format-snapshots"), PathBuf::from)
 }
 
 #[cfg(test)]
@@ -495,7 +553,7 @@ mod report_reuse_tests {
                 ));
                 match std::fs::create_dir(&candidate) {
                     Ok(()) => break candidate,
-                    Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                    Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
                     Err(error) => return Err(error.into()),
                 }
             };

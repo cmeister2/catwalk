@@ -1,3 +1,5 @@
+//! Qualification tests for compressed model containers and their referenced geometry.
+
 use hdf5_writer::{AttributeBuilder, DatasetBuilder, Hdf5Builder, WriteOptions};
 use netcdf_writer::{NcAttrValue, NcFileBuilder, NcWriteFormat, NcWriteOptions};
 use std::{path::Path, process::Command};

@@ -22,18 +22,23 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
+/// Maximum decoded attribute elements and expanded geometry elements.
 const MAX_ELEMENTS: usize = 5_000_000;
+/// Maximum traversed composed stage prims.
 const MAX_PRIMS: usize = 100_000;
 
 /// Every layer and every decompressed ZIP member passes through this resolver.
 /// In particular, opening USDZ's root through `package[root.usdc]` prevents the
 /// upstream package-format decoder from performing an unbounded ZIP read.
 struct LocalResolver {
+    /// Canonical model directory containing every permitted dependency.
     root: PathBuf,
+    /// Aggregate bytes read from layers and package members.
     total: Cell<u64>,
 }
 
 impl LocalResolver {
+    /// Resolve a local identifier and optional safe package member within the model directory.
     fn parts(&self, identifier: &str) -> Option<(PathBuf, Option<String>)> {
         let (outer, inner) = if ar::is_package_relative_path(identifier) {
             let (outer, inner) = ar::split_package_relative_path_outer(identifier)?;
@@ -55,6 +60,7 @@ impl LocalResolver {
     }
 }
 
+/// Whether a package member is a nonempty local path without traversal or identifier syntax.
 fn safe_member(name: &str) -> bool {
     !name.is_empty()
         && !name.contains(['\\', ':', '\0', '[', ']'])
@@ -130,6 +136,7 @@ impl Resolver for LocalResolver {
     }
 }
 
+/// Read the first safe USD package member as the package's root layer.
 fn package_root(path: &Path) -> Result<String> {
     let mut archive = zip::ZipArchive::new(std::fs::File::open(path)?)?;
     if archive.is_empty() {
@@ -151,6 +158,7 @@ fn package_root(path: &Path) -> Result<String> {
     Ok(name.to_owned())
 }
 
+/// Validate bounded USDC sections before handing a layer to the stage reader.
 fn preflight_layer(bytes: &[u8]) -> Result<()> {
     if bytes.starts_with(b"PXR-USDC") {
         let version = bytes.get(8..11).ok_or("truncated USDC bootstrap")?;
@@ -228,6 +236,7 @@ fn preflight_layer(bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
+/// Generic prim adapter exposing imageable and transformable schema operations.
 struct View(Prim);
 impl SchemaBase for View {
     const KIND: usd::SchemaKind = usd::SchemaKind::AbstractTyped;
@@ -239,12 +248,26 @@ impl Imageable for View {}
 impl Xformable for View {}
 
 #[derive(Clone)]
+/// Inherited transform, visibility and purpose during composed stage traversal.
 struct State {
+    /// Composed transform from this prim into stage coordinates.
     world: Transform,
+    /// Whether this prim or an ancestor is invisible.
     hidden: bool,
+    /// Inherited or authored purpose token used to skip guide geometry.
     purpose: String,
 }
 
+/// Load a composed USD or USDZ stage at its starting or earliest authored time.
+///
+/// # Errors
+/// Returns an error for invalid layers or packages, dependencies outside the model
+/// directory, composition failures, unsupported geometry or deformation, malformed
+/// attributes or transforms, and exceeded layer, prim or geometry budgets.
+#[allow(
+    clippy::too_many_lines,
+    reason = "The bounded stage pass propagates transforms, visibility and purpose before dispatching geometry."
+)]
 pub(super) fn load(path: &Path) -> Result<Scene> {
     let path = path.canonicalize()?;
     let root = path
@@ -380,6 +403,7 @@ pub(super) fn load(path: &Path) -> Result<Scene> {
     Ok(scene)
 }
 
+/// Whether a prim path equals or descends from another prim path.
 fn under(path: &sdf::Path, root: &sdf::Path) -> bool {
     path == root
         || path
@@ -387,6 +411,7 @@ fn under(path: &sdf::Path, root: &sdf::Path) -> bool {
             .strip_prefix(root.as_str())
             .is_some_and(|s| s.starts_with('/'))
 }
+/// Enforce the aggregate expanded point, line and triangle budget.
 fn geometry_limit(scene: &Scene) -> Result<()> {
     if scene
         .triangles
@@ -399,6 +424,7 @@ fn geometry_limit(scene: &Scene) -> Result<()> {
     }
     Ok(())
 }
+/// Dispatch a supported geometric schema to its static geometry decoder.
 fn append_geometry(
     prim: &Prim,
     kind: &str,
@@ -411,7 +437,7 @@ fn append_geometry(
         "Points" => points(prim, time, world, scene)?,
         "BasisCurves" => curves(prim, time, world, scene)?,
         "Cube" | "Sphere" | "Cylinder" | "Cone" | "Capsule" | "Plane" => {
-            primitive(prim, kind, time, world, scene)?
+            primitive(prim, kind, time, world, scene)?;
         }
         "" | "Xform" | "Scope" | "Material" | "Shader" | "NodeGraph" | "GeomSubset" | "Camera" => {}
         other if other.ends_with("Light") || other.ends_with("LightFilter") => {}
@@ -422,11 +448,13 @@ fn append_geometry(
     geometry_limit(scene)
 }
 
+/// Read an optional authored attribute value at the selected time.
 fn value(prim: &Prim, attr: &str, time: usd::TimeCode) -> Result<Option<sdf::Value>> {
     prim.attribute(attr)
         .get_at::<sdf::Value>(time)
         .map_err(|e| e.to_string().into())
 }
+/// Read an optional attribute value and require a string-like token.
 fn token(prim: &Prim, attr: &str, time: usd::TimeCode) -> Result<Option<String>> {
     value(prim, attr, time)?
         .map(|v| {
@@ -436,6 +464,7 @@ fn token(prim: &Prim, attr: &str, time: usd::TimeCode) -> Result<Option<String>>
         })
         .transpose()
 }
+/// Read a finite numeric attribute with its omitted schema default.
 fn number(prim: &Prim, attr: &str, default: f64, time: usd::TimeCode) -> Result<f64> {
     let n = match value(prim, attr, time)? {
         Some(v) => v.cast::<f64>().map_err(|e| e.to_string())?,
@@ -446,6 +475,7 @@ fn number(prim: &Prim, attr: &str, default: f64, time: usd::TimeCode) -> Result<
     }
     Ok(n)
 }
+/// Read a bounded finite array of half-, single- or double-precision vectors.
 fn vectors(prim: &Prim, attr: &str, time: usd::TimeCode) -> Result<Vec<Vec3>> {
     let vectors = match value(prim, attr, time)? {
         None => Vec::new(),
@@ -465,6 +495,7 @@ fn vectors(prim: &Prim, attr: &str, time: usd::TimeCode) -> Result<Vec<Vec3>> {
     }
     Ok(vectors)
 }
+/// Read an optional bounded signed integer array.
 fn ints(prim: &Prim, attr: &str, time: usd::TimeCode) -> Result<Vec<i32>> {
     match value(prim, attr, time)? {
         None => Ok(Vec::new()),
@@ -472,6 +503,11 @@ fn ints(prim: &Prim, attr: &str, time: usd::TimeCode) -> Result<Vec<i32>> {
         _ => Err(format!("USD {attr} must be a bounded int array").into()),
     }
 }
+/// Convert a finite affine USD row-vector matrix into the internal transform convention.
+#[allow(
+    clippy::float_cmp,
+    reason = "USD affine matrix row entries require exact protocol constants."
+)]
 fn matrix(m: gf::Matrix4d) -> Result<Transform> {
     if m.0.iter().any(|n| !n.is_finite())
         || [3, 7, 11].iter().any(|&i| m.0[i] != 0.)
@@ -483,6 +519,7 @@ fn matrix(m: gf::Matrix4d) -> Result<Transform> {
         std::array::from_fn(|r| m.0[c * 4 + r])
     })))
 }
+/// Validate transform operation names and authored value types before evaluation.
 fn validate_ops(view: &View, time: usd::TimeCode) -> Result<()> {
     for op in view
         .xform_op_order()
@@ -524,19 +561,27 @@ fn validate_ops(view: &View, time: usd::TimeCode) -> Result<()> {
     Ok(())
 }
 
+/// Clamp a linear color component and encode it as an sRGB byte.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Color components are clamped and rounded to the inclusive byte range before conversion."
+)]
 fn srgb(v: f64) -> u8 {
     let v = v.clamp(0., 1.);
-    ((if v <= 0.0031308 {
+    ((if v <= 0.003_130_8 {
         v * 12.92
     } else {
         1.055 * v.powf(1. / 2.4) - 0.055
     }) * 255.)
         .round() as u8
 }
+/// Encode a linear RGB vector as display bytes.
 fn rgb(v: Vec3) -> [u8; 3] {
     [srgb(v.x), srgb(v.y), srgb(v.z)]
 }
 
+/// Resolve preview material bindings and read a finite preview-surface diffuse color.
 fn material(prim: &Prim, time: usd::TimeCode) -> Result<Option<[u8; 3]>> {
     let stage = prim.stage();
     let mut bound = if let Some(binding) =
@@ -601,13 +646,19 @@ fn material(prim: &Prim, time: usd::TimeCode) -> Result<Option<[u8; 3]>> {
     Ok(color.map(|v| rgb(Vec3::new(v.x.into(), v.y.into(), v.z.into()))))
 }
 
+/// Resolved display color primvar, interpolation and optional material fallback.
 struct Colors {
+    /// Finite linear RGB values, including inherited constant colors.
     values: Vec<Vec3>,
+    /// Optional signed indirection indices for display colors.
     indices: Vec<i32>,
+    /// Constant, uniform, vertex, varying or face-varying interpolation token.
     interpolation: String,
+    /// Bound preview material color that takes precedence over display colors.
     fallback: Option<[u8; 3]>,
 }
 impl Colors {
+    /// Resolve inherited display colors, interpolation and preview material bindings.
     fn new(prim: &Prim, time: usd::TimeCode) -> Result<Self> {
         let mut owner = prim.clone();
         if value(prim, "primvars:displayColor", time)?.is_none() {
@@ -655,6 +706,7 @@ impl Colors {
             fallback: material(prim, time)?,
         })
     }
+    /// Resolve a vertex, face or corner color and validate any indirection index.
     fn at(&self, vertex: usize, face: usize, corner: usize) -> Result<Option<Vec3>> {
         if self.values.is_empty() {
             return Ok(None);
@@ -680,6 +732,11 @@ impl Colors {
                 .ok_or("USD displayColor array is too short")?,
         ))
     }
+    /// Resolve a material color or average the display colors of a face.
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "The divisor is a bounded polygon vertex count, exactly representable by f64."
+    )]
     fn face(&self, vertices: &[usize], face: usize, corner: usize) -> Result<Option<[u8; 3]>> {
         if self.fallback.is_some() {
             return Ok(self.fallback);
@@ -695,6 +752,7 @@ impl Colors {
     }
 }
 
+/// Reject authored skeletal properties until skeletal deformation is supported.
 fn check_skin(prim: &Prim) -> Result<()> {
     if prim
         .property_names()
@@ -707,6 +765,7 @@ fn check_skin(prim: &Prim) -> Result<()> {
     Ok(())
 }
 
+/// Triangulate visible non-hole mesh faces with winding, transforms and colors.
 fn mesh(prim: &Prim, time: usd::TimeCode, world: Transform, scene: &mut Scene) -> Result<()> {
     check_skin(prim)?;
     let positions = vectors(prim, "points", time)?;
@@ -791,6 +850,7 @@ fn mesh(prim: &Prim, time: usd::TimeCode, world: Transform, scene: &mut Scene) -
     Ok(())
 }
 
+/// Append transformed point geometry with optional display colors.
 fn points(prim: &Prim, time: usd::TimeCode, world: Transform, scene: &mut Scene) -> Result<()> {
     check_skin(prim)?;
     let colors = Colors::new(prim, time)?;
@@ -803,6 +863,12 @@ fn points(prim: &Prim, time: usd::TimeCode, world: Transform, scene: &mut Scene)
     Ok(())
 }
 
+/// Append linear or tessellated cubic curves using authored basis and wrap.
+#[allow(
+    clippy::too_many_lines,
+    clippy::manual_midpoint,
+    reason = "Curve basis and wrap validation share one bounded evaluator; polynomial arithmetic keeps its established rounding order."
+)]
 fn curves(prim: &Prim, time: usd::TimeCode, world: Transform, scene: &mut Scene) -> Result<()> {
     check_skin(prim)?;
     let positions = vectors(prim, "points", time)?;
@@ -897,7 +963,7 @@ fn curves(prim: &Prim, time: usd::TimeCode, world: Transform, scene: &mut Scene)
                 };
                 let mut previous = evaluate(0.);
                 for j in 1..=24 {
-                    let next = evaluate(j as f64 / 24.);
+                    let next = evaluate(f64::from(j) / 24.);
                     add(previous, next)?;
                     previous = next;
                 }
@@ -913,6 +979,7 @@ fn curves(prim: &Prim, time: usd::TimeCode, world: Transform, scene: &mut Scene)
     Ok(())
 }
 
+/// Read an optional bounded 64-bit signed integer array.
 fn long_ints(prim: &Prim, attr: &str, time: usd::TimeCode) -> Result<Vec<i64>> {
     match value(prim, attr, time)? {
         None => Ok(Vec::new()),
@@ -921,6 +988,7 @@ fn long_ints(prim: &Prim, attr: &str, time: usd::TimeCode) -> Result<Vec<i64>> {
     }
 }
 
+/// Build a nonempty local prototype scene with inherited transforms and visibility.
 fn prototype_scene(stage: &usd::Stage, root: &sdf::Path, time: usd::TimeCode) -> Result<Scene> {
     let mut paths = Vec::new();
     stage
@@ -981,6 +1049,12 @@ fn prototype_scene(stage: &usd::Stage, root: &sdf::Path, time: usd::TimeCode) ->
     Ok(scene)
 }
 
+/// Expand visible point instances with per-instance transforms and optional colors.
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_possible_wrap,
+    reason = "The bounded instance loop validates and expands prototypes together; implicit IDs are indices bounded by five million."
+)]
 fn instancer(prim: &Prim, time: usd::TimeCode, world: Transform, scene: &mut Scene) -> Result<()> {
     let targets = prim
         .relationship("prototypes")
@@ -1098,6 +1172,12 @@ fn instancer(prim: &Prim, time: usd::TimeCode, world: Transform, scene: &mut Sce
     Ok(())
 }
 
+/// Tessellate supported analytic primitives using their schema defaults and axis.
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_precision_loss,
+    reason = "Analytic primitive tessellation is one schema dispatch; the angular index is bounded to 32 and exact in f64."
+)]
 fn primitive(
     prim: &Prim,
     kind: &str,
@@ -1169,7 +1249,7 @@ fn primitive(
         let mut rings = Vec::new();
         if kind == "Sphere" || kind == "Capsule" {
             for j in 0..=24 {
-                let a = std::f64::consts::PI * (j as f64) / 24.;
+                let a = std::f64::consts::PI * f64::from(j) / 24.;
                 let offset = if kind == "Capsule" {
                     if j <= 12 { height / 2. } else { -height / 2. }
                 } else {
@@ -1188,21 +1268,21 @@ fn primitive(
                 (0., height / 2.),
             ]);
         }
-        let p = |ring: (f64, f64), i: usize| {
-            let a = std::f64::consts::TAU * (i as f64) / 32.;
-            Vec3::new(ring.0 * a.cos(), ring.0 * a.sin(), ring.1)
+        let ring_position = |ring: (f64, f64), index: usize| {
+            let angle = std::f64::consts::TAU * (index as f64) / 32.;
+            Vec3::new(ring.0 * angle.cos(), ring.0 * angle.sin(), ring.1)
         };
         for pair in rings.windows(2) {
             for i in 0..32 {
-                let a = p(pair[0], i);
-                let b = p(pair[0], i + 1);
-                let c = p(pair[1], i + 1);
-                let d = p(pair[1], i);
+                let first = ring_position(pair[0], i);
+                let second = ring_position(pair[0], i + 1);
+                let third = ring_position(pair[1], i + 1);
+                let fourth = ring_position(pair[1], i);
                 if pair[0].0 > 1e-15 {
-                    add([a, b, c])?;
+                    add([first, second, third])?;
                 }
                 if pair[1].0 > 1e-15 {
-                    add([a, c, d])?;
+                    add([first, third, fourth])?;
                 }
             }
         }

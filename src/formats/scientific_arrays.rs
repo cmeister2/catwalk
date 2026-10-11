@@ -6,23 +6,45 @@ use roxmltree::Node;
 use std::cell::Cell;
 use std::io::Read;
 
+/// Maximum decoded VTK XML payload bytes.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "The shared 512 MiB input cap fits usize on every supported 32- or 64-bit target."
+)]
 const MAX_BYTES: usize = super::super::MAX_INPUT_BYTES as usize;
+/// Maximum zlib blocks accepted in one VTK XML array.
 const MAX_BLOCKS: usize = 1_000_000;
 
 #[derive(Clone, Copy)]
+/// Supported scalar storage types for the VTK XML numeric array.
 pub(super) enum Scalar {
+    /// Signed eight-bit integer values.
     I8,
+    /// Unsigned eight-bit integer values.
     U8,
+    /// Signed 16-bit integer values.
     I16,
+    /// Unsigned 16-bit integer values.
     U16,
+    /// Signed 32-bit integer values.
     I32,
+    /// Unsigned 32-bit integer values.
     U32,
+    /// Signed 64-bit integer values.
     I64,
+    /// Unsigned 64-bit integer values.
     U64,
+    /// IEEE single-precision floating-point values.
     F32,
+    /// IEEE double-precision floating-point values.
     F64,
 }
 impl Scalar {
+    /// Resolve the supported VTK XML and legacy numeric type names.
+    ///
+    /// # Errors
+    /// Returns an error if the name does not identify a supported integer or floating-point
+    /// storage type.
     pub(super) fn parse(name: &str) -> Result<Self> {
         Ok(match name {
             "Int8" | "char" | "signed_char" => Self::I8,
@@ -38,6 +60,7 @@ impl Scalar {
             _ => return Err(format!("unsupported VTK numeric type {name}").into()),
         })
     }
+    /// Return the on-disk byte width of this scalar representation.
     pub(super) fn width(self) -> usize {
         match self {
             Self::I8 | Self::U8 => 1,
@@ -46,23 +69,43 @@ impl Scalar {
             Self::I64 | Self::U64 | Self::F64 => 8,
         }
     }
+    /// Decode an endian-selected integer word without routing connectivity through floating point.
+    ///
+    /// # Errors
+    /// Returns an error for an invalid word width, a floating-point connectivity type, or
+    /// an unsigned 64-bit value outside the signed index range.
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        reason = "Payload decoding selects the declared word width; narrowing preserves the stored signed integer bit pattern."
+    )]
     pub(super) fn integer(self, data: &[u8], big: bool) -> Result<i64> {
         let word = unsigned(data, big)?;
         Ok(match self {
-            Self::I8 => word as i8 as i64,
-            Self::U8 => word as u8 as i64,
-            Self::I16 => word as i16 as i64,
-            Self::U16 => word as u16 as i64,
-            Self::I32 => word as i32 as i64,
-            Self::U32 => word as u32 as i64,
+            Self::I8 => i64::from(word as i8),
+            Self::U8 => i64::from(word as u8),
+            Self::I16 => i64::from(word as i16),
+            Self::U16 => i64::from(word as u16),
+            Self::I32 => i64::from(word as i32),
+            Self::U32 => i64::from(word as u32),
             Self::I64 => word as i64,
             Self::U64 => i64::try_from(word)?,
             Self::F32 | Self::F64 => return Err("VTK connectivity needs an integer type".into()),
         })
     }
+    /// Decode a finite numeric word for coordinates or scalar data.
+    ///
+    /// # Errors
+    /// Returns an error for an invalid word width, an integer conversion outside the
+    /// supported range, or a nonfinite decoded value.
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_precision_loss,
+        reason = "Numeric scalar samples intentionally use f64; the Float32 decoder selects a four-byte source word."
+    )]
     pub(super) fn float(self, data: &[u8], big: bool) -> Result<f64> {
         let value = match self {
-            Self::F32 => f32::from_bits(unsigned(data, big)? as u32) as f64,
+            Self::F32 => f64::from(f32::from_bits(unsigned(data, big)? as u32)),
             Self::F64 => f64::from_bits(unsigned(data, big)?),
             Self::U64 => unsigned(data, big)? as f64,
             _ => self.integer(data, big)? as f64,
@@ -74,18 +117,25 @@ impl Scalar {
     }
 }
 
+/// Assemble a one-, two-, four- or eight-byte unsigned word in the selected byte order.
 fn unsigned(data: &[u8], big: bool) -> Result<u64> {
     if !matches!(data.len(), 1 | 2 | 4 | 8) {
         return Err("invalid VTK numeric word size".into());
     }
     Ok(if big {
-        data.iter().fold(0u64, |n, &b| (n << 8) | b as u64)
+        data.iter().fold(0u64, |n, &b| (n << 8) | u64::from(b))
     } else {
-        data.iter().rev().fold(0u64, |n, &b| (n << 8) | b as u64)
+        data.iter()
+            .rev()
+            .fold(0u64, |n, &b| (n << 8) | u64::from(b))
     })
 }
 
 /// Raw appended bytes are outside XML's character rules. Parse only the XML envelope.
+///
+/// # Errors
+/// Returns an error for invalid UTF-8/XML tags, an unsupported appended-data encoding, or
+/// missing, misplaced or unclosed raw-payload markers.
 pub(super) fn xml_envelope(bytes: &[u8]) -> Result<(String, Option<&[u8]>)> {
     let start = bytes.windows(13).position(|s| s == b"<AppendedData");
     if let Some(start) = start {
@@ -130,16 +180,29 @@ pub(super) fn xml_envelope(bytes: &[u8]) -> Result<(String, Option<&[u8]>)> {
     ))
 }
 
+/// VTK XML array decoding metadata and cumulative payload accounting.
 pub(super) struct XmlData<'a> {
+    /// Whether binary words use big-endian byte order.
     big: bool,
+    /// Byte width of VTK length/compression header words.
     header: usize,
+    /// Declared supported compressor name, if any.
     compressor: Option<&'a str>,
+    /// Borrowed appended numeric payload, raw or base64.
     appended: Option<&'a [u8]>,
+    /// Whether appended offsets address encoded rather than raw bytes.
     encoded: bool,
+    /// Declared appended-array offsets used to determine slice boundaries.
     offsets: Vec<usize>,
+    /// Expanded array bytes charged across this XML document.
     decoded: Cell<usize>,
 }
 impl<'a> XmlData<'a> {
+    /// Read XML byte-order, header-width, compressor and appended-data metadata.
+    ///
+    /// # Errors
+    /// Returns an error for an unsupported byte order, header width or compressor,
+    /// inconsistent appended-data metadata, or invalid array offsets.
     pub(super) fn new(root: Node<'a, '_>, raw: Option<&'a [u8]>) -> Result<Self> {
         let big = match root.attribute("byte_order").unwrap_or("LittleEndian") {
             "LittleEndian" => false,
@@ -223,6 +286,7 @@ impl<'a> XmlData<'a> {
             decoded: Cell::new(0),
         })
     }
+    /// Resolve inline or appended bytes and enforce tuple sizes and per-array limits.
     fn payload(&self, node: Node<'_, '_>, limit: usize) -> Result<(Scalar, Vec<u8>)> {
         let ty = Scalar::parse(
             node.attribute("type")
@@ -278,6 +342,12 @@ impl<'a> XmlData<'a> {
         self.decoded.set(total);
         Ok((ty, payload))
     }
+    /// Decode the declared components of a finite XML numeric array.
+    ///
+    /// # Errors
+    /// Returns an error for malformed scalar/component declarations, invalid
+    /// ASCII/base64/binary data, nonfinite samples, inconsistent payload sizes or
+    /// decoded-byte limits.
     pub(super) fn floats(&self, node: Node<'_, '_>, limit: usize) -> Result<Vec<f64>> {
         reject_time(node)?;
         if node.attribute("format").unwrap_or("ascii") == "ascii" {
@@ -299,6 +369,11 @@ impl<'a> XmlData<'a> {
             .map(|word| ty.float(word, self.big))
             .collect()
     }
+    /// Decode XML connectivity words while preserving integer range checks.
+    ///
+    /// # Errors
+    /// Returns an error for floating-point connectivity, malformed scalar declarations or
+    /// integer payloads, invalid component counts, decompression failures or byte limits.
     pub(super) fn integers(&self, node: Node<'_, '_>, limit: usize) -> Result<Vec<i64>> {
         reject_time(node)?;
         if node.attribute("format").unwrap_or("ascii") == "ascii" {
@@ -316,6 +391,11 @@ impl<'a> XmlData<'a> {
             .map(|word| ty.integer(word, self.big))
             .collect()
     }
+    /// Convert decoded XML integer values into nonnegative native indices.
+    ///
+    /// # Errors
+    /// Returns an error if numeric array decoding fails, an index is negative, or a decoded
+    /// index cannot fit the native index type.
     pub(super) fn indices(&self, node: Node<'_, '_>, limit: usize) -> Result<Vec<usize>> {
         self.integers(node, limit)?
             .into_iter()
@@ -329,6 +409,7 @@ impl<'a> XmlData<'a> {
             .collect()
     }
 }
+/// Reject arrays with time-step selection that the static preview cannot interpret.
 fn reject_time(node: Node<'_, '_>) -> Result<()> {
     if node.attribute("TimeStep").is_some() {
         return Err("VTK time-dependent geometry arrays are not implemented".into());
@@ -336,6 +417,7 @@ fn reject_time(node: Node<'_, '_>) -> Result<()> {
     Ok(())
 }
 
+/// Decode VTK base64 segments while bounding aggregate output bytes.
 fn decode_base64(text: &[u8]) -> Result<Vec<u8>> {
     if text.len() > MAX_BYTES.div_ceil(3) * 4 + MAX_BLOCKS * 16 {
         return Err("VTK base64 payload exceeds byte limit".into());
@@ -371,6 +453,7 @@ fn decode_base64(text: &[u8]) -> Result<Vec<u8>> {
     }
     Ok(result)
 }
+/// Expand VTK length-prefixed or multiblock zlib array payloads and validate their declared sizes.
 fn binary(
     data: &[u8],
     limit: usize,

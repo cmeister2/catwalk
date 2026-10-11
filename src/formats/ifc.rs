@@ -1,4 +1,5 @@
 //! Static IFC Part 21 geometry and product placements, independent of native BIM kernels.
+/// Bounded Boolean geometry for supported IFC solids.
 #[path = "ifc_csg.rs"]
 mod csg;
 use super::transform::Transform;
@@ -11,13 +12,23 @@ use std::f64::consts::{PI, TAU};
 use std::path::Path;
 use truck_stepio::r#in::ruststep;
 
+/// Maximum parsed schema entity count.
 const MAX_ENTITIES: usize = 500_000;
+/// Maximum geometry items or charged geometry visits.
 const MAX_GEOMETRY: usize = 5_000_000;
+/// Maximum recursive reference, geometry or partition depth.
 const MAX_DEPTH: usize = 64;
+/// Fixed sampling resolution for supported analytic profile curves.
 const CURVE_SEGMENTS: usize = 96;
+/// Construct an importer error with the supplied IFC diagnostic.
 fn error(message: impl Into<String>) -> Error {
     message.into().into()
 }
+/// Require an IFC parameter-list value.
+///
+/// # Errors
+///
+/// The parameter is not a list.
 fn list(p: &Parameter) -> Result<&[Parameter]> {
     if let Parameter::List(v) = p {
         Ok(v)
@@ -25,6 +36,11 @@ fn list(p: &Parameter) -> Result<&[Parameter]> {
         Err(error("IFC parameter requires a list"))
     }
 }
+/// Require an IFC numeric entity reference.
+///
+/// # Errors
+///
+/// The parameter is not an entity reference.
 fn reference(p: &Parameter) -> Result<u64> {
     if let Parameter::Ref(Name::Entity(id)) = p {
         Ok(*id)
@@ -32,6 +48,11 @@ fn reference(p: &Parameter) -> Result<u64> {
         Err(error("IFC parameter requires an entity reference"))
     }
 }
+/// Decode an optional entity reference, treating omitted values as absent.
+///
+/// # Errors
+///
+/// A present parameter is not an entity reference.
 fn optional_reference(p: &Parameter) -> Result<Option<u64>> {
     if matches!(p, Parameter::NotProvided | Parameter::Omitted) {
         Ok(None)
@@ -39,6 +60,15 @@ fn optional_reference(p: &Parameter) -> Result<Option<u64>> {
         reference(p).map(Some)
     }
 }
+/// Read a finite IFC integer, real or typed numeric parameter.
+///
+/// # Errors
+///
+/// The parameter is nonnumeric or non-finite.
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "IFC integer dimensions intentionally use the geometry kernel's f64 representation, matching real parameters."
+)]
 fn number(p: &Parameter) -> Result<f64> {
     let n = match p {
         Parameter::Real(n) => *n,
@@ -52,6 +82,11 @@ fn number(p: &Parameter) -> Result<f64> {
         Err(error("non-finite IFC number"))
     }
 }
+/// Require a finite positive IFC dimension.
+///
+/// # Errors
+///
+/// The parameter is nonnumeric, non-finite or nonpositive.
 fn positive(p: &Parameter) -> Result<f64> {
     let n = number(p)?;
     if n > 0. {
@@ -60,6 +95,11 @@ fn positive(p: &Parameter) -> Result<f64> {
         Err(error("IFC dimension must be positive"))
     }
 }
+/// Read a nonnegative machine-sized IFC integer.
+///
+/// # Errors
+///
+/// The parameter is not an integer or cannot represent a nonnegative machine-sized value.
 fn integer(p: &Parameter) -> Result<usize> {
     if let Parameter::Integer(n) = p {
         usize::try_from(*n).map_err(Into::into)
@@ -67,12 +107,18 @@ fn integer(p: &Parameter) -> Result<usize> {
         Err(error("IFC index requires an integer"))
     }
 }
+/// Borrow an IFC string or enumeration spelling when present.
 fn text(p: &Parameter) -> Option<&str> {
     match p {
         Parameter::String(s) | Parameter::Enumeration(s) => Some(s),
         _ => None,
     }
 }
+/// Decode an IFC logical true/false enumeration.
+///
+/// # Errors
+///
+/// The parameter is not a supported boolean spelling.
 fn boolean(p: &Parameter) -> Result<bool> {
     match text(p) {
         Some("T" | "TRUE") => Ok(true),
@@ -80,14 +126,29 @@ fn boolean(p: &Parameter) -> Result<bool> {
         _ => Err(error("IFC parameter requires a boolean")),
     }
 }
+/// Read a positional IFC entity attribute.
+///
+/// # Errors
+///
+/// The entity's attribute list is truncated.
 fn field(e: &Entity, i: usize) -> Result<&Parameter> {
     e.fields
         .get(i)
         .ok_or_else(|| error(format!("truncated IFC {} attribute list", e.kind)))
 }
+/// Decode a list of IFC entity references.
+///
+/// # Errors
+///
+/// The parameter is not a list or a member is not an entity reference.
 fn refs(p: &Parameter) -> Result<Vec<u64>> {
     list(p)?.iter().map(reference).collect()
 }
+/// Read finite two- or three-dimensional IFC coordinates, defaulting absent Z to zero.
+///
+/// # Errors
+///
+/// Dimensionality or numeric components are invalid.
 fn vector(p: &Parameter) -> Result<Vec3> {
     let values = list(p)?;
     if !(2..=3).contains(&values.len()) {
@@ -99,6 +160,11 @@ fn vector(p: &Parameter) -> Result<Vec3> {
         values.get(2).map(number).transpose()?.unwrap_or(0.),
     ))
 }
+/// Normalize a finite direction above the numerical length floor.
+///
+/// # Errors
+///
+/// The vector has non-finite or near-zero length.
 fn normalized(v: Vec3) -> Result<Vec3> {
     let length = v.length();
     if !length.is_finite() || length <= 1e-15 {
@@ -106,6 +172,11 @@ fn normalized(v: Vec3) -> Result<Vec3> {
     }
     Ok(v / length)
 }
+/// Build an orthogonal placement frame from its origin and Z/X directions.
+///
+/// # Errors
+///
+/// The axes cannot define a finite nondegenerate orthogonal frame.
 fn basis(origin: Vec3, z: Vec3, x: Vec3) -> Result<Transform> {
     let z = normalized(z)?;
     let x = normalized(x - z * x.dot(z))?;
@@ -117,12 +188,19 @@ fn basis(origin: Vec3, z: Vec3, x: Vec3) -> Result<Transform> {
         [origin.x, origin.y, origin.z, 1.],
     ]))
 }
+/// Extract the three spatial components of a placement column.
 fn column(t: Transform, i: usize) -> Vec3 {
     Vec3::new(t.0[i][0], t.0[i][1], t.0[i][2])
 }
+/// Compute the placement's spatial determinant to detect orientation reversal.
 fn determinant(t: Transform) -> f64 {
     column(t, 0).dot(column(t, 1).cross(column(t, 2)))
 }
+/// Remove a repeated closing vertex and validate a polygon ring.
+///
+/// # Errors
+///
+/// The remaining ring has too few vertices or non-finite coordinates.
 fn checked_ring(mut ring: Vec<Vec3>) -> Result<Vec<Vec3>> {
     if ring.first() == ring.last() {
         ring.pop();
@@ -132,6 +210,7 @@ fn checked_ring(mut ring: Vec<Vec3>) -> Result<Vec<Vec3>> {
     }
     Ok(ring)
 }
+/// Compute a planar profile ring's signed XY area.
 fn signed_area(ring: &[Vec3]) -> f64 {
     (0..ring.len())
         .map(|i| {
@@ -142,23 +221,43 @@ fn signed_area(ring: &[Vec3]) -> f64 {
         .sum::<f64>()
         / 2.
 }
+/// Triangulate coplanar polygon boundaries with holes.
+///
+/// # Errors
+///
+/// Boundaries are malformed, nonplanar or cannot be triangulated consistently.
 fn triangles(rings: &[Vec<Vec3>]) -> Result<Vec<[Vec3; 3]>> {
     super::citygml::triangulate_rings(rings)
         .map_err(|e| error(format!("IFC face triangulation: {e}")))
 }
+/// One IFC schema record and its positional Part 21 attributes.
 struct Entity {
+    /// Native schema or topology kind selecting the record interpretation.
     kind: String,
+    /// Positional Part 21 parameter values for the schema record.
     fields: Vec<Parameter>,
 }
+/// Indexed IFC entities, presentation colors, units and shared geometry-work budget.
 struct Model {
+    /// IFC schema records indexed by numeric entity identifier.
     entities: HashMap<u64, Entity>,
+    /// Diffuse RGB colors indexed by the associated geometry item.
     colors: HashMap<u64, [u8; 3]>,
+    /// Indexed per-face diffuse RGB colors for tessellated geometry.
     face_colors: HashMap<u64, Vec<[u8; 3]>>,
+    /// Project length-unit scale used to normalize scene coordinates.
     length_scale: f64,
+    /// Project angle-unit scale used to convert authored angles to radians.
     angle_scale: f64,
+    /// Interior-mutable reference/geometry visit count shared by model expansion.
     visits: Cell<usize>,
 }
 impl Model {
+    /// Charge one geometry/reference visit against the shared preview work limit.
+    ///
+    /// # Errors
+    ///
+    /// The visit count exceeds the work budget.
     fn visit(&self) -> Result<()> {
         let visits = self.visits.get() + 1;
         if visits > MAX_GEOMETRY {
@@ -167,11 +266,21 @@ impl Model {
         self.visits.set(visits);
         Ok(())
     }
+    /// Resolve an IFC entity by its identifier.
+    ///
+    /// # Errors
+    ///
+    /// The referenced entity is missing.
     fn entity(&self, id: u64) -> Result<&Entity> {
         self.entities
             .get(&id)
             .ok_or_else(|| error(format!("missing IFC entity #{id}")))
     }
+    /// Resolve an IFC entity of the required schema kind.
+    ///
+    /// # Errors
+    ///
+    /// The entity is missing or has another schema kind.
     fn expected(&self, id: u64, kind: &str) -> Result<&Entity> {
         let e = self.entity(id)?;
         if e.kind == kind {
@@ -183,18 +292,38 @@ impl Model {
             )))
         }
     }
+    /// Resolve an IFC Cartesian point to finite coordinates.
+    ///
+    /// # Errors
+    ///
+    /// The entity kind or coordinate tuple is invalid.
     fn point(&self, id: u64) -> Result<Vec3> {
         vector(field(self.expected(id, "IFCCARTESIANPOINT")?, 0)?)
     }
+    /// Resolve an IFC direction to finite components.
+    ///
+    /// # Errors
+    ///
+    /// The entity kind or direction tuple is invalid.
     fn direction(&self, id: u64) -> Result<Vec3> {
         normalized(vector(field(self.expected(id, "IFCDIRECTION")?, 0)?)?)
     }
+    /// Resolve an optional IFC direction or use its supplied default.
+    ///
+    /// # Errors
+    ///
+    /// A present direction reference or its tuple is invalid.
     fn optional_direction(&self, p: &Parameter, default: Vec3) -> Result<Vec3> {
         optional_reference(p)?
             .map(|id| self.direction(id))
             .transpose()
             .map(|v| v.unwrap_or(default))
     }
+    /// Resolve an optional two- or three-dimensional IFC axis placement.
+    ///
+    /// # Errors
+    ///
+    /// Placement entities or axis directions are missing, unsupported or invalid.
     fn axis(&self, id: Option<u64>) -> Result<Transform> {
         let Some(id) = id else {
             return Ok(Transform::IDENTITY);
@@ -204,7 +333,7 @@ impl Model {
         match e.kind.as_str() {
             "IFCAXIS2PLACEMENT3D" => {
                 let z = self.optional_direction(field(e, 1)?, Vec3::new(0., 0., 1.))?;
-                let default = if z.x.abs() > 0.999999 {
+                let default = if z.x.abs() > 0.999_999 {
                     Vec3::new(0., 1., 0.)
                 } else {
                     Vec3::new(1., 0., 0.)
@@ -223,7 +352,7 @@ impl Model {
                 basis(
                     origin,
                     z,
-                    if z.x.abs() > 0.999999 {
+                    if z.x.abs() > 0.999_999 {
                         Vec3::new(0., 1., 0.)
                     } else {
                         Vec3::new(1., 0., 0.)
@@ -233,6 +362,11 @@ impl Model {
             _ => Err(error(format!("unsupported IFC axis placement {}", e.kind))),
         }
     }
+    /// Compose nested local product placements into a world transform.
+    ///
+    /// # Errors
+    ///
+    /// Placement references are invalid or recursive nesting exceeds the limit.
     fn placement(&self, id: Option<u64>, depth: usize) -> Result<Transform> {
         self.visit()?;
         if depth > MAX_DEPTH {
@@ -246,6 +380,11 @@ impl Model {
             .placement(optional_reference(field(e, 0)?)?, depth + 1)?
             .then(self.axis(Some(reference(field(e, 1)?)?))?))
     }
+    /// Resolve a supported Cartesian transformation operator, including nonuniform scale.
+    ///
+    /// # Errors
+    ///
+    /// Axes, scale values, entity kinds or transform numbers are invalid or unsupported.
     fn operator(&self, id: u64) -> Result<Transform> {
         let e = self.entity(id)?;
         if !matches!(
@@ -266,7 +405,7 @@ impl Model {
         } else {
             Vec3::new(0., 0., 1.)
         };
-        let default = if z.x.abs() > 0.999999 {
+        let default = if z.x.abs() > 0.999_999 {
             Vec3::new(0., 1., 0.)
         } else {
             Vec3::new(1., 0., 0.)
@@ -306,6 +445,11 @@ impl Model {
         }
         Ok(matrix)
     }
+    /// Resolve a finite 2D/3D IFC point-list entity.
+    ///
+    /// # Errors
+    ///
+    /// The point-list kind, dimensions, count or coordinate values are invalid.
     fn coordinates(&self, id: u64) -> Result<Vec<Vec3>> {
         let e = self.entity(id)?;
         if !matches!(
@@ -320,6 +464,15 @@ impl Model {
         }
         values.iter().map(vector).collect()
     }
+    /// Sample supported profile curves in their authored placements.
+    ///
+    /// # Errors
+    ///
+    /// Curve types/references, numeric data or recursion/geometry budgets are invalid or unsupported.
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "Validated dimensions and bounded subdivision indices intentionally retain existing f64 evaluation and rounding."
+    )]
     fn curve(&self, id: u64, depth: usize) -> Result<Vec<Vec3>> {
         self.visit()?;
         if depth > MAX_DEPTH {
@@ -394,6 +547,19 @@ impl Model {
             _ => Err(error(format!("unsupported IFC curve {}", e.kind))),
         }
     }
+    /// Build supported swept-area profile rings, including voids and derived placements.
+    ///
+    /// # Errors
+    ///
+    /// Profile schemas, dimensions, curves, winding or recursion limits are invalid or unsupported.
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "Validated dimensions and bounded subdivision indices intentionally retain existing f64 evaluation and rounding."
+    )]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Keep the format record dispatch, validation and its resource checks together without changing geometry evaluation."
+    )]
     fn profile(&self, id: u64, depth: usize) -> Result<Vec<Vec<Vec3>>> {
         self.visit()?;
         if depth > MAX_DEPTH {
@@ -431,7 +597,7 @@ impl Model {
                 if e.kind == "IFCROUNDEDRECTANGLEPROFILEDEF" {
                     let radius = positive(field(e, 5)?)?;
                     rings[0] = fillets(
-                        rectangle(x, y),
+                        &rectangle(x, y),
                         &[(0, radius), (1, radius), (2, radius), (3, radius)],
                     )?;
                 }
@@ -455,11 +621,11 @@ impl Model {
                         .transpose()?
                         .unwrap_or(0.);
                     rings[0] = fillets(
-                        rectangle(x, y),
+                        &rectangle(x, y),
                         &[(0, outer), (1, outer), (2, outer), (3, outer)],
                     )?;
                     rings.push(fillets(
-                        rectangle(x - thickness, y - thickness),
+                        &rectangle(x - thickness, y - thickness),
                         &[(0, inner), (1, inner), (2, inner), (3, inner)],
                     )?);
                 }
@@ -528,7 +694,7 @@ impl Model {
                     .transpose()?
                     .unwrap_or(0.);
                 vec![fillets(
-                    ring,
+                    &ring,
                     &[(3, radius), (4, radius), (9, radius), (10, radius)],
                 )?]
             }
@@ -570,6 +736,16 @@ impl Model {
         }
         Ok(rings)
     }
+    /// Read a bounded IFC RGB surface color.
+    ///
+    /// # Errors
+    ///
+    /// The color entity/components are missing, non-finite or outside zero/one.
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "Validated zero-to-one color factors are intentionally rounded to bounded RGB bytes."
+    )]
     fn color(&self, id: u64) -> Result<[u8; 3]> {
         let e = self.expected(id, "IFCCOLOURRGB")?;
         let mut color = [0; 3];
@@ -582,6 +758,16 @@ impl Model {
         }
         Ok(color)
     }
+    /// Resolve supported presentation style references to a diffuse color.
+    ///
+    /// # Errors
+    ///
+    /// Style references, RGB data or nesting are invalid or unsupported.
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "Validated zero-to-one color factors are intentionally rounded to bounded RGB bytes."
+    )]
     fn style(&self, id: u64, depth: usize) -> Result<Option<[u8; 3]>> {
         self.visit()?;
         if depth > MAX_DEPTH {
@@ -608,7 +794,7 @@ impl Model {
                             if !(0. ..=1.).contains(&ratio) {
                                 return Err(error("IFC diffuse color factor out of range"));
                             }
-                            color = color.map(|c| (c as f64 * ratio).round() as u8);
+                            color = color.map(|c| (f64::from(c) * ratio).round() as u8);
                         }
                     }
                 }
@@ -621,6 +807,16 @@ impl Model {
             _ => Ok(None),
         }
     }
+    /// Index item and face colors from supported IFC presentation associations.
+    ///
+    /// # Errors
+    ///
+    /// Style/color associations or indexed-color references are malformed or unsupported.
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "Validated zero-to-one color factors are intentionally rounded to bounded RGB bytes."
+    )]
     fn collect_styles(&mut self) -> Result<()> {
         for (&id, e) in &self.entities {
             if e.kind == "IFCSTYLEDITEM" {
@@ -678,8 +874,12 @@ impl Model {
         }
         Ok(())
     }
+    /// Append transformed triangle geometry with inherited color and corrected mirror winding.
+    ///
+    /// # Errors
+    ///
+    /// Coordinates overflow or the output exceeds the geometry limit.
     fn emit(
-        &self,
         scene: &mut Scene,
         vertices: [Vec3; 3],
         t: Transform,
@@ -704,6 +904,11 @@ impl Model {
         }
         Ok(())
     }
+    /// Render one product's representation in its absolute placement and subtract linked openings.
+    ///
+    /// # Errors
+    ///
+    /// Product/representation/placement references or required geometry are invalid or unsupported.
     fn product(&self, id: u64) -> Result<Scene> {
         let p = self.entity(id)?;
         let Some(representation) = optional_reference(field(p, 6)?)? else {
@@ -739,6 +944,11 @@ impl Model {
         }
         Ok(scene)
     }
+    /// Create a bounded half-space clipping solid around an operand's bounds.
+    ///
+    /// # Errors
+    ///
+    /// The half-space schema, placement, dimensions or clipping geometry are invalid or unsupported.
     fn halfspace(&self, id: u64, operand: &Scene, color: Option<[u8; 3]>) -> Result<Scene> {
         let e = self.expected(id, "IFCHALFSPACESOLID")?;
         let plane = self.expected(reference(field(e, 0)?)?, "IFCPLANE")?;
@@ -793,11 +1003,16 @@ impl Model {
             [2, 3, 7, 6],
             [3, 0, 4, 7],
         ] {
-            self.emit(&mut scene, [p[a], p[b], p[c]], placement, color)?;
-            self.emit(&mut scene, [p[a], p[c], p[d]], placement, color)?;
+            Self::emit(&mut scene, [p[a], p[b], p[c]], placement, color)?;
+            Self::emit(&mut scene, [p[a], p[c], p[d]], placement, color)?;
         }
         Ok(scene)
     }
+    /// Append an IFC polygonal face with its boundary holes.
+    ///
+    /// # Errors
+    ///
+    /// Face/boundary references, ring geometry or triangulation are invalid or unsupported.
     fn face(&self, id: u64, t: Transform, color: Option<[u8; 3]>, scene: &mut Scene) -> Result<()> {
         let e = self.entity(id)?;
         if !matches!(
@@ -831,10 +1046,29 @@ impl Model {
             rings.swap(0, index);
         }
         for triangle in triangles(&rings)? {
-            self.emit(scene, triangle, t, color)?;
+            Self::emit(scene, triangle, t, color)?;
         }
         Ok(())
     }
+    /// Expand supported tessellated, swept, mapped and Boolean representation items.
+    ///
+    /// # Errors
+    ///
+    /// Required geometry, entity references or numeric data are invalid/unsupported, or preview budgets are exceeded.
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_precision_loss,
+        clippy::cast_sign_loss,
+        reason = "Validated dimensions and bounded subdivision indices intentionally retain existing f64 evaluation and rounding."
+    )]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Keep the format record dispatch, validation and its resource checks together without changing geometry evaluation."
+    )]
+    #[allow(
+        clippy::many_single_char_names,
+        reason = "Geometric formulas use conventional axis, endpoint and basis-vector symbols."
+    )]
     fn geometry(
         &self,
         id: u64,
@@ -882,9 +1116,9 @@ impl Model {
                     if reverse {
                         triangle.swap(1, 2);
                     }
-                    self.emit(scene, triangle.map(|p| p + delta), placement, color)?;
+                    Self::emit(scene, triangle.map(|p| p + delta), placement, color)?;
                     triangle.swap(1, 2);
-                    self.emit(scene, triangle, placement, color)?;
+                    Self::emit(scene, triangle, placement, color)?;
                 }
                 for ring in &rings {
                     for i in 0..ring.len() {
@@ -894,7 +1128,7 @@ impl Model {
                             if reverse {
                                 tri.swap(1, 2);
                             }
-                            self.emit(scene, tri, placement, color)?;
+                            Self::emit(scene, tri, placement, color)?;
                         }
                     }
                 }
@@ -933,9 +1167,9 @@ impl Model {
                         if reverse {
                             tri.swap(1, 2);
                         }
-                        self.emit(scene, tri.map(|p| rotated(p, angle)), placement, color)?;
+                        Self::emit(scene, tri.map(|p| rotated(p, angle)), placement, color)?;
                         tri.swap(1, 2);
-                        self.emit(scene, tri, placement, color)?;
+                        Self::emit(scene, tri, placement, color)?;
                     }
                 }
                 for j in 0..count {
@@ -953,7 +1187,7 @@ impl Model {
                                 if reverse {
                                     tri.swap(1, 2);
                                 }
-                                self.emit(scene, tri, placement, color)?;
+                                Self::emit(scene, tri, placement, color)?;
                             }
                         }
                     }
@@ -992,7 +1226,7 @@ impl Model {
                     return Err(error("IFC triangle count exceeds limit"));
                 }
                 for triangle in triangles {
-                    self.emit(scene, triangle.vertices, t, triangle.color)?;
+                    Self::emit(scene, triangle.vertices, t, triangle.color)?;
                 }
             }
             "IFCCSGSOLID" => self.geometry(reference(field(e, 0)?)?, t, color, depth + 1, scene)?,
@@ -1019,8 +1253,8 @@ impl Model {
                     [2, 3, 7, 6],
                     [3, 0, 4, 7],
                 ] {
-                    self.emit(scene, [p[a], p[b], p[c]], placement, color)?;
-                    self.emit(scene, [p[a], p[c], p[d]], placement, color)?;
+                    Self::emit(scene, [p[a], p[b], p[c]], placement, color)?;
+                    Self::emit(scene, [p[a], p[c], p[d]], placement, color)?;
                 }
             }
             "IFCRIGHTCIRCULARCYLINDER" | "IFCRIGHTCIRCULARCONE" => {
@@ -1043,11 +1277,11 @@ impl Model {
                     } else {
                         b0 + Vec3::new(0., 0., height)
                     };
-                    self.emit(scene, [a0, b0, b1], placement, color)?;
-                    self.emit(scene, [a0, b1, a1], placement, color)?;
-                    self.emit(scene, [Vec3::default(), b0, a0], placement, color)?;
+                    Self::emit(scene, [a0, b0, b1], placement, color)?;
+                    Self::emit(scene, [a0, b1, a1], placement, color)?;
+                    Self::emit(scene, [Vec3::default(), b0, a0], placement, color)?;
                     if !conical {
-                        self.emit(scene, [Vec3::new(0., 0., height), a1, b1], placement, color)?;
+                        Self::emit(scene, [Vec3::new(0., 0., height), a1, b1], placement, color)?;
                     }
                 }
             }
@@ -1069,8 +1303,8 @@ impl Model {
                         let b = point(i + 1, j);
                         let c = point(i + 1, j + 1);
                         let d = point(i, j + 1);
-                        self.emit(scene, [a, b, c], placement, color)?;
-                        self.emit(scene, [a, c, d], placement, color)?;
+                        Self::emit(scene, [a, b, c], placement, color)?;
+                        Self::emit(scene, [a, c, d], placement, color)?;
                     }
                 }
             }
@@ -1125,7 +1359,7 @@ impl Model {
                         if face.len() != 3 {
                             return Err(error("IFC triangulated face requires three indices"));
                         }
-                        self.emit(
+                        Self::emit(
                             scene,
                             [get(&face[0])?, get(&face[1])?, get(&face[2])?],
                             t,
@@ -1150,7 +1384,7 @@ impl Model {
                             }
                         }
                         for triangle in triangles(&rings)? {
-                            self.emit(scene, triangle, t, face_color)?;
+                            Self::emit(scene, triangle, t, face_color)?;
                         }
                     }
                 }
@@ -1208,19 +1442,34 @@ impl Model {
         Ok(())
     }
 }
+/// Create a centered rectangular XY profile with the supplied dimensions.
 fn rectangle(x: f64, y: f64) -> Vec<Vec3> {
     [(-x, -y), (x, -y), (x, y), (-x, y)]
         .map(|(x, y)| Vec3::new(x, y, 0.))
         .to_vec()
 }
-fn fillets(ring: Vec<Vec3>, corners: &[(usize, f64)]) -> Result<Vec<Vec3>> {
+/// Replace selected polygon corners with bounded circular fillet samples.
+///
+/// # Errors
+///
+/// Corner indices, radii or neighboring edges cannot define supported finite fillets.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    reason = "Validated dimensions and bounded subdivision indices intentionally retain existing f64 evaluation and rounding."
+)]
+#[allow(
+    clippy::many_single_char_names,
+    reason = "Geometric formulas use conventional axis, endpoint and basis-vector symbols."
+)]
+fn fillets(ring: &[Vec3], corners: &[(usize, f64)]) -> Result<Vec<Vec3>> {
     let mut result = Vec::new();
     for i in 0..ring.len() {
         let radius = corners
             .iter()
             .find(|(index, _)| *index == i)
-            .map(|(_, r)| *r)
-            .unwrap_or(0.);
+            .map_or(0., |(_, r)| *r);
         if radius == 0. {
             result.push(ring[i]);
             continue;
@@ -1259,6 +1508,11 @@ fn fillets(ring: Vec<Vec3>, corners: &[(usize, f64)]) -> Result<Vec<Vec3>> {
     }
     Ok(result)
 }
+/// Join consecutive sampled curve segments without duplicating shared endpoints.
+///
+/// # Errors
+///
+/// The segments are empty, discontinuous, non-finite or exceed geometry limits.
 fn append_path(result: &mut Vec<Vec3>, mut next: Vec<Vec3>) -> Result<()> {
     if next.is_empty() {
         return Err(error("empty IFC curve segment"));
@@ -1267,7 +1521,7 @@ fn append_path(result: &mut Vec<Vec3>, mut next: Vec<Vec3>) -> Result<()> {
         if (*last - next[0]).length() > 1e-7 * last.length().max(next[0].length()).max(1.) {
             return Err(error("IFC composite curve segments are disconnected"));
         }
-        next.remove(0);
+        let _ = next.remove(0);
     }
     if result
         .len()
@@ -1279,6 +1533,21 @@ fn append_path(result: &mut Vec<Vec3>, mut next: Vec<Vec3>) -> Result<()> {
     result.extend(next);
     Ok(())
 }
+/// Sample the circular arc passing through three authored points.
+///
+/// # Errors
+///
+/// The points cannot define a finite nondegenerate circle.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    reason = "Validated dimensions and bounded subdivision indices intentionally retain existing f64 evaluation and rounding."
+)]
+#[allow(
+    clippy::many_single_char_names,
+    reason = "Geometric formulas use conventional axis, endpoint and basis-vector symbols."
+)]
 fn arc(a: Vec3, b: Vec3, c: Vec3) -> Result<Vec<Vec3>> {
     let ab = b - a;
     let ac = c - a;
@@ -1311,6 +1580,11 @@ fn arc(a: Vec3, b: Vec3, c: Vec3) -> Result<Vec<Vec3>> {
     Ok(points)
 }
 
+/// Validate IFC Part 21 string/comment boundaries and bound parameter nesting.
+///
+/// # Errors
+///
+/// Strings/comments are unterminated, parentheses are unbalanced or nesting is excessive.
 fn nesting(text: &str) -> Result<()> {
     let bytes = text.as_bytes();
     let (mut i, mut depth) = (0usize, 0usize);
@@ -1363,6 +1637,11 @@ fn nesting(text: &str) -> Result<()> {
     }
     Ok(())
 }
+/// Resolve supported IFC SI/conversion units with bounded recursion.
+///
+/// # Errors
+///
+/// Units, dimensions, conversion factors or recursion limits are invalid or unsupported.
 fn unit(model: &Model, id: u64, depth: usize) -> Result<f64> {
     if depth > MAX_DEPTH {
         return Err(error("IFC unit references are cyclic or too deep"));
@@ -1397,11 +1676,25 @@ fn unit(model: &Model, id: u64, depth: usize) -> Result<f64> {
         _ => Err(error("unsupported IFC geometry unit")),
     }
 }
+/// Read IFC Part 21 product geometry and placement data.
+///
+/// # Errors
+///
+/// File/UTF-8 parsing, required IFC geometry or preview limits fail validation.
 pub(super) fn load(path: &Path) -> Result<Scene> {
     let bytes = super::read_file(path)?;
     let source = std::str::from_utf8(&bytes)?.trim_start_matches('\u{feff}');
     parse(source)
 }
+/// Parse IFC entities, units, presentation styles and renderable products.
+///
+/// # Errors
+///
+/// Entity syntax/references, required geometry, units or preview budgets are invalid or unsupported.
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keep the format record dispatch, validation and its resource checks together without changing geometry evaluation."
+)]
 fn parse(source: &str) -> Result<Scene> {
     nesting(source)?;
     let exchange = ruststep::parser::parse(source)
@@ -1605,6 +1898,10 @@ mod tests {
         assert!((actual - expected).abs() < 1e-7, "{actual} != {expected}");
     }
     #[test]
+    #[allow(
+        clippy::float_cmp,
+        reason = "The authored fixture verifies exact coordinates or discrete output properties."
+    )]
     fn hollow_extrusion_has_real_caps_cavity_and_volume() {
         let scene = parse(&fixture(
             "#20=IFCEXTRUDEDAREASOLID(#21,$,#22,2.);
@@ -1625,7 +1922,7 @@ mod tests {
             })
             .sum();
         near(cap_area, 12.);
-        assert!(crate::render::render(&scene, &Default::default()).is_ok());
+        assert!(crate::render::render(&scene, &crate::render::RenderOptions::default()).is_ok());
     }
     #[test]
     fn mirrored_derived_profile_retains_outward_winding() {
@@ -1747,6 +2044,10 @@ mod tests {
         near(radius, 2.5);
     }
     #[test]
+    #[allow(
+        clippy::float_cmp,
+        reason = "The authored fixture verifies exact coordinates or discrete output properties."
+    )]
     fn relational_opening_is_subtracted_in_absolute_product_placement() {
         let scene = parse(&fixture(
             "#20=IFCBLOCK(#2,4.,4.,1.);

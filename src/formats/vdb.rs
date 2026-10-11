@@ -8,24 +8,33 @@ use crate::{
 };
 use std::{collections::HashMap, io::Read, path::Path};
 
+/// Maximum scalar sample count accepted before array expansion.
 const MAX_SAMPLES: usize = 5_000_000;
+/// Maximum expanded scalar payload bytes.
 const MAX_DECODE_BYTES: usize = 256 * 1024 * 1024;
+/// Maximum sparse leaves collected before reading their value blocks.
 const MAX_LEAVES: usize = 131_072;
 
+/// Bounds-checked cursor over an `OpenVDB` byte stream.
 struct Cursor<'a> {
+    /// Borrowed complete VDB input bytes.
     bytes: &'a [u8],
+    /// Absolute position of the next unread byte.
     pos: usize,
 }
 impl<'a> Cursor<'a> {
+    /// Start a bounds-checked reader at the beginning of the supplied bytes.
     fn new(bytes: &'a [u8]) -> Self {
         Self { bytes, pos: 0 }
     }
+    /// Consume the requested bytes, rejecting offset overflow and truncated records.
     fn take(&mut self, n: usize) -> Result<&'a [u8]> {
         let end = self.pos.checked_add(n).ok_or("VDB offset overflow")?;
         let b = self.bytes.get(self.pos..end).ok_or("truncated VDB data")?;
         self.pos = end;
         Ok(b)
     }
+    /// Move to an absolute file offset after checking the input bounds.
     fn seek(&mut self, n: usize) -> Result<()> {
         if n > self.bytes.len() {
             return Err("VDB offset exceeds file".into());
@@ -33,18 +42,23 @@ impl<'a> Cursor<'a> {
         self.pos = n;
         Ok(())
     }
+    /// Read one unsigned byte from the current record.
     fn u8(&mut self) -> Result<u8> {
         Ok(self.take(1)?[0])
     }
+    /// Read one unsigned 32-bit word from the current record.
     fn u32(&mut self) -> Result<u32> {
         Ok(u32::from_le_bytes(self.take(4)?.try_into()?))
     }
+    /// Read one unsigned 64-bit word from the current record.
     fn u64(&mut self) -> Result<u64> {
         Ok(u64::from_le_bytes(self.take(8)?.try_into()?))
     }
+    /// Read one finite double-precision number from the current record.
     fn f64(&mut self) -> Result<f64> {
         finite(f64::from_le_bytes(self.take(8)?.try_into()?))
     }
+    /// Read a bounded UTF-8 VDB length-prefixed name.
     fn name(&mut self) -> Result<String> {
         let n = self.u32()? as usize;
         if n > 1_048_576 {
@@ -52,17 +66,20 @@ impl<'a> Cursor<'a> {
         }
         Ok(std::str::from_utf8(self.take(n)?)?.to_owned())
     }
+    /// Read three signed integer tree coordinates.
     fn xyz(&mut self) -> Result<Vec3> {
         let v = self.take(12)?;
         Ok(Vec3::new(
-            i32::from_le_bytes(v[..4].try_into()?) as f64,
-            i32::from_le_bytes(v[4..8].try_into()?) as f64,
-            i32::from_le_bytes(v[8..12].try_into()?) as f64,
+            f64::from(i32::from_le_bytes(v[..4].try_into()?)),
+            f64::from(i32::from_le_bytes(v[4..8].try_into()?)),
+            f64::from(i32::from_le_bytes(v[8..12].try_into()?)),
         ))
     }
+    /// Read three finite double-precision spatial coordinates.
     fn dxyz(&mut self) -> Result<Vec3> {
         Ok(Vec3::new(self.f64()?, self.f64()?, self.f64()?))
     }
+    /// Retain only scalar-grid interpretation metadata while validating all record lengths.
     fn metadata(&mut self) -> Result<HashMap<String, Vec<u8>>> {
         let n = self.u32()?;
         if n > 4096 {
@@ -84,6 +101,7 @@ impl<'a> Cursor<'a> {
         Ok(m)
     }
 }
+/// Reject nonfinite values before using them as coordinates or scalar samples.
 fn finite(v: f64) -> Result<f64> {
     if v.is_finite() {
         Ok(v)
@@ -93,69 +111,106 @@ fn finite(v: f64) -> Result<f64> {
 }
 
 #[derive(Clone, Copy)]
+/// Supported scalar storage types for the `OpenVDB` scalar grid.
 enum Scalar {
+    /// IEEE single-precision floating-point tree values.
     Float,
+    /// IEEE double-precision floating-point tree values.
     Double,
+    /// Signed 32-bit integer values.
     I32,
+    /// Signed 64-bit integer values.
     I64,
 }
 impl Scalar {
+    /// Return the full-width storage size of one scalar tree value.
     fn width(self) -> usize {
         match self {
             Self::Float | Self::I32 => 4,
             _ => 8,
         }
     }
+    /// Read a finite full-width or half-width scalar tree value.
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "Integer tree samples intentionally approximate to f64 scalar values for density previews."
+    )]
     fn read(self, c: &mut Cursor<'_>, half: bool) -> Result<f64> {
         if half && matches!(self, Self::Float | Self::Double) {
             let b = u16::from_le_bytes(c.take(2)?.try_into()?);
             let sign = if b & 0x8000 != 0 { -1.0 } else { 1.0 };
             let e = (b >> 10) & 31;
-            let fraction = (b & 1023) as f64;
+            let fraction = f64::from(b & 1023);
             return finite(
                 sign * match e {
                     0 => fraction * 2f64.powi(-24),
                     31 => f64::INFINITY,
-                    _ => (1.0 + fraction / 1024.0) * 2f64.powi(e as i32 - 15),
+                    _ => (1.0 + fraction / 1024.0) * 2f64.powi(i32::from(e) - 15),
                 },
             );
         }
         finite(match self {
-            Self::Float => f32::from_le_bytes(c.take(4)?.try_into()?) as f64,
+            Self::Float => f64::from(f32::from_le_bytes(c.take(4)?.try_into()?)),
             Self::Double => c.f64()?,
-            Self::I32 => i32::from_le_bytes(c.take(4)?.try_into()?) as f64,
+            Self::I32 => f64::from(i32::from_le_bytes(c.take(4)?.try_into()?)),
             Self::I64 => i64::from_le_bytes(c.take(8)?.try_into()?) as f64,
         })
     }
 }
 
+/// Stored scalar-grid directory entry and its tree byte range.
 struct Descriptor {
+    /// Stored grid identifier.
     name: String,
+    /// Declared scalar grid type.
     kind: String,
+    /// Referenced grid providing shared topology, if present.
     parent: String,
+    /// Absolute offset of this grid payload.
     start: usize,
+    /// Absolute offset of the leaf-value block section.
     blocks: usize,
+    /// Absolute end offset of this grid payload.
     end: usize,
 }
 #[derive(Clone, Copy)]
+/// An occupied constant-value sparse tile or voxel.
 struct Sample {
+    /// Index-space origin of the occupied tile.
     origin: Vec3,
+    /// Index-space edge length of the constant tile.
     size: f64,
+    /// Finite scalar density or signed-distance value.
     value: f64,
 }
+/// Scalar-tree decoder state, compressed-value settings and collected samples.
 struct TreeReader {
+    /// Full-width scalar type of stored values.
     scalar: Scalar,
+    /// Whether floating-point values are stored as binary16.
     half: bool,
+    /// VDB value-compression flag bits.
     compression: u32,
+    /// Value of unrepresented inactive samples.
     background: f64,
+    /// Whether negative samples represent occupied level-set interior.
     level_set: bool,
+    /// Aggregate expanded value bytes consumed.
     decoded: usize,
+    /// Active occupied tiles collected for surface construction.
     samples: Vec<Sample>,
+    /// Leaf origins waiting for their value blocks.
     leaves: Vec<Vec3>,
 }
+/// Test an indexed bit in a tree occupancy mask.
 fn bit(mask: &[u8], i: usize) -> bool {
     mask[i / 8] & (1 << (i % 8)) != 0
 }
+/// Convert a packed child index into its spatial tile origin.
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "The tree topology bounds packed child indices before their exact small integer coordinates become f64."
+)]
 fn offset(origin: Vec3, index: usize, log: usize, size: f64) -> Vec3 {
     let mask = (1 << log) - 1;
     origin
@@ -166,6 +221,7 @@ fn offset(origin: Vec3, index: usize, log: usize, size: f64) -> Vec3 {
         ) * size
 }
 impl TreeReader {
+    /// Retain active density or level-set tiles within the sample limit.
     fn sample(&mut self, origin: Vec3, size: f64, value: f64, active: bool) -> Result<()> {
         if !(active || (self.level_set && value < 0.0)) {
             return Ok(());
@@ -180,6 +236,7 @@ impl TreeReader {
         });
         Ok(())
     }
+    /// Decode compressed/masked node values and reconstruct inactive background entries.
     fn values(&mut self, c: &mut Cursor<'_>, mask: &[u8], n: usize) -> Result<Vec<f64>> {
         let metadata = c.u8()?;
         if metadata > 6 {
@@ -260,6 +317,7 @@ impl TreeReader {
         }
         Ok(values)
     }
+    /// Walk one internal tree level and collect leaves or active tiles.
     fn internal(&mut self, c: &mut Cursor<'_>, origin: Vec3, log: usize) -> Result<()> {
         let n = 1 << (3 * log);
         let children = c.take(n / 8)?;
@@ -287,6 +345,7 @@ impl TreeReader {
         }
         Ok(())
     }
+    /// Decode root tile topology and its child leaf-value blocks.
     fn tree(&mut self, c: &mut Cursor<'_>, blocks: usize) -> Result<()> {
         if c.u32()? != 1 {
             return Err("VDB multipass/point-data trees are not implemented".into());
@@ -322,6 +381,11 @@ impl TreeReader {
     }
 }
 
+/// Decode supported affine grid maps into world-space placement.
+#[allow(
+    clippy::float_cmp,
+    reason = "A supported affine grid map requires the stored homogeneous final entry to be exactly one."
+)]
 fn transform(c: &mut Cursor<'_>) -> Result<Transform> {
     let name = c.name()?;
     let mut result = Transform::IDENTITY;
@@ -336,7 +400,7 @@ fn transform(c: &mut Cursor<'_>) -> Result<Transform> {
             result.0[1][1] = v.y;
             result.0[2][2] = v.z;
             for _ in 0..4 {
-                c.dxyz()?;
+                let _ = c.dxyz()?;
             }
         }
         "TranslationMap" => {
@@ -362,12 +426,18 @@ fn transform(c: &mut Cursor<'_>) -> Result<Transform> {
     Ok(result)
 }
 
+/// Read a bounded `OpenVDB` scalar grid and decode its preview geometry.
+///
+/// # Errors
+/// Returns an error for unsupported grid/tree layouts, invalid offsets, malformed compression,
+/// nonfinite samples or resource limits.
 pub(super) fn load(path: &Path) -> Result<Scene> {
     decode(&super::read_file(path)?)
 }
+/// Validate scalar grid descriptors and decode supported VDB tree/compression layouts.
 fn decode(bytes: &[u8]) -> Result<Scene> {
     let mut c = Cursor::new(bytes);
-    if c.u64()? != 0x0000000056444220 {
+    if c.u64()? != 0x0000_0000_5644_4220 {
         return Err("invalid OpenVDB magic".into());
     }
     let version = c.u32()?;
@@ -459,6 +529,13 @@ fn decode(bytes: &[u8]) -> Result<Scene> {
     surface(reader.samples, level_set, map)
 }
 
+/// Rasterize sparse samples into a bounded density or level-set preview surface.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    reason = "Preview indices are clamped to the 32-cubed lattice and nonnegative before native indexing."
+)]
 fn surface(samples: Vec<Sample>, level_set: bool, map: Transform) -> Result<Scene> {
     if samples.is_empty() {
         return Err("VDB scalar grid has no active geometry".into());
@@ -522,6 +599,7 @@ fn surface(samples: Vec<Sample>, level_set: bool, map: Transform) -> Result<Scen
     )
 }
 
+/// Expand exactly the declared compressed bytes within the VDB decoded-byte budget.
 fn decode_stream(reader: impl Read, length: usize) -> Result<Vec<u8>> {
     let mut data = Vec::with_capacity(length);
     reader.take(length as u64 + 1).read_to_end(&mut data)?;
@@ -532,6 +610,10 @@ fn decode_stream(reader: impl Read, length: usize) -> Result<Vec<u8>> {
 }
 
 /// Blosc1 chunks: bounded blocks and split streams, shuffle, BloscLZ/LZ4/zlib/Zstd.
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keep Blosc block-table, compression and shuffle-layout checks together with output accounting."
+)]
 fn blosc(data: &[u8], length: usize) -> Result<Vec<u8>> {
     let mut c = Cursor::new(data);
     let version = c.u8()?;
@@ -656,6 +738,7 @@ fn blosc(data: &[u8], length: usize) -> Result<Vec<u8>> {
     Ok(output)
 }
 
+/// Undo Blosc bit-plane shuffling for fixed-width scalar elements.
 fn bitunshuffle(source: &[u8], target: &mut [u8], width: usize) {
     let elements = (source.len() / width) / 8 * 8;
     let plane_len = elements / 8;
@@ -674,6 +757,7 @@ fn bitunshuffle(source: &[u8], target: &mut [u8], width: usize) {
 
 // Raw BloscLZ layout follows the C-Blosc BSD-licensed protocol. All offsets and
 // lengths are checked before copying, including an overlapping final match.
+/// Expand bounded `BloscLZ` literals and overlapping backward matches.
 fn blosclz(input: &[u8], output: &mut [u8]) -> Result<usize> {
     let mut c = Cursor::new(input);
     let mut control = c.u8()? & 31;
@@ -731,6 +815,11 @@ fn blosclz(input: &[u8], output: &mut [u8]) -> Result<usize> {
 mod tests {
     use super::*;
 
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        reason = "The authored sparse grid contains tiny bounded coordinates and byte-sized compression blocks."
+    )]
     fn field(half: bool) -> Vec<u8> {
         use std::io::Write;
         let name = |bytes: &mut Vec<u8>, value: &str| {
@@ -801,7 +890,7 @@ mod tests {
             grid.extend(f64::to_le_bytes(value));
         }
         let mut file = Vec::new();
-        file.extend(0x56444220u64.to_le_bytes());
+        file.extend(0x5644_4220_u64.to_le_bytes());
         for n in [223u32, 12, 1] {
             file.extend(n.to_le_bytes());
         }
@@ -876,6 +965,11 @@ mod tests {
         assert!(blosclz(&[0, b'a', 0xe0, 255], &mut output).is_err());
     }
     #[test]
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "The authored shuffle test uses eight nonnegative integer samples, exactly representable in every conversion."
+    )]
     fn bit_shuffle_and_byte_shuffle_decode() {
         let expected = (0..64).map(|n| (n * 7) as u8).collect::<Vec<_>>();
         let mut shuffled = vec![0; 64];

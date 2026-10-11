@@ -1,10 +1,18 @@
 //! Evaluate DXF's authored rational B-spline knot/control-point representation.
-use super::*;
+use super::{Entity, Result, Vec3, error};
 
+/// Maximum authored spline control-point count.
 const MAX_CONTROLS: usize = 100_000;
+/// Maximum adaptive spline approximation segments.
 const MAX_SEGMENTS: usize = 100_000;
+/// Maximum charged spline or Boolean-processing work.
 const MAX_WORK: usize = 10_000_000;
 
+/// Decode every finite numeric group value for one spline code.
+///
+/// # Errors
+///
+/// A matching value is nonnumeric or non-finite.
 fn values(entity: &Entity, code: u16) -> Result<Vec<f64>> {
     entity
         .all(code)
@@ -17,6 +25,11 @@ fn values(entity: &Entity, code: u16) -> Result<Vec<f64>> {
         })
         .collect()
 }
+/// Decode ordered spline point components without accepting duplicate or misplaced coordinates.
+///
+/// # Errors
+///
+/// Coordinates are invalid, duplicate, out of order or above the control-point limit.
 fn points(entity: &Entity, code: u16) -> Result<Vec<Vec3>> {
     let mut result = Vec::new();
     let mut y_set = false;
@@ -57,17 +70,35 @@ fn points(entity: &Entity, code: u16) -> Result<Vec<Vec3>> {
     }
     Ok(result)
 }
+/// Validated rational spline data and bounded adaptive-evaluation state.
 struct Curve {
+    /// Authored finite spline control-point coordinates.
     controls: Vec<Vec3>,
+    /// Positive rational weight paired with each control point.
     weights: Vec<f64>,
+    /// Validated nondecreasing spline knot vector.
     knots: Vec<f64>,
+    /// Supported polynomial degree of the authored spline.
     degree: usize,
+    /// Local numerical origin used to stabilize homogeneous interpolation.
     origin: Vec3,
+    /// Accumulated processing work charged against the preview budget.
     work: usize,
+    /// Number of emitted adaptive approximation segments.
     segments: usize,
+    /// Maximum accepted geometric chord deviation for the sampled spline.
     tolerance: f64,
 }
 impl Curve {
+    /// Evaluate a rational B-spline span using homogeneous de Boor interpolation.
+    ///
+    /// # Errors
+    ///
+    /// Evaluation exceeds its work limit or produces an invalid denominator/non-finite point.
+    #[allow(
+        clippy::float_cmp,
+        reason = "Exact knot equality and subdivision stagnation are structural checks, not approximate geometry comparisons."
+    )]
     fn evaluate(&mut self, span: usize, t: f64) -> Result<Vec3> {
         self.work = self
             .work
@@ -106,6 +137,15 @@ impl Curve {
         }
         Ok(result)
     }
+    /// Adaptively subdivide a spline interval against the geometric chord tolerance.
+    ///
+    /// # Errors
+    ///
+    /// Evaluation, recursion, segment or work limits prevent the requested approximation.
+    #[allow(
+        clippy::float_cmp,
+        reason = "Exact knot equality and subdivision stagnation are structural checks, not approximate geometry comparisons."
+    )]
     fn interval(
         &mut self,
         span: usize,
@@ -160,18 +200,27 @@ impl Curve {
     }
 }
 
+/// Validate a DXF spline's authored knots, controls and weights, then sample each continuous span.
+///
+/// # Errors
+///
+/// Spline structure, counts, knots, weights or bounded approximation are invalid or unsupported.
+#[allow(
+    clippy::float_cmp,
+    reason = "Exact knot equality and subdivision stagnation are structural checks, not approximate geometry comparisons."
+)]
 pub(super) fn sample(entity: &Entity) -> Result<Vec<Vec<Vec3>>> {
     let degree = entity.integer(71, 0)?;
     if !(1..=32).contains(&degree) {
         return Err(error("DXF spline degree must be between 1 and 32"));
     }
-    let degree = degree as usize;
+    let degree = usize::try_from(degree)?;
     let controls = points(entity, 10)?;
     let fits = points(entity, 11)?;
     let knots = values(entity, 40)?;
-    if entity.integer(72, knots.len() as i64)? != knots.len() as i64
-        || entity.integer(73, controls.len() as i64)? != controls.len() as i64
-        || entity.integer(74, fits.len() as i64)? != fits.len() as i64
+    if entity.integer(72, i64::try_from(knots.len())?)? != i64::try_from(knots.len())?
+        || entity.integer(73, i64::try_from(controls.len())?)? != i64::try_from(controls.len())?
+        || entity.integer(74, i64::try_from(fits.len())?)? != i64::try_from(fits.len())?
     {
         return Err(error(
             "DXF spline declared counts disagree with knots/control/fit points",
@@ -245,7 +294,9 @@ pub(super) fn sample(entity: &Entity) -> Result<Vec<Vec<Vec3>>> {
 
 #[cfg(test)]
 mod tests {
+    use super::super::parse;
     use super::*;
+    use std::fmt::Write as _;
     fn drawing(entities: &str) -> Vec<u8> {
         format!("0\nSECTION\n2\nENTITIES\n{entities}0\nENDSEC\n0\nEOF\n").into_bytes()
     }
@@ -261,13 +312,13 @@ mod tests {
             controls.len()
         );
         for n in knots {
-            text.push_str(&format!("40\n{n}\n"));
+            let _ = write!(text, "40\n{n}\n");
         }
         for w in weights {
-            text.push_str(&format!("41\n{w}\n"));
+            let _ = write!(text, "41\n{w}\n");
         }
         for [x, y, z] in controls {
-            text.push_str(&format!("10\n{x}\n20\n{y}\n30\n{z}\n"));
+            let _ = write!(text, "10\n{x}\n20\n{y}\n30\n{z}\n");
         }
         text
     }
@@ -292,9 +343,13 @@ mod tests {
             assert_eq!(p.z, 2.);
             assert!((p.x * p.x + p.y * p.y - 1.).abs() < 1e-12);
         }
-        assert!(crate::render::render(&scene, &Default::default()).is_ok());
+        assert!(crate::render::render(&scene, &crate::render::RenderOptions::default()).is_ok());
     }
     #[test]
+    #[allow(
+        clippy::float_cmp,
+        reason = "The authored fixture verifies exact coordinates or discrete output properties."
+    )]
     fn spline_sampling_retains_s_curve_and_knot_discontinuities() {
         let entity = spline_entity(
             3,
@@ -351,7 +406,7 @@ mod tests {
             "ACAD_TABLE",
             "VIEWPORT",
         ] {
-            entities.push_str(&format!("0\n{kind}\n10\n100000\n20\n100000\n1\nlabel\n"));
+            let _ = write!(entities, "0\n{kind}\n10\n100000\n20\n100000\n1\nlabel\n");
         }
         let scene = parse(&drawing(&entities)).unwrap();
         assert_eq!(scene.lines.len(), 1);

@@ -1,6 +1,13 @@
 use super::{MAX_DECODED, Result, bytes, check_time, dimensions, u16_le, u32_le};
 use std::{io::Cursor, time::Instant};
 
+/// Normalize a qualified BMP or DIB to RGBA PNG with checked palettes, masks and row bounds.
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_sign_loss,
+    clippy::cast_possible_truncation,
+    reason = "Validated positive dimensions fit 4096 pixels; bounded palette and channel arithmetic intentionally produces bytes"
+)]
 pub(super) fn normalize(data: &[u8], bmp: bool, started: Instant) -> Result<Option<Vec<u8>>> {
     let base = if bmp { 14 } else { 0 };
     if bmp && u32_le(data, 2)? as usize != data.len() {
@@ -39,13 +46,13 @@ pub(super) fn normalize(data: &[u8], bmp: bool, started: Instant) -> Result<Opti
         } else {
             bytes(header, 40, 16)?
         };
-        for mask in values.as_chunks::<4>().0.iter() {
+        for mask in values.as_chunks::<4>().0 {
             masks.push(u32::from_le_bytes(*mask));
         }
     } else if depth == 16 {
         masks = vec![0x7c00, 0x03e0, 0x001f];
     } else if depth == 32 {
-        masks = vec![0x00ff0000, 0x0000ff00, 0x000000ff];
+        masks = vec![0x00ff_0000, 0x0000_ff00, 0x0000_00ff];
     }
     let channels = mask_channels(masks, depth)?;
     let mut palette = Vec::new();
@@ -57,11 +64,7 @@ pub(super) fn normalize(data: &[u8], bmp: bool, started: Instant) -> Result<Opti
         if colors == 0 || colors > 1 << depth {
             return Err("invalid Inventor bitmap palette size".into());
         }
-        for color in bytes(data, pixel_offset, colors * 4)?
-            .as_chunks::<4>()
-            .0
-            .iter()
-        {
+        for color in bytes(data, pixel_offset, colors * 4)?.as_chunks::<4>().0 {
             palette.push([color[2], color[1], color[0], 255]);
         }
     } else if colors > data.len().saturating_sub(pixel_offset) / 4 {
@@ -86,7 +89,7 @@ pub(super) fn normalize(data: &[u8], bmp: bool, started: Instant) -> Result<Opti
         let source_y = if signed_height > 0 { height - y - 1 } else { y };
         let row = bytes(data, pixel_offset + source_y * stride, stride)?;
         for x in 0..width {
-            if x & 255 == 0 {
+            if x.is_multiple_of(256) {
                 check_time(started)?;
             }
             let rgba = if depth <= 8 {
@@ -121,6 +124,7 @@ pub(super) fn normalize(data: &[u8], bmp: bool, started: Instant) -> Result<Opti
     Ok(Some(output.into_inner()))
 }
 
+/// Validate disjoint contiguous bitmap channel masks and compute their shifts and maxima.
 fn mask_channels(mut masks: Vec<u32>, depth: usize) -> Result<Vec<(u32, u32, u32)>> {
     if masks.is_empty() {
         return Ok(Vec::new());

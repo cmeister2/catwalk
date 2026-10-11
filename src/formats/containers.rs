@@ -1,7 +1,7 @@
 //! Scientific containers decoded without HDF5 or NetCDF C libraries.
-//! Schemas: https://docs.vtk.org/en/latest/vtk_file_formats/vtkhdf_file_format/vtkhdf_specifications.html
-//! Exodus storage: https://sandialabs.github.io/seacas-docs/html/exodusII__int_8h_source.html
-//! NetCDF coordinates: https://docs.unidata.ucar.edu/netcdf-c/current/attribute_conventions.html
+//! Schemas: <https://docs.vtk.org/en/latest/vtk_file_formats/vtkhdf_file_format/vtkhdf_specifications.html>
+//! Exodus storage: <https://sandialabs.github.io/seacas-docs/html/exodusII__int_8h_source.html>
+//! NetCDF coordinates: <https://docs.unidata.ucar.edu/netcdf-c/current/attribute_conventions.html>
 use super::{extension, read_file, scientific, volume};
 use crate::{
     Result,
@@ -14,12 +14,22 @@ use std::{
     path::Path,
 };
 
+/// Maximum scalar sample count accepted before array expansion.
 const MAX_SAMPLES: usize = 16_777_216;
+/// Maximum declared point count accepted before geometry allocation.
 const MAX_POINTS: usize = 1_000_000;
+/// Maximum scientific cell count accepted before topology expansion.
 const MAX_CELLS: usize = 1_000_000;
+/// Maximum container partitions visited during composite traversal.
 const MAX_PARTS: usize = 1024;
+/// Aggregate decoded numeric-array byte limit.
 const MAX_DECODED: usize = 512 * 1024 * 1024;
 
+/// Read a bounded scientific HDF5, Exodus and `NetCDF` container and decode its preview geometry.
+///
+/// # Errors
+/// Returns an error for unreadable or unsupported containers, invalid array schemas/topology,
+/// malformed compressed data or resource limits.
 pub(super) fn load(path: &Path) -> Result<Scene> {
     let bytes = read_file(path)?;
     match extension(path)?.as_str() {
@@ -30,13 +40,21 @@ pub(super) fn load(path: &Path) -> Result<Scene> {
     }
 }
 
+/// Aggregate decoded-array budget shared by container partitions.
 struct Budget {
+    /// Expanded scalar bytes already charged to this container.
     used: usize,
 }
 impl Budget {
+    /// Start aggregate decoded-array byte accounting for a container.
     fn new() -> Self {
         Self { used: 0 }
     }
+    /// Validate an array shape and charge its expanded double-width storage to the byte budget.
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "The sample count is bounded to 16,777,216 before conversion to a native allocation size."
+    )]
     fn reserve(&mut self, shape: &[u64]) -> Result<usize> {
         let count = shape
             .iter()
@@ -61,20 +79,26 @@ impl Budget {
     }
 }
 
+/// An HDF5 file viewed through a rebased VTKHDF group.
 struct HdfSource<'a> {
+    /// Opened in-memory HDF5 container.
     file: &'a Hdf5File,
+    /// Actual group path replacing the logical /VTKHDF prefix.
     base: String,
 }
 impl HdfSource<'_> {
+    /// Rebase a logical VTKHDF path into the selected dataset group.
     fn path(&self, path: &str) -> Result<String> {
         let suffix = path
             .strip_prefix("/VTKHDF")
             .ok_or("invalid internal VTKHDF path")?;
         Ok(format!("{}{suffix}", self.base))
     }
+    /// Open a rebased HDF5 dataset.
     fn dataset(&self, path: &str) -> Result<Dataset> {
         Ok(self.file.dataset(&self.path(path)?)?)
     }
+    /// Open a rebased HDF5 group.
     fn group(&self, path: &str) -> Result<hdf5_reader::group::Group> {
         Ok(self.file.group(&self.path(path)?)?)
     }
@@ -82,6 +106,8 @@ impl HdfSource<'_> {
 
 // HDF5 typed reads assert the stored type, so dispatch instead of coercing IDs
 // through floating point (which would lose precision for 64-bit connectivity).
+/// Dispatch integer HDF5 reads by stored width and signedness without lossy floating-point
+/// conversion.
 macro_rules! hdf_dispatch {
     ($datatype:expr, $read:ident, $object:expr, $convert:expr) => {{
         match $datatype {
@@ -134,6 +160,7 @@ macro_rules! hdf_dispatch {
     }};
 }
 
+/// Validate HDF5 dataset dimensions and individual decoded chunk sizes before reading.
 fn hdf_dataset(file: &HdfSource, name: &str, budget: &mut Budget) -> Result<Dataset> {
     let dataset = file.dataset(name)?;
     budget.reserve(dataset.shape())?;
@@ -153,6 +180,8 @@ fn hdf_dataset(file: &HdfSource, name: &str, budget: &mut Budget) -> Result<Data
     Ok(dataset)
 }
 
+/// Read one-dimensional HDF5 integer connectivity or count arrays with checked native-index
+/// conversion.
 fn hdf_ids(file: &HdfSource, name: &str, budget: &mut Budget) -> Result<Vec<usize>> {
     let ds = hdf_dataset(file, name, budget)?;
     if ds.ndim() != 1 {
@@ -164,6 +193,12 @@ fn hdf_ids(file: &HdfSource, name: &str, budget: &mut Budget) -> Result<Vec<usiz
     .map_err(|_| "HDF integer is negative or overflows".into()))
 }
 
+/// Read supported HDF5 numeric dataset scalars as double-precision geometry values.
+#[allow(
+    clippy::cast_lossless,
+    clippy::cast_precision_loss,
+    reason = "One integer-dispatch macro covers all widths; 64-bit scalar values intentionally approximate to f64 for preview geometry."
+)]
 fn hdf_values(ds: &Dataset) -> Result<Vec<f64>> {
     match ds.dtype() {
         Datatype::FloatingPoint { size: 4, .. } => Ok(ds
@@ -181,6 +216,12 @@ fn hdf_values(ds: &Dataset) -> Result<Vec<f64>> {
     }
 }
 
+/// Read a supported numeric HDF5 attribute as geometry metadata.
+#[allow(
+    clippy::cast_lossless,
+    clippy::cast_precision_loss,
+    reason = "One integer-dispatch macro covers all widths; numeric placement attributes intentionally use f64, including 64-bit integers."
+)]
 fn hdf_attribute_values(attr: &Attribute) -> Result<Vec<f64>> {
     if attr.num_elements()? > 16 {
         return Err("HDF geometry attribute exceeds 16 values".into());
@@ -199,6 +240,7 @@ fn hdf_attribute_values(attr: &Attribute) -> Result<Vec<f64>> {
     }
 }
 
+/// Open an in-memory HDF5 file and decode its root VTKHDF dataset.
 fn vtkhdf(bytes: &[u8]) -> Result<Scene> {
     let file = Hdf5File::from_bytes_with_options(
         bytes,
@@ -217,6 +259,7 @@ fn vtkhdf(bytes: &[u8]) -> Result<Scene> {
     )
 }
 
+/// Dispatch the selected VTKHDF type, rejecting time-dependent or unsupported schemas.
 fn hdf_source(file: &HdfSource, budget: &mut Budget) -> Result<Scene> {
     let root = file.group("/VTKHDF")?;
     let version_attr = root.attribute("Version")?;
@@ -248,6 +291,7 @@ fn hdf_source(file: &HdfSource, budget: &mut Budget) -> Result<Scene> {
     }
 }
 
+/// Resolve VTKHDF composite assembly links and combine their child datasets.
 fn hdf_composite(file: &HdfSource, budget: &mut Budget) -> Result<Scene> {
     let root = file.group("/VTKHDF")?;
     let mut blocks = BTreeMap::new();
@@ -285,6 +329,7 @@ fn hdf_composite(file: &HdfSource, budget: &mut Budget) -> Result<Scene> {
     Ok(scene)
 }
 
+/// Walk assembly groups without revisiting cyclic or duplicate dataset links.
 fn walk_assembly(
     file: &HdfSource,
     group: &hdf5_reader::group::Group,
@@ -323,7 +368,8 @@ fn walk_assembly(
     Ok(())
 }
 
-fn points(values: Vec<f64>) -> Result<Vec<Vec3>> {
+/// Convert finite coordinate triples into point positions.
+fn points(values: &[f64]) -> Result<Vec<Vec3>> {
     if !values.len().is_multiple_of(3) || values.len() / 3 > MAX_POINTS {
         return Err("scientific points must be triplets, with at most 1000000 points".into());
     }
@@ -338,6 +384,7 @@ fn points(values: Vec<f64>) -> Result<Vec<Vec3>> {
         .collect())
 }
 
+/// Sum partition counts while enforcing a caller-provided record maximum.
 fn total(counts: &[usize], maximum: usize) -> Result<usize> {
     let n = counts
         .iter()
@@ -349,6 +396,7 @@ fn total(counts: &[usize], maximum: usize) -> Result<usize> {
     Ok(n)
 }
 
+/// Split partition-local offsets/connectivity into validated individual cells.
 fn partition_cells(
     offsets: &[usize],
     connectivity: &[usize],
@@ -369,6 +417,7 @@ fn partition_cells(
         .collect())
 }
 
+/// Append a child container scene while enforcing aggregate geometry limits.
 fn merge(scene: &mut Scene, child: Scene) -> Result<()> {
     scene.triangles.extend(child.triangles);
     scene.points.extend(child.points);
@@ -379,10 +428,12 @@ fn merge(scene: &mut Scene, child: Scene) -> Result<()> {
     Ok(())
 }
 
+/// Extract an unstructured boundary with standard linear cell types.
 fn grid_scene(positions: &[Vec3], cells: &[Vec<usize>], types: &[usize]) -> Result<Scene> {
     grid_scene_poly(positions, cells, types, &BTreeMap::new())
 }
 
+/// Extract an unstructured boundary with explicitly described polyhedron faces.
 fn grid_scene_poly(
     positions: &[Vec3],
     cells: &[Vec<usize>],
@@ -436,6 +487,7 @@ fn grid_scene_poly(
     Ok(scene)
 }
 
+/// Decode partitioned HDF5 polydata or unstructured meshes with local point indices.
 fn hdf_mesh(file: &HdfSource, kind: &str, budget: &mut Budget) -> Result<Scene> {
     let counts = hdf_ids(file, "/VTKHDF/NumberOfPoints", budget)?;
     if counts.is_empty() || counts.len() > MAX_PARTS {
@@ -446,7 +498,7 @@ fn hdf_mesh(file: &HdfSource, kind: &str, budget: &mut Budget) -> Result<Scene> 
     if dataset.shape() != [point_total as u64, 3] {
         return Err("VTKHDF Points shape disagrees with partition counts".into());
     }
-    let positions = points(hdf_values(&dataset)?)?;
+    let positions = points(&hdf_values(&dataset)?)?;
     reject_ghosts(file, budget)?;
     let categories: Vec<(&str, Option<usize>)> = if kind == "PolyData" {
         vec![
@@ -498,7 +550,7 @@ fn hdf_mesh(file: &HdfSource, kind: &str, budget: &mut Budget) -> Result<Scene> 
         let (mut ci, mut oi, mut ti) = (0, 0, 0);
         for i in 0..counts.len() {
             let cells = partition_cells(
-                &offsets[oi..oi + ncells[i] + 1],
+                &offsets[oi..=(oi + ncells[i])],
                 &conn[ci..ci + nconn[i]],
                 counts[i],
             )?;
@@ -529,6 +581,7 @@ fn hdf_mesh(file: &HdfSource, kind: &str, budget: &mut Budget) -> Result<Scene> 
     Ok(scene)
 }
 
+/// Decode HDF5 polyhedron face/connectivity streams for one cell partition.
 fn hdf_polyhedra(
     file: &HdfSource,
     npoints: &[usize],
@@ -560,12 +613,12 @@ fn hdf_polyhedra(
     let mut result = Vec::new();
     for part in 0..npoints.len() {
         let face_cells = partition_cells(
-            &offsets[oi..oi + nfaces[part] + 1],
+            &offsets[oi..=(oi + nfaces[part])],
             &faces[fi..fi + nconn[part]],
             npoints[part],
         )?;
         let poly_cells = partition_cells(
-            &poly_offsets[pi..pi + ncells[part] + 1],
+            &poly_offsets[pi..=(pi + ncells[part])],
             &refs[ri..ri + nrefs[part]],
             nfaces[part],
         )?;
@@ -587,6 +640,7 @@ fn hdf_polyhedra(
     Ok(result)
 }
 
+/// Reject hidden or duplicate ghost-cell metadata that would change visible topology.
 fn reject_ghosts(file: &HdfSource, budget: &mut Budget) -> Result<()> {
     for name in [
         "/VTKHDF/PointData/vtkGhostType",
@@ -602,6 +656,7 @@ fn reject_ghosts(file: &HdfSource, budget: &mut Budget) -> Result<()> {
     Ok(())
 }
 
+/// Read a fixed-size finite numeric HDF5 placement attribute.
 fn geometry_attribute<const N: usize>(file: &HdfSource, name: &str) -> Result<[f64; N]> {
     let values = hdf_attribute_values(&file.group("/VTKHDF")?.attribute(name)?)?;
     let values: [f64; N] = values
@@ -613,6 +668,13 @@ fn geometry_attribute<const N: usize>(file: &HdfSource, name: &str) -> Result<[f
     Ok(values)
 }
 
+/// Decode HDF5 image scalars and preserve direction, origin, spacing and scalar masks.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    reason = "Validated extents and sample budgets bound integer dimensions; their spatial coordinates intentionally use f64."
+)]
 fn hdf_image(file: &HdfSource, budget: &mut Budget) -> Result<Scene> {
     let extent = geometry_attribute::<6>(file, "WholeExtent")?;
     let mut dimensions = [0; 3];
@@ -676,6 +738,13 @@ fn hdf_image(file: &HdfSource, budget: &mut Budget) -> Result<Scene> {
     Err("VTKHDF ImageData contains no supported scalar density array".into())
 }
 
+/// Decode HDF5 structured or rectilinear grid coordinates and extract outer faces.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    reason = "Validated extents and point budgets bound integer dimensions before native indexing and f64 placement."
+)]
 fn hdf_structured(file: &HdfSource, kind: &str, budget: &mut Budget) -> Result<Scene> {
     let dims = geometry_attribute::<3>(file, "Dimensions")?;
     if dims
@@ -698,7 +767,7 @@ fn hdf_structured(file: &HdfSource, kind: &str, budget: &mut Budget) -> Result<S
         if ds.shape() != [dims[2] as u64, dims[1] as u64, dims[0] as u64, 3] {
             return Err("VTKHDF structured Points shape disagrees with dimensions".into());
         }
-        points(hdf_values(&ds)?)?
+        points(&hdf_values(&ds)?)?
     } else {
         let mut coordinates = Vec::new();
         for (name, n) in ["XCoordinates", "YCoordinates", "ZCoordinates"]
@@ -724,6 +793,7 @@ fn hdf_structured(file: &HdfSource, kind: &str, budget: &mut Budget) -> Result<S
     scientific::structured_scene(&positions, dims)
 }
 
+/// Open an in-memory classic or HDF5-backed `NetCDF` file.
 fn open_netcdf(bytes: &[u8]) -> Result<NcFile> {
     Ok(NcFile::from_bytes_with_options(
         bytes,
@@ -735,12 +805,14 @@ fn open_netcdf(bytes: &[u8]) -> Result<NcFile> {
     )?)
 }
 
+/// Read a bounded `NetCDF` numeric variable as scalar values.
 fn nc_values(file: &NcFile, name: &str, budget: &mut Budget) -> Result<Vec<f64>> {
     let var = file.variable(name)?;
     budget.reserve(&var.shape())?;
     Ok(file.read_variable_as_f64(name)?.iter().copied().collect())
 }
 
+/// Read exact `NetCDF` integer connectivity without floating-point index conversion.
 fn nc_ids(file: &NcFile, name: &str, budget: &mut Budget) -> Result<Vec<usize>> {
     let var = file.variable(name)?;
     budget.reserve(&var.shape())?;
@@ -768,6 +840,7 @@ fn nc_ids(file: &NcFile, name: &str, budget: &mut Budget) -> Result<Vec<usize>> 
     }
 }
 
+/// Require a named `NetCDF` dimension within its record limit.
 fn dimension(file: &NcFile, name: &str, maximum: usize) -> Result<usize> {
     let n = usize::try_from(file.dimension(name)?.size)?;
     if n == 0 || n > maximum {
@@ -776,10 +849,20 @@ fn dimension(file: &NcFile, name: &str, maximum: usize) -> Result<usize> {
     Ok(n)
 }
 
+/// Open an Exodus `NetCDF` container and extract its placed visible mesh boundary.
 fn exodus(bytes: &[u8]) -> Result<Scene> {
     exodus_file(&open_netcdf(bytes)?)
 }
 
+/// Decode Exodus coordinates and active element-block topology, dropping shared interior faces.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "Exodus dimensions and block IDs are checked against allocation limits before native indexing."
+)]
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keep Exodus coordinate and element-block validation together with its shared allocation budget."
+)]
 fn exodus_file(file: &NcFile) -> Result<Scene> {
     let dimensions = dimension(file, "num_dim", 3)?;
     let nodes = dimension(file, "num_nodes", MAX_POINTS)?;
@@ -897,6 +980,7 @@ fn exodus_file(file: &NcFile) -> Result<Scene> {
     grid_scene(&positions, &cells, &types)
 }
 
+/// Recognize `NetCDF` primitive numeric storage types.
 fn is_numeric(kind: &NcType) -> bool {
     matches!(
         kind,
@@ -913,9 +997,10 @@ fn is_numeric(kind: &NcType) -> bool {
     )
 }
 
+/// Recognize a `NetCDF` time coordinate from its dimension and metadata.
 fn is_time(file: &NcFile, name: &str) -> bool {
     name.eq_ignore_ascii_case("time")
-        || file.variable(name).ok().is_some_and(|var| {
+        || file.variable(name).is_ok_and(|var| {
             ["axis", "standard_name", "units"].iter().any(|&attr| {
                 var.attribute(attr)
                     .and_then(|a| a.value.as_string())
@@ -928,6 +1013,7 @@ fn is_time(file: &NcFile, name: &str) -> bool {
         })
 }
 
+/// Select the earliest time slice and retain the supported scalar spatial axes.
 fn scalar_selection(file: &NcFile, var: &NcVariable) -> Result<Option<(NcSliceInfo, Vec<usize>)>> {
     if !is_numeric(var.dtype()) || var.is_coordinate_variable() {
         return Ok(None);
@@ -955,6 +1041,12 @@ fn scalar_selection(file: &NcFile, var: &NcVariable) -> Result<Option<(NcSliceIn
     Ok(Some((NcSliceInfo { selections }, shape)))
 }
 
+/// Decode supported coordinate-associated `NetCDF` scalar sheets or density volumes.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "NetCDF axis dimensions are bounded before native allocation and conversion to preview coordinates."
+)]
 fn netcdf(bytes: &[u8]) -> Result<Scene> {
     let file = open_netcdf(bytes)?;
     if file.dimension("num_nodes").is_ok() && file.dimension("num_el_blk").is_ok() {
@@ -1049,11 +1141,17 @@ fn netcdf(bytes: &[u8]) -> Result<Scene> {
         let coords: [Vec<f64>; 3] = coords
             .try_into()
             .map_err(|_| "NetCDF spatial axis count disagrees")?;
-        return volume::density_rectilinear_scene(coords, values);
+        return volume::density_rectilinear_scene(&coords, values);
     }
     Err("NetCDF file contains no supported 2D or 3D numeric scalar grid".into())
 }
 
+/// Triangulate a scalar-colored nonuniform coordinate sheet while retaining masked holes.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Scalar color channels are clamped to the byte range and intentionally rounded before quantization."
+)]
 fn scalar_sheet(x: &[f64], y: &[f64], values: &[f64]) -> Result<Scene> {
     if x.len() < 2 || y.len() < 2 || x.len().checked_mul(y.len()) != Some(values.len()) {
         return Err("NetCDF scalar sheet needs two axes with at least two samples".into());
@@ -1279,6 +1377,10 @@ mod tests {
     }
 
     #[test]
+    #[allow(
+        clippy::cast_sign_loss,
+        reason = "The authored chunk fixture uses small nonnegative array positions for its byte-count records."
+    )]
     fn hdf_filtered_512_byte_chunks_use_variable_size_fields_in_all_indexes() {
         let values: Vec<u8> = (0..4096).map(|i| (i % 251) as u8).collect();
         for max_shape in [
@@ -1315,6 +1417,10 @@ mod tests {
     }
 
     #[test]
+    #[allow(
+        clippy::cast_possible_wrap,
+        reason = "The authored topology has fewer than a dozen entries, so its i32 connectivity casts are exact."
+    )]
     fn hdf_polydata_includes_actual_polygons_lines_strips_points() {
         let mut b = hdf_builder("PolyData")
             .dataset(hdf(
@@ -1359,6 +1465,10 @@ mod tests {
     }
 
     #[test]
+    #[allow(
+        clippy::float_cmp,
+        reason = "The test verifies exact integral-coordinate output from deterministic authored topology."
+    )]
     fn hdf_polyhedron_and_linear_cells_share_interior_faces_and_require_closed_shells() {
         let points = [
             0f64, 0., 0., 1., 0., 0., 1., 1., 0., 0., 1., 0., 0., 0., 1., 1., 0., 1., 1., 1., 1.,
@@ -1453,6 +1563,10 @@ mod tests {
     }
 
     #[test]
+    #[allow(
+        clippy::float_cmp,
+        reason = "The test verifies exact integral-coordinate output from deterministic authored topology."
+    )]
     fn hdf_rectilinear_actual_boundary_preserves_intermediate_coordinates() {
         let bytes = hdf_bytes(
             hdf_builder("RectilinearGrid")
@@ -1531,33 +1645,42 @@ mod tests {
     }
 
     fn scalar_bytes(format: NcWriteFormat) -> Vec<u8> {
-        let mut b = NcFileBuilder::new();
-        let time = b.add_dimension("time", 2).unwrap();
-        let z = b.add_dimension("z", 2).unwrap();
-        let y = b.add_dimension("y", 2).unwrap();
-        let x = b.add_dimension("x", 3).unwrap();
+        let mut builder = NcFileBuilder::new();
+        let time = builder.add_dimension("time", 2).unwrap();
+        let z_axis = builder.add_dimension("z", 2).unwrap();
+        let y_axis = builder.add_dimension("y", 2).unwrap();
+        let x_axis = builder.add_dimension("x", 3).unwrap();
         for (name, dim, values) in [
-            ("x", x, vec![0f64, 3., 9.]),
-            ("y", y, vec![0., 2.]),
-            ("z", z, vec![4., 1.]),
+            ("x", x_axis, vec![0f64, 3., 9.]),
+            ("y", y_axis, vec![0., 2.]),
+            ("z", z_axis, vec![4., 1.]),
         ] {
-            let v = b.add_variable::<f64>(name, &[dim]).unwrap();
-            b.write_variable(v, &values).unwrap();
+            let variable = builder.add_variable::<f64>(name, &[dim]).unwrap();
+            builder.write_variable(variable, &values).unwrap();
         }
-        let v = b.add_variable::<i16>("density", &[time, z, y, x]).unwrap();
-        b.add_variable_attribute(v, "scale_factor", NcAttrValue::Doubles(vec![2.]))
+        let variable = builder
+            .add_variable::<i16>("density", &[time, z_axis, y_axis, x_axis])
             .unwrap();
-        b.set_variable_fill_value(v, -32767i16).unwrap();
+        builder
+            .add_variable_attribute(variable, "scale_factor", NcAttrValue::Doubles(vec![2.]))
+            .unwrap();
+        builder
+            .set_variable_fill_value(variable, -32767i16)
+            .unwrap();
         let mut values = vec![0i16; 24];
         values[1] = 5;
         values[3] = -32767;
         values[12..].fill(5);
-        b.write_variable(v, &values).unwrap();
+        builder.write_variable(variable, &values).unwrap();
         if matches!(format, NcWriteFormat::Nc4) {
-            b.set_variable_chunking(v, vec![1, 2, 2, 3]).unwrap();
-            b.set_variable_deflate(v, Some(6), true).unwrap();
+            builder
+                .set_variable_chunking(variable, vec![1, 2, 2, 3])
+                .unwrap();
+            builder
+                .set_variable_deflate(variable, Some(6), true)
+                .unwrap();
         }
-        b.to_vec(NcWriteOptions { format }).unwrap().1
+        builder.to_vec(NcWriteOptions { format }).unwrap().1
     }
 
     #[test]
@@ -1594,6 +1717,10 @@ mod tests {
     }
 
     #[test]
+    #[allow(
+        clippy::float_cmp,
+        reason = "The test verifies exact integral-coordinate output from deterministic authored topology."
+    )]
     fn netcdf_sheet_keeps_holes_and_scalar_colors() {
         let scene = scalar_sheet(
             &[0., 1., 3.],
@@ -1659,7 +1786,7 @@ mod tests {
         );
         assert!(
             volume::density_rectilinear_scene(
-                [vec![0., 0.], vec![0., 1.], vec![0., 1.]],
+                &[vec![0., 0.], vec![0., 1.], vec![0., 1.]],
                 vec![1.; 8]
             )
             .is_err()

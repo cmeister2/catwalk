@@ -5,6 +5,7 @@ use roxmltree::Node;
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
+/// Maximum geometry or attribute item count accepted by this importer.
 const MAX_ITEMS: usize = 5_000_000;
 
 #[path = "scientific_arrays.rs"]
@@ -13,18 +14,28 @@ mod arrays;
 mod legacy;
 use arrays::XmlData;
 
+/// Read a VTK dataset and resolve nested package-local multiblock children.
+///
+/// # Errors
+/// Returns an error for malformed or unsupported datasets, invalid topology, nonfinite
+/// coordinates, unsafe/cyclic references or resource limits.
 pub(crate) fn load(path: &Path) -> Result<Scene> {
     ReadContext::default().load(path, 0)
 }
 
 #[derive(Default)]
+/// Recursive VTK multiblock traversal state and aggregate resource accounting.
 struct ReadContext {
+    /// Canonical dataset paths in the current recursion chain.
     active: HashSet<PathBuf>,
+    /// Aggregate bytes read from referenced datasets.
     total_bytes: u64,
+    /// Number of dataset files visited so far.
     files: usize,
 }
 
 impl ReadContext {
+    /// Read a VTK dataset and resolve nested package-local multiblock children.
     fn load(&mut self, path: &Path, depth: usize) -> Result<Scene> {
         if depth > 32 || self.files >= 256 {
             return Err("VTK composite dataset exceeds nesting or reference limit".into());
@@ -61,6 +72,7 @@ impl ReadContext {
         result
     }
 
+    /// Parse the root VTK multiblock document and combine its child datasets.
     fn multiblock(&mut self, path: &Path, text: &str, depth: usize) -> Result<Scene> {
         let document = roxmltree::Document::parse(text)?;
         let root = document.root_element();
@@ -78,6 +90,7 @@ impl ReadContext {
         Ok(scene)
     }
 
+    /// Recursively visit multiblock entries while enforcing path, depth and geometry budgets.
     fn blocks(
         &mut self,
         node: Node<'_, '_>,
@@ -122,12 +135,14 @@ fn parse_vtk(text: &str) -> Result<Scene> {
     legacy::parse(text.as_bytes())
 }
 
+/// Require the named direct XML child element.
 fn child<'a, 'input>(node: Node<'a, 'input>, name: &str) -> Result<Node<'a, 'input>> {
     node.children()
         .find(|n| n.has_tag_name(name))
         .ok_or_else(|| format!("missing VTK XML {name}").into())
 }
 
+/// Read a bounded nonnegative XML geometry count.
 fn count_attribute(node: Node<'_, '_>, name: &str) -> Result<usize> {
     let count: usize = node
         .attribute(name)
@@ -139,12 +154,14 @@ fn count_attribute(node: Node<'_, '_>, name: &str) -> Result<usize> {
     Ok(count)
 }
 
+/// Require a named VTK `DataArray` child.
 fn named_array<'a, 'input>(node: Node<'a, 'input>, name: &str) -> Result<Node<'a, 'input>> {
     node.children()
         .find(|n| n.has_tag_name("DataArray") && n.attribute("Name") == Some(name))
         .ok_or_else(|| format!("missing VTK XML {name} array").into())
 }
 
+/// Validate XML offsets and split connectivity into individual cells.
 fn xml_cells(node: Node<'_, '_>, count: usize, data: &XmlData<'_>) -> Result<Vec<Vec<usize>>> {
     let connectivity = data.indices(named_array(node, "connectivity")?, MAX_ITEMS)?;
     let offsets = data.indices(named_array(node, "offsets")?, count)?;
@@ -166,6 +183,7 @@ fn xml_cells(node: Node<'_, '_>, count: usize, data: &XmlData<'_>) -> Result<Vec
     Ok(cells)
 }
 
+/// Decode the declared point tuples and reject count or component mismatches.
 fn xml_positions(piece: Node<'_, '_>, count: usize, data: &XmlData<'_>) -> Result<Vec<Vec3>> {
     let points_node = child(piece, "Points")?;
     let mut arrays = points_node
@@ -193,6 +211,7 @@ fn xml_positions(piece: Node<'_, '_>, count: usize, data: &XmlData<'_>) -> Resul
         .collect())
 }
 
+/// Parse ordered six-value structured-grid extents.
 fn xml_extent(node: Node<'_, '_>, attribute: &str) -> Result<[i64; 6]> {
     let values = node
         .attribute(attribute)
@@ -211,6 +230,7 @@ fn xml_extent(node: Node<'_, '_>, attribute: &str) -> Result<[i64; 6]> {
     Ok(extent)
 }
 
+/// Convert inclusive extents into checked nonzero point dimensions.
 fn structured_dimensions(extent: [i64; 6]) -> Result<[usize; 3]> {
     let mut dimensions = [0usize; 3];
     let mut count = 1usize;
@@ -230,6 +250,11 @@ fn structured_dimensions(extent: [i64; 6]) -> Result<[usize; 3]> {
     Ok(dimensions)
 }
 
+/// Expand rectilinear or explicitly positioned structured-grid points.
+#[allow(
+    clippy::float_cmp,
+    reason = "Exact duplicate axis coordinates violate strict monotonicity and must not be hidden by a tolerance."
+)]
 fn xml_structured(root: Node<'_, '_>, dataset: &str, data: &XmlData<'_>) -> Result<Scene> {
     let grid = child(root, dataset)?;
     let extent = xml_extent(grid, "WholeExtent")?;
@@ -301,6 +326,10 @@ fn xml_structured(root: Node<'_, '_>, dataset: &str, data: &XmlData<'_>) -> Resu
 }
 
 /// Extract outer quadrilateral cell faces while preserving every boundary grid point.
+///
+/// # Errors
+/// Returns an error for invalid lattice dimensions, a mismatched or oversized position array,
+/// nonfinite points or boundary extraction limits.
 pub(super) fn structured_scene(positions: &[Vec3], dimensions: [usize; 3]) -> Result<Scene> {
     let count = dimensions.iter().try_fold(1usize, |n, &d| n.checked_mul(d));
     if dimensions.contains(&0) || count != Some(positions.len()) {
@@ -315,6 +344,7 @@ pub(super) fn structured_scene(positions: &[Vec3], dimensions: [usize; 3]) -> Re
     Ok(scene)
 }
 
+/// Append boundary quads or planar grid faces without interior structured-cell surfaces.
 fn append_structured(positions: &[Vec3], dimensions: [usize; 3], scene: &mut Scene) -> Result<()> {
     let active = dimensions.iter().filter(|&&n| n > 1).count();
     if active == 0 {
@@ -364,6 +394,7 @@ fn parse_vtk_xml(text: &str) -> Result<Scene> {
     parse_vtk_xml_bytes(text.as_bytes())
 }
 
+/// Validate the XML envelope and decode supported dataset pieces into one scene.
 fn parse_vtk_xml_bytes(bytes: &[u8]) -> Result<Scene> {
     let (text, raw) = arrays::xml_envelope(bytes)?;
     let document = roxmltree::Document::parse(&text)?;
@@ -405,7 +436,7 @@ fn parse_vtk_xml_bytes(bytes: &[u8]) -> Result<Scene> {
             ] {
                 let count = piece
                     .attribute(attr)
-                    .map(|s| s.parse::<usize>())
+                    .map(str::parse::<usize>)
                     .transpose()?
                     .unwrap_or(0);
                 if count > MAX_ITEMS {
@@ -420,7 +451,7 @@ fn parse_vtk_xml_bytes(bytes: &[u8]) -> Result<Scene> {
             }
             let lines = piece
                 .attribute("NumberOfLines")
-                .map(|s| s.parse::<usize>())
+                .map(str::parse::<usize>)
                 .transpose()?
                 .unwrap_or(0);
             if lines > MAX_ITEMS {
@@ -452,6 +483,7 @@ fn parse_vtk_xml_bytes(bytes: &[u8]) -> Result<Scene> {
     Ok(scene)
 }
 
+/// Validate polyhedron face offsets and expand per-cell face vertex lists.
 fn xml_polyhedra(
     node: Node<'_, '_>,
     types: &[usize],
@@ -507,6 +539,7 @@ fn xml_polyhedra(
     Ok(polyhedra)
 }
 
+/// Validate a polyline and append its consecutive finite segments.
 fn append_line(positions: &[Vec3], indices: &[usize], scene: &mut Scene) -> Result<()> {
     if indices.len() < 2 {
         return Err("VTK polyline needs at least two vertices".into());
@@ -524,6 +557,7 @@ fn append_line(positions: &[Vec3], indices: &[usize], scene: &mut Scene) -> Resu
     Ok(())
 }
 
+/// Resolve cell indices into finite point coordinates.
 fn checked_positions(positions: &[Vec3], indices: &[usize]) -> Result<Vec<Vec3>> {
     indices
         .iter()
@@ -536,6 +570,7 @@ fn checked_positions(positions: &[Vec3], indices: &[usize]) -> Result<Vec<Vec3>>
         .collect()
 }
 
+/// Triangulate a validated polygon and enforce the scene triangle budget.
 fn append_polygon(positions: &[Vec3], indices: &[usize], scene: &mut Scene) -> Result<()> {
     let vertices = checked_positions(positions, indices)?;
     for vertices in super::mesh::triangulate_polygon(&vertices)? {
@@ -550,6 +585,7 @@ fn append_polygon(positions: &[Vec3], indices: &[usize], scene: &mut Scene) -> R
     Ok(())
 }
 
+/// Append one finite point within the scene item budget.
 fn append_point(position: Vec3, scene: &mut Scene) -> Result<()> {
     if scene.points.len() >= MAX_ITEMS {
         return Err("VTK output point count exceeds geometry limit".into());
@@ -561,6 +597,7 @@ fn append_point(position: Vec3, scene: &mut Scene) -> Result<()> {
     Ok(())
 }
 
+/// Expand an alternating-winding triangle strip into valid faces.
 fn append_strip(positions: &[Vec3], indices: &[usize], scene: &mut Scene) -> Result<()> {
     if indices.len() < 3 {
         return Err("VTK triangle strip has fewer than three vertices".into());
@@ -589,6 +626,7 @@ fn append_strip(positions: &[Vec3], indices: &[usize], scene: &mut Scene) -> Res
     Ok(())
 }
 
+/// Combine polygon, strip, line and vertex cells from a VTK piece.
 fn append_polydata(
     positions: &[Vec3],
     polygons: Vec<Vec<usize>>,
@@ -611,6 +649,10 @@ fn append_polydata(
 }
 
 /// Internal volume faces occur twice and are discarded before triangulation.
+///
+/// # Errors
+/// Returns an error for mismatched cell/type arrays, unsupported cell types, invalid indices,
+/// malformed topology or exposed-geometry limits.
 pub(super) fn grid_scene(
     positions: &[Vec3],
     cells: &[Vec<usize>],
@@ -622,6 +664,11 @@ pub(super) fn grid_scene(
     Ok(scene)
 }
 
+/// Extract exposed unstructured-cell faces, including explicitly described closed polyhedra.
+///
+/// # Errors
+/// Returns an error for mismatched cell/type/face arrays, unsupported cells, invalid vertex
+/// references, open or malformed polyhedra, or exposed-geometry limits.
 pub(super) fn grid_scene_with_polyhedra(
     positions: &[Vec3],
     cells: &[Vec<usize>],
@@ -634,6 +681,7 @@ pub(super) fn grid_scene_with_polyhedra(
     Ok(scene)
 }
 
+/// Append visible faces from standard unstructured-cell topology.
 fn append_grid(
     positions: &[Vec3],
     cells: &[Vec<usize>],
@@ -643,6 +691,15 @@ fn append_grid(
     append_grid_with_polyhedra(positions, cells, types, scene, None)
 }
 
+/// Count shared cell faces and emit only the exterior boundary with validated topology.
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "Cell vertex counts are bounded by supported topology; f64 averaging computes an approximate face center."
+)]
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keep cell-type topology and shared-face cancellation together with their orientation/count checks."
+)]
 fn append_grid_with_polyhedra(
     positions: &[Vec3],
     cells: &[Vec<usize>],
@@ -660,8 +717,7 @@ fn append_grid_with_polyhedra(
             0 => Some(0),
             1 => Some(1),
             5 => Some(3),
-            8 | 9 => Some(4),
-            10 => Some(4),
+            8..=10 => Some(4),
             11 | 12 => Some(8),
             13 => Some(6),
             14 => Some(5),
@@ -883,6 +939,10 @@ mod tests {
     }
 
     #[test]
+    #[allow(
+        clippy::float_cmp,
+        reason = "The test verifies exact integral-coordinate output from deterministic authored topology."
+    )]
     fn rectilinear_grid_extracts_outer_cells_without_internal_faces() {
         let scene = parse_vtk_xml(r#"<VTKFile type="RectilinearGrid"><RectilinearGrid WholeExtent="-1 1 4 5 0 1"><Piece Extent="-1 1 4 5 0 1"><Coordinates><DataArray>1 2 4</DataArray><DataArray>2 5</DataArray><DataArray>3 7</DataArray></Coordinates></Piece></RectilinearGrid></VTKFile>"#).unwrap();
         assert_eq!(scene.triangles.len(), 20);
@@ -907,11 +967,12 @@ mod tests {
 
     #[test]
     fn structured_grid_preserves_deformation_and_two_dimensional_surfaces() {
+        use std::fmt::Write as _;
         let mut points = String::new();
         for z in [0., 4.] {
             for y in [0., 3.] {
                 for x in [0., 2.] {
-                    points.push_str(&format!("{} {y} {z} ", x + z * 0.25));
+                    write!(points, "{} {y} {z} ", x + z * 0.25).unwrap();
                 }
             }
         }
@@ -942,7 +1003,7 @@ mod tests {
         let sheet = parse_vtk_xml(r#"<VTKFile type="StructuredGrid"><StructuredGrid WholeExtent="0 2 0 2 0 0"><Piece Extent="0 2 0 2 0 0"><Points><DataArray>0 0 0 1 0 0 2 0 0 0 1 0 1 1 0.7 2 1 0 0 2 0 1 2 0 2 2 0</DataArray></Points></Piece></StructuredGrid></VTKFile>"#).unwrap();
         assert_eq!(sheet.triangles.len(), 8);
         assert!(sheet.positions().any(|p| p == Vec3::new(1., 1., 0.7)));
-        assert!(crate::render::render(&sheet, &Default::default()).is_ok());
+        assert!(crate::render::render(&sheet, &crate::render::RenderOptions::default()).is_ok());
     }
 
     #[test]
@@ -979,7 +1040,7 @@ mod tests {
         std::fs::write(&root, r#"<VTKFile type="vtkMultiBlockDataSet"><vtkMultiBlockDataSet><Block index="0"><DataSet index="0" file="part%20one.vtp"/><Block index="1"><DataSet index="0" file="nested.vtm"/></Block></Block></vtkMultiBlockDataSet></VTKFile>"#).unwrap();
         let scene = load(&root).unwrap();
         assert_eq!(scene.triangles.len(), 2);
-        assert!(crate::render::render(&scene, &Default::default()).is_ok());
+        assert!(crate::render::render(&scene, &crate::render::RenderOptions::default()).is_ok());
 
         for file in [
             "main.vtm",
@@ -1158,7 +1219,8 @@ mod tests {
     fn xml_binary_encodings_match_ascii_topology_and_rendering() {
         let ascii = parse_vtk_xml(r#"<VTKFile type="UnstructuredGrid"><UnstructuredGrid><Piece NumberOfPoints="4" NumberOfCells="1"><Points><DataArray>0 0 0 1 0 0 0 1 0 0 0 1</DataArray></Points><Cells><DataArray Name="connectivity">0 1 2 3</DataArray><DataArray Name="offsets">4</DataArray><DataArray Name="types">10</DataArray></Cells></Piece></UnstructuredGrid></VTKFile>"#).unwrap();
         let expected: Vec<_> = ascii.positions().collect();
-        let image = crate::render::render(&ascii, &Default::default()).unwrap();
+        let image =
+            crate::render::render(&ascii, &crate::render::RenderOptions::default()).unwrap();
         for mode in ["binary", "raw", "base64"] {
             for header in [4, 8] {
                 for big in [false, true] {
@@ -1176,7 +1238,7 @@ mod tests {
                             "{mode} {header} {big} {compressor:?}"
                         );
                         assert_eq!(
-                            crate::render::render(&scene, &Default::default())
+                            crate::render::render(&scene, &crate::render::RenderOptions::default())
                                 .unwrap()
                                 .as_raw(),
                             image.as_raw()

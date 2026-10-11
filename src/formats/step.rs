@@ -12,11 +12,20 @@ use truck_stepio::r#in::{
     ruststep,
 };
 
+/// Maximum parsed schema entity count.
 const MAX_ENTITIES: usize = 250_000;
+/// Maximum CAD face count accepted for a preview body.
 const MAX_FACES: usize = 100_000;
+/// Maximum source or expanded preview triangle count.
 const MAX_TRIANGLES: usize = 5_000_000;
+/// Maximum parameter nesting or entity dependency depth.
 const MAX_REFERENCE_DEPTH: usize = 64;
 
+/// Read STEP geometry and convert Rust-kernel panics into importer errors.
+///
+/// # Errors
+///
+/// File/UTF-8 parsing, unsupported topology, placements or tessellation fail; kernel panics are caught.
 pub(super) fn load(path: &Path) -> Result<Scene> {
     let bytes = super::read_file(path)?;
     let text = std::str::from_utf8(&bytes)?.trim_start_matches('\u{feff}');
@@ -25,6 +34,7 @@ pub(super) fn load(path: &Path) -> Result<Scene> {
         .map_err(|_| "STEP geometry could not be tessellated by the Rust CAD kernel")?
 }
 
+/// Expose an entity identifier and its simple or complex record list.
 fn records(entity: &EntityInstance) -> (u64, &[Record]) {
     match entity {
         EntityInstance::Simple { id, record } => (*id, std::slice::from_ref(record)),
@@ -84,6 +94,11 @@ fn check_nesting(text: &str) -> Result<()> {
     Ok(())
 }
 
+/// Collect entity references recursively while rejecting non-finite numbers.
+///
+/// # Errors
+///
+/// A reference uses an unsupported name kind or a numeric parameter is non-finite.
 fn collect_references(parameter: &Parameter, references: &mut Vec<u64>) -> Result<()> {
     match parameter {
         Parameter::Ref(Name::Entity(id)) => references.push(*id),
@@ -135,6 +150,11 @@ fn check_graph(
     Ok(remaining_depth)
 }
 
+/// Require a STEP parameter-list value.
+///
+/// # Errors
+///
+/// The parameter is not a list.
 fn list(parameter: &Parameter) -> Result<&[Parameter]> {
     match parameter {
         Parameter::List(values) => Ok(values),
@@ -142,6 +162,11 @@ fn list(parameter: &Parameter) -> Result<&[Parameter]> {
     }
 }
 
+/// Require a STEP entity reference.
+///
+/// # Errors
+///
+/// The parameter is not a numeric entity reference.
 fn reference(parameter: &Parameter) -> Result<u64> {
     match parameter {
         Parameter::Ref(Name::Entity(id)) => Ok(*id),
@@ -149,6 +174,11 @@ fn reference(parameter: &Parameter) -> Result<u64> {
     }
 }
 
+/// Resolve an identifier to a supported simple entity record.
+///
+/// # Errors
+///
+/// The entity is missing or is a complex record.
 fn simple_record<'a>(entities: &HashMap<u64, &'a EntityInstance>, id: u64) -> Result<&'a Record> {
     match entities.get(&id) {
         Some(EntityInstance::Simple { record, .. }) => Ok(record),
@@ -156,6 +186,15 @@ fn simple_record<'a>(entities: &HashMap<u64, &'a EntityInstance>, id: u64) -> Re
     }
 }
 
+/// Read an analytic radius larger than the kernel's numerical tolerance.
+///
+/// # Errors
+///
+/// The parameter is nonnumeric, non-finite or too small for the kernel.
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "STEP integer dimensions intentionally use the geometry kernel's f64 representation, matching real parameters."
+)]
 fn positive_radius(parameter: &Parameter) -> Result<f64> {
     let value = match parameter {
         Parameter::Real(value) => *value,
@@ -168,6 +207,11 @@ fn positive_radius(parameter: &Parameter) -> Result<f64> {
     Ok(value)
 }
 
+/// Extract a finite included or excluded surface-parameter bound.
+///
+/// # Errors
+///
+/// The parameter is unbounded or non-finite.
 fn finite_parameter_bound(value: std::ops::Bound<f64>) -> Result<f64> {
     match value {
         std::ops::Bound::Included(value) | std::ops::Bound::Excluded(value)
@@ -179,6 +223,19 @@ fn finite_parameter_bound(value: std::ops::Bound<f64>) -> Result<f64> {
     }
 }
 
+/// Tessellate a closed analytic surface represented by a vertex loop.
+///
+/// # Errors
+///
+/// The vertex is off-surface, parameters are unbounded or geometry/triangle limits fail.
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "Validated dimensions and bounded subdivision indices intentionally retain existing f64 evaluation and rounding."
+)]
+#[allow(
+    clippy::manual_midpoint,
+    reason = "Finite analytic surface bounds are limited; preserve the established sampling and rounding order."
+)]
 fn append_closed_surface<S: ParametricSurface3D + SearchParameter<D2, Point = Point3>>(
     surface: &S,
     invert: bool,
@@ -325,12 +382,22 @@ fn closed_analytic_shell(
     Ok(Some(scene))
 }
 
+/// Read a required positional entity field.
+///
+/// # Errors
+///
+/// The entity's parameter list lacks the requested field.
 fn field(record: &Record, index: usize) -> Result<&Parameter> {
     list(&record.parameter)?
         .get(index)
         .ok_or_else(|| "truncated STEP assembly entity".into())
 }
 
+/// Find an entity's record with the requested schema name, if present.
+///
+/// # Errors
+///
+/// The referenced entity is missing; an absent matching record returns `None`.
 fn named_record<'a>(
     entities: &HashMap<u64, &'a EntityInstance>,
     id: u64,
@@ -345,6 +412,15 @@ fn named_record<'a>(
         .find(|record| record.name.as_str() == name))
 }
 
+/// Read a finite integer or real STEP parameter.
+///
+/// # Errors
+///
+/// The value is not numeric or is non-finite.
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "STEP integer dimensions intentionally use the geometry kernel's f64 representation, matching real parameters."
+)]
 fn number(parameter: &Parameter) -> Result<f64> {
     let value = match parameter {
         Parameter::Real(value) => *value,
@@ -358,6 +434,11 @@ fn number(parameter: &Parameter) -> Result<f64> {
     Ok(value)
 }
 
+/// Resolve supported SI and conversion-based length units to millimetres.
+///
+/// # Errors
+///
+/// Units are missing, unsupported, nonpositive or recursively exceed the unit-depth limit.
 fn unit_factor(entities: &HashMap<u64, &EntityInstance>, id: u64, depth: usize) -> Result<f64> {
     if depth > 32 {
         return Err("STEP unit definitions are cyclic or too deep".into());
@@ -411,6 +492,15 @@ fn unit_factor(entities: &HashMap<u64, &EntityInstance>, id: u64, depth: usize) 
     Ok(factor)
 }
 
+/// Read the length-unit scale attached to a representation context.
+///
+/// # Errors
+///
+/// The context/unit structure is missing, ambiguous or unsupported.
+#[allow(
+    clippy::float_cmp,
+    reason = "Representation dimensionality must equal the exact schema value three."
+)]
 fn context_factor(entities: &HashMap<u64, &EntityInstance>, id: u64) -> Result<f64> {
     if let Some(context) = named_record(entities, id, "GEOMETRIC_REPRESENTATION_CONTEXT")?
         && number(field(context, 0)?)? != 3.
@@ -433,6 +523,11 @@ fn context_factor(entities: &HashMap<u64, &EntityInstance>, id: u64) -> Result<f
     scale.ok_or_else(|| "STEP unit context lacks a supported length unit".into())
 }
 
+/// Read three finite Cartesian or direction components from an entity.
+///
+/// # Errors
+///
+/// The entity kind, dimensionality or numeric components are invalid.
 fn coordinate(entities: &HashMap<u64, &EntityInstance>, id: u64, kind: &str) -> Result<Vec3> {
     let record = named_record(entities, id, kind)?
         .ok_or_else(|| format!("STEP placement requires {kind}"))?;
@@ -447,6 +542,11 @@ fn coordinate(entities: &HashMap<u64, &EntityInstance>, id: u64, kind: &str) -> 
     ))
 }
 
+/// Resolve an optional normalized direction, using the supplied default when omitted.
+///
+/// # Errors
+///
+/// The referenced direction is missing, invalid or has zero length.
 fn direction(
     entities: &HashMap<u64, &EntityInstance>,
     parameter: &Parameter,
@@ -464,6 +564,11 @@ fn direction(
     Ok(value / length)
 }
 
+/// Build a rigid frame from an axis placement in the representation's units.
+///
+/// # Errors
+///
+/// The placement, coordinates or axis directions cannot define a finite orthogonal frame.
 fn axis_frame(entities: &HashMap<u64, &EntityInstance>, id: u64, scale: f64) -> Result<Transform> {
     let record = named_record(entities, id, "AXIS2_PLACEMENT_3D")?
         .ok_or("STEP assembly supports 3D axis placements only")?;
@@ -507,41 +612,75 @@ fn inverse_frame(transform: Transform) -> Transform {
     inverse
 }
 
+/// Identify supported representation schema names.
 fn is_shape_representation(name: &str) -> bool {
     name.ends_with("SHAPE_REPRESENTATION") && name != "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION"
 }
 
+/// Shape items and authored unit scale belonging to one representation.
 struct Representation {
+    /// Entity identifiers for geometry or mapped items owned by this representation.
     items: Vec<u64>,
+    /// Authored representation length scale in millimetres.
     scale: f64,
 }
+/// A placed child representation owned by an assembly occurrence.
 #[derive(Clone, Copy)]
 struct Placement {
+    /// Product-occurrence relationship identifier owning this placement.
     occurrence: u64,
+    /// Entity identifier of the placed child representation.
     child: u64,
+    /// Local-to-parent affine placement in normalized scene units.
     transform: Transform,
 }
+/// Indexed representation ownership, equivalent-shape groups and assembly roots.
 struct Assembly<'a> {
+    /// Indexed source entities used to resolve typed geometry and placements.
     entities: &'a HashMap<u64, &'a EntityInstance>,
+    /// Shape representations indexed by their source entity identifiers.
     representations: BTreeMap<u64, Representation>,
+    /// Placed child occurrences grouped by parent representation identifier.
     children: HashMap<u64, Vec<Placement>>,
+    /// Equivalent representation groups for shared product-shape ownership.
     groups: BTreeMap<u64, Vec<u64>>,
+    /// Representation identifiers selected as assembly roots.
     roots: Vec<u64>,
 }
+/// Mutable assembly expansion state and shared tessellated item cache.
 struct Expansion<'a> {
+    /// Cached tessellated item scenes indexed by source geometry identifier.
     meshes: &'a HashMap<u64, Scene>,
+    /// Scene receiving all expanded assembly occurrences.
     scene: Scene,
+    /// Active representation identifiers used to reject expansion cycles.
     visiting: HashSet<u64>,
+    /// Geometry item identifiers consumed by successful expansion.
     used: HashSet<u64>,
+    /// Accumulated processing work charged against the preview budget.
     work: usize,
 }
 
 impl<'a> Assembly<'a> {
+    /// Resolve an assembly representation by its entity identifier.
+    ///
+    /// # Errors
+    ///
+    /// The identifier does not name a known representation.
     fn representation(&self, id: u64) -> Result<&Representation> {
         self.representations.get(&id).ok_or_else(|| {
             format!("STEP assembly references unsupported shape representation #{id}").into()
         })
     }
+    /// Build representation ownership, placement relationships and assembly roots.
+    ///
+    /// # Errors
+    ///
+    /// Representation/unit/product relationships are missing, ambiguous, unsupported or inconsistent.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Keep the format record dispatch, validation and its resource checks together without changing geometry evaluation."
+    )]
     fn new(entities: &'a HashMap<u64, &'a EntityInstance>) -> Result<Self> {
         let mut assembly = Self {
             entities,
@@ -920,6 +1059,11 @@ impl<'a> Assembly<'a> {
         *owners = grouped_owners;
         Ok(())
     }
+    /// Resolve the source-to-target placement operator between two representations.
+    ///
+    /// # Errors
+    ///
+    /// The operator or axis frames are missing, unsupported or invalid.
     fn relationship_transform(&self, operator: u64, first: u64, second: u64) -> Result<Transform> {
         let record = named_record(self.entities, operator, "ITEM_DEFINED_TRANSFORMATION")?
             .ok_or("STEP supports axis-based item-defined assembly transformations only")?;
@@ -940,6 +1084,11 @@ impl<'a> Assembly<'a> {
         // frames to common units before mapping the source frame to target.
         Ok(target.then(inverse_frame(origin)))
     }
+    /// Expand assembly roots using cached, tessellated item geometry.
+    ///
+    /// # Errors
+    ///
+    /// Expansion encounters invalid references, missing geometry, cycles or occurrence/triangle limits.
     fn render(&self, meshes: &HashMap<u64, Scene>) -> Result<Scene> {
         let mut expansion = Expansion {
             meshes,
@@ -957,6 +1106,11 @@ impl<'a> Assembly<'a> {
         expansion.scene.validate()?;
         Ok(expansion.scene)
     }
+    /// Expand a representation's items and placed child occurrences recursively.
+    ///
+    /// # Errors
+    ///
+    /// Representations are missing, cyclic or exceed the expansion budget.
     fn expand(
         &self,
         id: u64,
@@ -1010,6 +1164,11 @@ impl<'a> Assembly<'a> {
         expansion.visiting.remove(&id);
         Ok(())
     }
+    /// Append one representation item, mapped item or cached shell under its world placement.
+    ///
+    /// # Errors
+    ///
+    /// The item is missing, unsupported, cyclic or exceeds expansion/geometry limits.
     fn append_item(
         &self,
         id: u64,
@@ -1063,6 +1222,15 @@ impl<'a> Assembly<'a> {
     }
 }
 
+/// Parse Part 21 entities, tessellate required shells and instantiate assembly geometry.
+///
+/// # Errors
+///
+/// Syntax, entity dependencies, CAD surfaces, placements or preview limits fail validation.
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keep the format record dispatch, validation and its resource checks together without changing geometry evaluation."
+)]
 fn parse(text: &str) -> Result<Scene> {
     check_nesting(text)?;
     let exchange =
@@ -1172,7 +1340,10 @@ fn parse(text: &str) -> Result<Scene> {
                 let (start, end) = edge.curve.parameter_range();
                 let (start, end) = (finite_parameter_bound(start)?, finite_parameter_bound(end)?);
                 for sample in 0..=16 {
-                    include(edge.curve.subs(start + (end - start) * sample as f64 / 16.))?;
+                    include(
+                        edge.curve
+                            .subs(start + (end - start) * f64::from(sample) / 16.),
+                    )?;
                 }
             }
         }
@@ -1340,7 +1511,7 @@ mod tests {
         assert!(scene.positions().all(|p| p.x.abs() <= 1.00001
             && p.y.abs() <= 1.00001
             && p.z >= -1e-6
-            && p.z <= 2.000001));
+            && p.z <= 2.000_001));
     }
 
     #[test]

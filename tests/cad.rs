@@ -1,3 +1,5 @@
+//! Qualification tests for supported CAD solids, triangulation and error handling.
+
 use catwalk::formats;
 use ogeom_core::Tolerances;
 use ogeom_math::{Frame, Point};
@@ -62,7 +64,7 @@ fn all_f3d_iges_and_brep_aliases_render_real_cad_geometry() {
             "{extension}: {}",
             String::from_utf8_lossy(&result.stderr)
         );
-        assert!(result.stderr.is_empty());
+        assert_eq!(result.stderr, [] as [u8; 0]);
         let bytes = fs::read(&output).unwrap();
         let thumbnail = image::load_from_memory(&bytes).unwrap().to_rgba8();
         assert_eq!(thumbnail.dimensions(), (64, 64));

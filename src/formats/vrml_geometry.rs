@@ -1,6 +1,12 @@
 //! VRML97 line sets, terrain and spine-aligned extrusions.
-use super::*;
+use super::{Importer, MAX_ITEMS, Node, axis_rotation, color, error, index_lists, vectors};
+use crate::{
+    Result,
+    formats::transform::Transform,
+    scene::{Line, Vec3},
+};
 
+/// Read optional per-vertex or per-face colors and validate their coordinate count.
 fn colors(node: &Node) -> Result<Option<Vec<[u8; 3]>>> {
     node.single("color")?
         .map(|n| {
@@ -19,11 +25,23 @@ fn colors(node: &Node) -> Result<Option<Vec<[u8; 3]>>> {
         })
         .transpose()
 }
+/// Average a nonempty slice of encoded RGB byte colors.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "Averages of nonempty byte color slices remain within the byte range."
+)]
 fn average(values: &[[u8; 3]]) -> [u8; 3] {
     std::array::from_fn(|i| {
-        (values.iter().map(|c| c[i] as u64).sum::<u64>() / values.len() as u64) as u8
+        (values.iter().map(|c| u64::from(c[i])).sum::<u64>() / values.len() as u64) as u8
     })
 }
+/// Convert a finite nonnegative field count into a bounded index value.
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Dimensions are finite nonnegative integers bounded by twenty million, exactly representable by f64."
+)]
 fn count(node: &Node, name: &str) -> Result<usize> {
     let n = node.scalar(name, 0.)?;
     if n < 0. || n.fract() != 0. || n > MAX_ITEMS as f64 {
@@ -33,6 +51,17 @@ fn count(node: &Node, name: &str) -> Result<usize> {
 }
 
 impl Importer {
+    /// Append indexed VRML line segments with vertex or line colors.
+    ///
+    /// # Errors
+    /// Returns an error for invalid coordinate or color indices, inconsistent color
+    /// bindings, non-finite transformed positions, or exceeded geometry limits.
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "Color indices are validated integral values bounded by twenty million before conversion."
+    )]
     pub(super) fn indexed_lines(
         &mut self,
         node: &Node,
@@ -133,6 +162,15 @@ impl Importer {
         }
         Ok(())
     }
+    /// Triangulate an elevation grid using declared spacing and winding.
+    ///
+    /// # Errors
+    /// Returns an error for invalid dimensions, height counts, colors or spacing,
+    /// non-finite positions, or exceeded geometry limits.
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "Grid coordinates are bounded integral indices within the twenty-million-element budget."
+    )]
     pub(super) fn elevation_grid(
         &mut self,
         node: &Node,
@@ -215,6 +253,15 @@ impl Importer {
         }
         Ok(())
     }
+    /// Triangulate a bounded extrusion along its spine, including requested caps.
+    ///
+    /// # Errors
+    /// Returns an error for incompatible cross-section, spine, scale or orientation
+    /// fields, invalid colors or positions, or exceeded geometry limits.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "The bounded extrusion decoder validates cross sections, spine frames, orientation and caps together."
+    )]
     pub(super) fn extrusion(
         &mut self,
         node: &Node,
@@ -364,6 +411,7 @@ impl Importer {
     }
 }
 
+/// Construct the specified local coordinate frames along an extrusion spine.
 fn spine_frames(spine: &[Vec3]) -> Result<Vec<Transform>> {
     // Coincident spine points share the SCP while their authored orientations remain separate.
     let mut distinct = Vec::new();

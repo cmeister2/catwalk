@@ -1,7 +1,7 @@
 //! Binary FBX is decoded by pure Rust fbxcel; the ASCII front end feeds the
 //! same bounded tree. Transform composition follows Autodesk's documented
 //! pivot chain and three scaling-inheritance modes.
-//! https://help.autodesk.com/cloudhelp/2019/ENU/FBX-Developer-Help/cpp_ref/_transformations_2main_8cxx-example.html
+//! <https://help.autodesk.com/cloudhelp/2019/ENU/FBX-Developer-Help/cpp_ref/_transformations_2main_8cxx-example.html>
 use super::{MAX_INPUT_BYTES, mesh::triangulate_polygon, read_file, transform::Transform};
 use crate::{
     Result,
@@ -20,29 +20,46 @@ use std::{
     path::Path,
 };
 
+/// Maximum decoded scalar values and output geometry elements.
 const MAX_ELEMENTS: usize = 5_000_000;
+/// Maximum binary or ASCII tree nodes.
 const MAX_NODES: usize = 500_000;
+/// Maximum parsed tree and evaluated model hierarchy depth.
 const MAX_DEPTH: usize = 256;
+/// Magic bytes identifying the binary FBX container.
 const MAGIC: &[u8] = b"Kaydara FBX Binary  \0\x1a\0";
 
 #[derive(Debug)]
+/// Common FBX tree node shared by binary and ASCII decoding.
 struct Node {
+    /// FBX record name.
     name: String,
+    /// Typed record property values.
     values: Vec<Value>,
+    /// Nested records in source order.
     children: Vec<Node>,
 }
 impl Node {
+    /// Find the first direct child with a given record name.
     fn child(&self, name: &str) -> Option<&Self> {
         self.children.iter().find(|n| n.name == name)
     }
+    /// Iterate all direct children with a given record name.
     fn children<'a>(&'a self, name: &'a str) -> impl Iterator<Item = &'a Self> {
         self.children.iter().filter(move |n| n.name == name)
     }
+    /// Read the first property as a string when present.
     fn text(&self) -> Option<&str> {
         self.values.first().and_then(Value::get_string)
     }
 }
 
+/// Load binary FBX 7.x or ASCII FBX into a static transformed scene.
+///
+/// # Errors
+/// Returns an error for invalid containers or records, malformed references and
+/// attributes, unsupported transforms or deformations, invalid geometry, or
+/// exceeded input, tree, deformation and geometry budgets.
 pub(super) fn load(path: &Path) -> Result<Scene> {
     let mut bytes = read_file(path)?;
     let tree = if bytes.starts_with(MAGIC) {
@@ -66,6 +83,7 @@ pub(super) fn load(path: &Path) -> Result<Scene> {
     build_scene(&tree)
 }
 
+/// Move one bounded binary decoder subtree into the common import tree.
 fn take_node(tree: &mut Tree, id: NodeId, depth: usize) -> Result<Node> {
     if depth > MAX_DEPTH {
         return Err("FBX tree exceeds 256 levels".into());
@@ -107,12 +125,11 @@ fn preflight_binary(bytes: &[u8]) -> Result<Vec<usize>> {
     let mut offset = 27;
     let mut terminated = false;
     while offset < bytes.len() {
-        match scan.node(offset, 0)? {
-            Some(next) => offset = next,
-            None => {
-                terminated = true;
-                break;
-            }
+        if let Some(next) = scan.node(offset, 0)? {
+            offset = next;
+        } else {
+            terminated = true;
+            break;
         }
     }
     if !terminated {
@@ -120,14 +137,21 @@ fn preflight_binary(bytes: &[u8]) -> Result<Vec<usize>> {
     }
     Ok(scan.opaque_bytes)
 }
+/// Binary header scanner that bounds decoded allocations before tree parsing.
 struct BinaryScan<'a> {
+    /// Complete binary FBX input.
     bytes: &'a [u8],
+    /// Whether node headers use the FBX 7.5 64-bit field layout.
     wide: bool,
+    /// Number of scanned nodes.
     nodes: usize,
+    /// Aggregate bytes of decoded property data.
     decoded: u64,
+    /// Offsets of opaque byte-array tags requiring compatibility normalization.
     opaque_bytes: Vec<usize>,
 }
 impl BinaryScan<'_> {
+    /// Read a bounded little-endian 32- or 64-bit header field.
     fn uint(&self, offset: usize, wide: bool) -> Result<u64> {
         let len = if wide { 8 } else { 4 };
         let bytes = self
@@ -140,6 +164,11 @@ impl BinaryScan<'_> {
             u32::from_le_bytes(bytes.try_into()?).into()
         })
     }
+    /// Scan a node and its property allocations, returning the next record offset.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "The bounded binary record scanner validates headers, properties and child ranges as one state machine."
+    )]
     fn node(&mut self, offset: usize, depth: usize) -> Result<Option<usize>> {
         if depth > MAX_DEPTH {
             return Err("FBX tree exceeds 256 levels".into());
@@ -250,23 +279,42 @@ impl BinaryScan<'_> {
 }
 
 #[derive(Debug, Clone)]
+/// Token in the ASCII FBX syntax.
 enum Token {
+    /// Unquoted identifier or number.
     Word(String),
+    /// Quoted string with decoded escapes.
     Text(String),
+    /// Record name and property separator.
     Colon,
+    /// Property separator.
     Comma,
+    /// Opening child-record brace.
     Open,
+    /// Closing child-record brace.
     Close,
+    /// Array count prefix.
     Star,
+    /// Line break terminating a record's property list.
     Newline,
 }
+/// Bounded parser for the ASCII FBX tree representation.
 struct Ascii {
+    /// Lexical input tokens.
     tokens: Vec<Token>,
+    /// Index of the next unread token.
     cursor: usize,
+    /// Number of parsed tree nodes.
     nodes: usize,
+    /// Number of parsed property values.
     values: usize,
 }
 impl Ascii {
+    /// Tokenize bounded ASCII records, quoted strings and structural punctuation.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "The bounded ASCII tokenizer keeps quoting, escapes and punctuation handling together."
+    )]
     fn new(text: &str) -> Result<Self> {
         let bytes = text.as_bytes();
         let mut i = 0;
@@ -371,6 +419,7 @@ impl Ascii {
             values: 0,
         })
     }
+    /// Parse the ASCII root records and require complete input consumption.
     fn parse(mut self) -> Result<Node> {
         let children = self.children(0, false)?;
         if self.cursor != self.tokens.len() {
@@ -382,11 +431,13 @@ impl Ascii {
             children,
         })
     }
+    /// Skip line breaks between records or array values.
     fn skip_lines(&mut self) {
         while matches!(self.tokens.get(self.cursor), Some(Token::Newline)) {
             self.cursor += 1;
         }
     }
+    /// Parse records until a closing brace or the top-level end of input.
     fn children(&mut self, depth: usize, closed: bool) -> Result<Vec<Node>> {
         if depth > MAX_DEPTH {
             return Err("FBX ASCII tree exceeds 256 levels".into());
@@ -406,6 +457,7 @@ impl Ascii {
         }
         Ok(nodes)
     }
+    /// Parse a named record with properties and optional nested children.
     fn node(&mut self, depth: usize) -> Result<Node> {
         self.nodes += 1;
         if self.nodes > MAX_NODES {
@@ -488,10 +540,14 @@ impl Ascii {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+/// FBX object reference in modern integer or legacy named form.
 enum Id {
+    /// Modern numeric object ID.
     Number(i64),
+    /// Legacy named object ID.
     Name(String),
 }
+/// Decode an integer or legacy string property as an object ID.
 fn id(v: &Value) -> Result<Id> {
     match v {
         Value::I64(v) => Ok(Id::Number(*v)),
@@ -500,6 +556,11 @@ fn id(v: &Value) -> Result<Id> {
         _ => Err("FBX object IDs must be integers or legacy names".into()),
     }
 }
+/// Convert a numeric property to a finite double-precision scalar.
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "FBX i64 numeric properties intentionally convert to the common f64 geometry representation."
+)]
 fn scalar(v: &Value) -> Result<f64> {
     let n = match v {
         Value::Bool(v) => f64::from(*v),
@@ -515,6 +576,7 @@ fn scalar(v: &Value) -> Result<f64> {
     }
     Ok(n)
 }
+/// Require a signed integer property without float coercion.
 fn integer(v: &Value) -> Result<i64> {
     match v {
         Value::I64(v) => Ok(*v),
@@ -523,6 +585,11 @@ fn integer(v: &Value) -> Result<i64> {
         _ => Err("FBX expected an integer".into()),
     }
 }
+/// Read a numeric array from binary properties or an ASCII array child.
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "FBX i64 numeric properties intentionally convert to the common f64 geometry representation."
+)]
 fn array(node: &Node) -> Result<Vec<f64>> {
     if let Some(a) = node.child("a") {
         let values = a.values.iter().map(scalar).collect::<Result<Vec<_>>>()?;
@@ -542,6 +609,7 @@ fn array(node: &Node) -> Result<Vec<f64>> {
         values => values.iter().map(scalar).collect(),
     }
 }
+/// Read an integer array and validate any declared ASCII array count.
 fn int_array(node: &Node) -> Result<Vec<i64>> {
     if let Some(a) = node.child("a") {
         let values = a.values.iter().map(integer).collect::<Result<Vec<_>>>()?;
@@ -560,8 +628,10 @@ fn int_array(node: &Node) -> Result<Vec<i64>> {
 }
 
 #[derive(Clone, Default)]
+/// Named property slices collected from modern or legacy property blocks.
 struct Properties<'a>(HashMap<&'a str, &'a [Value]>);
 impl<'a> Properties<'a> {
+    /// Overlay named property values from a record's property blocks.
     fn add(&mut self, node: &'a Node) {
         for block in node
             .children
@@ -584,6 +654,7 @@ impl<'a> Properties<'a> {
             }
         }
     }
+    /// Read exactly one numeric named property or its omitted default.
     fn num(&self, name: &str, default: f64) -> Result<f64> {
         match self.0.get(name) {
             Some([v]) => scalar(v),
@@ -591,6 +662,7 @@ impl<'a> Properties<'a> {
             _ => Err(format!("FBX property {name} needs one numeric value").into()),
         }
     }
+    /// Read exactly three numeric named property components or their omitted default.
     fn vec(&self, name: &str, default: Vec3) -> Result<Vec3> {
         match self.0.get(name) {
             Some([x, y, z]) => Ok(Vec3::new(scalar(x)?, scalar(y)?, scalar(z)?)),
@@ -599,6 +671,7 @@ impl<'a> Properties<'a> {
         }
     }
 }
+/// Collect class defaults from matching property templates.
 fn defaults<'a>(root: &'a Node, class: &str) -> Properties<'a> {
     let mut properties = Properties::default();
     if let Some(definitions) = root.child("Definitions") {
@@ -613,6 +686,7 @@ fn defaults<'a>(root: &'a Node, class: &str) -> Properties<'a> {
     }
     properties
 }
+/// Create a local translation matrix.
 fn translation(v: Vec3) -> Transform {
     Transform([
         [1., 0., 0., 0.],
@@ -621,6 +695,7 @@ fn translation(v: Vec3) -> Transform {
         [v.x, v.y, v.z, 1.],
     ])
 }
+/// Create a signed axis scale matrix.
 fn scale(v: Vec3) -> Transform {
     Transform([
         [v.x, 0., 0., 0.],
@@ -629,6 +704,7 @@ fn scale(v: Vec3) -> Transform {
         [0., 0., 0., 1.],
     ])
 }
+/// Invert an orthonormal rotation by transposing its linear part.
 fn inverse_rotation(m: Transform) -> Transform {
     let mut inverse = Transform::IDENTITY;
     for c in 0..3 {
@@ -638,6 +714,7 @@ fn inverse_rotation(m: Transform) -> Transform {
     }
     inverse
 }
+/// Compose Euler rotations in one of the six supported FBX rotation orders.
 fn rotation(v: Vec3, order: f64) -> Result<Transform> {
     let [x, y, z] = [v.x.to_radians(), v.y.to_radians(), v.z.to_radians()];
     let (sx, cx) = x.sin_cos();
@@ -680,6 +757,7 @@ fn rotation(v: Vec3, order: f64) -> Result<Transform> {
         .into_iter()
         .fold(Transform::IDENTITY, |m, i| axes[i].then(m)))
 }
+/// Require every component of a composed transform to remain finite.
 fn finite(m: Transform) -> Result<Transform> {
     if m.0.iter().flatten().any(|v| !v.is_finite()) {
         return Err("FBX transform exceeds finite numeric range".into());
@@ -687,21 +765,34 @@ fn finite(m: Transform) -> Result<Transform> {
     Ok(m)
 }
 
+/// Resolved model object, connections, property defaults and first-key animation.
 struct Model<'a> {
+    /// Original model record.
     node: &'a Node,
+    /// Default and authored model property values.
     properties: Properties<'a>,
+    /// Optional parent model reference.
     parent: Option<Id>,
+    /// Connected mesh geometry references.
     geometries: Vec<Id>,
+    /// Connected material references in binding order.
     materials: Vec<Id>,
+    /// First-key animated local translation, rotation or scale values.
     animated: HashMap<String, Vec3>,
 }
 #[derive(Clone, Copy)]
+/// Evaluated inherited state for one model.
 struct ModelState {
+    /// Composed model world matrix.
     world: Transform,
+    /// Composed world rotation retained for scaling inheritance.
     rotation: Transform,
+    /// Local authored or animated scale.
     local_scale: Vec3,
+    /// Inherited or authored hidden state.
     hidden: bool,
 }
+/// Evaluate the model pivot chain, rotation, scale and separate geometry offsets.
 fn local_transform(model: &Model<'_>) -> Result<(Transform, Transform, Vec3, Transform)> {
     let p = &model.properties;
     let zero = Vec3::default();
@@ -744,6 +835,7 @@ fn local_transform(model: &Model<'_>) -> Result<(Transform, Transform, Vec3, Tra
     Ok((finite(local)?, rotate, s, finite(geometric)?))
 }
 
+/// Resolve parent states and compose one model under its scaling inheritance mode.
 fn model_state(
     id: &Id,
     models: &HashMap<Id, Model<'_>>,
@@ -808,6 +900,7 @@ fn model_state(
     cache.insert(id.clone(), state);
     Ok(state)
 }
+/// Extract a normalized rotation basis from a composed matrix.
 fn extract_rotation(m: Transform) -> Option<Transform> {
     let x = Vec3::new(m.0[0][0], m.0[0][1], m.0[0][2]);
     let y = Vec3::new(m.0[1][0], m.0[1][1], m.0[1][2]);
@@ -829,12 +922,18 @@ fn extract_rotation(m: Transform) -> Option<Transform> {
     ]))
 }
 
+/// One object or property connection from the FBX connection table.
 struct Connection {
+    /// Connection kind, such as object-object or object-property.
     kind: String,
+    /// Source object reference.
     child: Id,
+    /// Destination object reference.
     parent: Id,
+    /// Optional destination property name.
     property: Option<String>,
 }
+/// Decode modern or legacy connection records and require supported layouts.
 fn connections(root: &Node) -> Result<Vec<Connection>> {
     let mut connections = Vec::new();
     if let Some(block) = root.child("Connections") {
@@ -863,6 +962,7 @@ fn connections(root: &Node) -> Result<Vec<Connection>> {
     }
     Ok(connections)
 }
+/// Read an object record's trailing subtype token or its omitted empty default.
 fn subtype(node: &Node) -> &str {
     node.values.last().and_then(Value::get_string).unwrap_or("")
 }
@@ -871,14 +971,19 @@ fn subtype(node: &Node) -> &str {
 /// `TransformLink` stores the bone's world bind matrix. The SDK reconstructs
 /// the mesh bind matrix from their product. Use the authored relative matrix
 /// together with the evaluated bone world matrix, including mesh geometry
-/// offsets exactly once. See ufbx's read/update_initial_clusters routines.
+/// offsets exactly once. See ufbx's `read/update_initial_clusters` routines.
 struct Deformation<'a> {
+    /// Deformer and target-shape records indexed by object ID.
     nodes: HashMap<Id, &'a Node>,
+    /// Validated child connections indexed by parent deformer or geometry.
     children: HashMap<Id, Vec<Id>>,
+    /// First-key animated blend-shape channel weights indexed by object ID.
     animated: HashMap<Id, f64>,
+    /// Whether exporter metadata identifies Blender's bind-matrix convention.
     blender: bool,
 }
 impl<'a> Deformation<'a> {
+    /// Validate deformation connections and initialize first-key blend-shape state.
     fn new(
         root: &Node,
         objects: &'a Node,
@@ -967,6 +1072,7 @@ impl<'a> Deformation<'a> {
             blender,
         })
     }
+    /// Return connected deformation children or an empty slice.
     fn children_of(&self, key: &Id) -> &[Id] {
         self.children
             .get(key)
@@ -974,6 +1080,7 @@ impl<'a> Deformation<'a> {
             .unwrap_or_default()
     }
     #[allow(clippy::too_many_arguments)]
+    /// Decode mesh positions, apply blend shapes, then evaluate the connected skin.
     fn positions(
         &self,
         key: &Id,
@@ -1023,6 +1130,11 @@ impl<'a> Deformation<'a> {
         }
         Ok(positions)
     }
+    /// Evaluate one blend-shape channel, including progressive target weights.
+    #[allow(
+        clippy::float_cmp,
+        reason = "Progressive shape thresholds require exact duplicate detection before interpolation."
+    )]
     fn blend(&self, key: &Id, positions: &mut [Vec3], work: &mut usize) -> Result<()> {
         let node = self.nodes[key];
         let mut properties = Properties::default();
@@ -1113,6 +1225,7 @@ impl<'a> Deformation<'a> {
         Ok(())
     }
     #[allow(clippy::too_many_arguments)]
+    /// Apply linear or rigid skin clusters using evaluated bones and authored bind matrices.
     fn skin(
         &self,
         key: &Id,
@@ -1196,6 +1309,7 @@ impl<'a> Deformation<'a> {
         Ok(())
     }
 }
+/// Charge deformation operations and enforce the aggregate work budget.
 fn deformation_work(work: &mut usize, extra: usize) -> Result<()> {
     *work = work
         .checked_add(extra)
@@ -1207,6 +1321,7 @@ fn deformation_work(work: &mut usize, extra: usize) -> Result<()> {
     }
     Ok(())
 }
+/// Read an optional named string child field or its omitted default.
 fn field_text<'a>(node: &'a Node, name: &str, default: &'a str) -> Result<&'a str> {
     match node.child(name) {
         None => Ok(default),
@@ -1216,6 +1331,11 @@ fn field_text<'a>(node: &'a Node, name: &str, default: &'a str) -> Result<&'a st
         },
     }
 }
+/// Read a cluster's finite affine 4-by-4 bind matrix.
+#[allow(
+    clippy::float_cmp,
+    reason = "Affine matrix row entries must match the exact format constants."
+)]
 fn cluster_matrix(node: &Node, name: &str) -> Result<Transform> {
     let values = array(
         node.child(name)
@@ -1233,6 +1353,7 @@ fn cluster_matrix(node: &Node, name: &str) -> Result<Transform> {
     }
     Ok(matrix)
 }
+/// Invert a nonsingular finite affine matrix for bind-space reconstruction.
 fn inverse_affine(matrix: Transform) -> Result<Transform> {
     finite(matrix)?;
     let norm = matrix.0[..3]
@@ -1268,6 +1389,7 @@ fn inverse_affine(matrix: Transform) -> Result<Transform> {
     inverse.0[3] = [t.x, t.y, t.z, 1.];
     finite(inverse)
 }
+/// Resolve first-key animation values for connected blend-shape channels.
 fn first_morph_animation(
     objects: &Node,
     links: &[Connection],
@@ -1352,6 +1474,11 @@ fn first_morph_animation(
     Ok(animated)
 }
 
+/// Resolve objects, model hierarchy, materials and deformations into a static scene.
+#[allow(
+    clippy::too_many_lines,
+    reason = "Object resolution, connection validation and bounded model/deformation setup form one import pipeline."
+)]
 fn build_scene(root: &Node) -> Result<Scene> {
     let objects = root
         .child("Objects")
@@ -1508,6 +1635,13 @@ fn build_scene(root: &Node) -> Result<Scene> {
     Ok(scene)
 }
 
+/// Convert the declared FBX axis and coordinate-sign settings into the renderer basis.
+#[allow(
+    clippy::float_cmp,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Axis tags and signs are exact discrete values; tags are validated as 0, 1 or 2 before index conversion."
+)]
 fn axis_basis(root: &Node) -> Result<Transform> {
     let mut p = Properties::default();
     if let Some(settings) = root.child("GlobalSettings") {
@@ -1545,6 +1679,7 @@ fn axis_basis(root: &Node) -> Result<Transform> {
     Ok(Transform(matrix))
 }
 
+/// Resolve first-key animation curves for model translation, rotation and scale.
 fn first_animation(
     objects: &Node,
     links: &[Connection],
@@ -1629,25 +1764,38 @@ fn first_animation(
     Ok(())
 }
 
+/// Clamp a linear color component and encode it as an sRGB byte.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Color components are clamped and rounded to the inclusive byte range before conversion."
+)]
 fn srgb(v: f64) -> u8 {
     let v = v.clamp(0., 1.);
-    ((if v <= 0.0031308 {
+    ((if v <= 0.003_130_8 {
         v * 12.92
     } else {
         1.055 * v.powf(1. / 2.4) - 0.055
     }) * 255.)
         .round() as u8
 }
+/// Encode a linear RGB vector as display bytes.
 fn rgb(v: Vec3) -> [u8; 3] {
     [srgb(v.x), srgb(v.y), srgb(v.z)]
 }
+/// Mesh color layer with mapping and optional indexed references.
 struct ColorLayer {
+    /// Decoded linear RGB values.
     values: Vec<Vec3>,
+    /// Optional indirection indices into color values.
     indices: Vec<i64>,
+    /// Geometry mapping token selecting point, face or corner colors.
     mapping: String,
+    /// Direct or indexed color reference mode.
     reference: String,
 }
 impl ColorLayer {
+    /// Read and validate a supported mesh color layer.
     fn new(node: &Node) -> Result<Option<Self>> {
         let Some(layer) = node.child("LayerElementColor") else {
             return Ok(None);
@@ -1684,7 +1832,7 @@ impl ColorLayer {
         // Exporters can author IndexToDirect while omitting ColorIndex.
         // Assimp's importer uses the direct mapping for that combination.
         if reference == "IndexToDirect" && layer.child("ColorIndex").is_none() {
-            reference = "Direct".to_owned();
+            "Direct".clone_into(&mut reference);
         }
         if !matches!(
             mapping.as_str(),
@@ -1705,6 +1853,11 @@ impl ColorLayer {
             reference,
         }))
     }
+    /// Resolve a color value for a polygon vertex under its mapping and reference modes.
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "The divisor is a bounded polygon vertex count, exactly representable by f64."
+    )]
     fn color(&self, vertices: &[usize], face: usize, corner: usize) -> Result<Vec3> {
         let mut sum = Vec3::default();
         for (offset, &vertex) in vertices.iter().enumerate() {
@@ -1731,11 +1884,15 @@ impl ColorLayer {
         Ok(sum / (vertices.len() as f64))
     }
 }
+/// Per-polygon values or one shared value for a mesh layer.
 struct FaceLayer<T> {
+    /// Decoded layer values in mapping order.
     values: Vec<T>,
+    /// Whether the first value applies to every polygon.
     all_same: bool,
 }
 impl<T: Copy> FaceLayer<T> {
+    /// Resolve a polygon value, enforcing the layer array bounds.
     fn get(&self, face: usize) -> Result<T> {
         self.values
             .get(if self.all_same { 0 } else { face })
@@ -1743,6 +1900,7 @@ impl<T: Copy> FaceLayer<T> {
             .ok_or_else(|| "FBX polygon layer has too few values".into())
     }
 }
+/// Read an optional polygon layer and require all-same or by-polygon mapping.
 fn face_layer<'a>(
     node: &'a Node,
     kind: &str,
@@ -1767,6 +1925,7 @@ fn face_layer<'a>(
         all_same,
     )))
 }
+/// Read a mesh's finite three-component local vertex positions.
 fn mesh_positions(node: &Node) -> Result<Vec<Vec3>> {
     let vertices = array(
         node.child("Vertices")
@@ -1782,6 +1941,12 @@ fn mesh_positions(node: &Node) -> Result<Vec<Vec3>> {
         .map(|v| Vec3::new(v[0], v[1], v[2]))
         .collect())
 }
+/// Triangulate indexed mesh polygons and append transformed, colored faces.
+#[allow(
+    clippy::too_many_lines,
+    clippy::float_cmp,
+    reason = "The bounded polygon decoder keeps mapping and material validation together; hole flags require exact 0 or 1 tags."
+)]
 fn append_mesh(
     node: &Node,
     positions: Vec<Vec3>,
@@ -1901,6 +2066,7 @@ fn append_mesh(
     }
     Ok(())
 }
+/// Enforce the aggregate output geometry budget.
 fn geometry_limit(scene: &Scene) -> Result<()> {
     if scene
         .triangles
@@ -2414,6 +2580,10 @@ mod tests {
         );
     }
 
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "The authored binary test fixture has small property arrays, names and record offsets."
+    )]
     fn binary_array(code: u8, length: usize, raw: &[u8], compressed: bool) -> Vec<u8> {
         let payload = if compressed {
             let mut encoder =
@@ -2430,6 +2600,10 @@ mod tests {
         bytes.extend_from_slice(&payload);
         bytes
     }
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "The authored binary test fixture has small property arrays, names and record offsets."
+    )]
     fn binary_value(value: &Value, compressed: bool) -> Vec<u8> {
         match value {
             Value::I64(v) => {
@@ -2463,6 +2637,10 @@ mod tests {
             _ => panic!("unexpected fixture value"),
         }
     }
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "The authored binary test fixture has small property arrays, names and record offsets."
+    )]
     fn binary_node(node: &Node, bytes: &mut Vec<u8>, wide: bool, compressed: bool) {
         let offset = bytes.len();
         let n = if wide { 8 } else { 4 };
@@ -2492,6 +2670,10 @@ mod tests {
             }
         }
     }
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "The authored binary test fixture has small property arrays, names and record offsets."
+    )]
     fn binary_fixture(version: u32, compressed: bool) -> Vec<u8> {
         let text = ascii(
             &format!(
@@ -2552,6 +2734,10 @@ mod tests {
 
     #[test]
     fn binary_skin_and_morph_deformations_use_real_decoded_arrays() {
+        #[allow(
+            clippy::cast_possible_truncation,
+            reason = "The authored binary test fixture has small property arrays, names and record offsets."
+        )]
         fn arrays(node: &mut Node) {
             if matches!(
                 node.name.as_str(),

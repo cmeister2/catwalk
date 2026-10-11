@@ -11,23 +11,36 @@ use std::{
 };
 
 #[path = "inventor_bitmap.rs"]
+/// Normalize supported Inventor BMP and DIB clipboard images.
 mod bitmap;
 #[path = "inventor_container.rs"]
+/// Preflight compound-file metadata and enforce cooperative I/O limits.
 mod container;
 
+/// Maximum size of an Inventor compound file admitted for preview extraction.
 const MAX_SOURCE: u64 = 512 * 1024 * 1024;
+/// Maximum selected property stream, clipboard image and normalized PNG size.
 const MAX_BYTES: usize = 8 * 1024 * 1024;
+/// Maximum uncompressed image buffer size during normalization.
 const MAX_DECODED: usize = 64 * 1024 * 1024;
+/// PNG signature used to recognize and reconstruct normalized image streams.
 const PNG_SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
+/// Inventor native summary property-set identifier, preferred over the legacy summary.
 const NATIVE_SUMMARY: [u8; 16] = [
     0x39, 0xde, 0x38, 0x3d, 0x88, 0x05, 0x14, 0x4c, 0xbb, 0x37, 0x18, 0xf4, 0xd5, 0xdd, 0x31, 0xc7,
 ];
+/// Standard legacy summary property-set identifier accepted as a fallback.
 const LEGACY_SUMMARY: [u8; 16] = [
     0xe0, 0x85, 0x9f, 0xf2, 0xf9, 0x4f, 0x68, 0x10, 0xab, 0x91, 0x08, 0x00, 0x2b, 0x27, 0xb3, 0xd9,
 ];
 
 /// Produce the common RGBA8 thumbnail representation from a qualified carrier.
 /// Use [`extract_png`] to preserve a native PNG's original bit depth.
+///
+/// # Errors
+///
+/// Returns an error if carrier extraction fails or the extracted PNG cannot be decoded within
+/// the image allocation and dimension limits.
 pub fn extract(path: &Path) -> Result<Option<RgbaImage>> {
     let Some(png) = extract_png(path)? else {
         return Ok(None);
@@ -45,6 +58,11 @@ pub fn extract(path: &Path) -> Result<Option<RgbaImage>> {
 /// Extract a normalized PNG, preserving native PNG precision and supported alpha.
 /// Missing or unsupported carriers return `None`; malformed data returns an
 /// error. A usable legacy summary can rescue an unusable native summary.
+///
+/// # Errors
+///
+/// Returns an error for I/O failures, malformed compound-file metadata or qualified image data,
+/// or exceeded extraction budgets when no candidate summary supplies a usable thumbnail.
 pub fn extract_png(path: &Path) -> Result<Option<Vec<u8>>> {
     let started = Instant::now();
     let file = File::open(path)?;
@@ -124,6 +142,7 @@ pub fn extract_png(path: &Path) -> Result<Option<Vec<u8>>> {
     }
 }
 
+/// Enforce the cooperative five-second budget between container and image parsing steps.
 fn check_time(started: Instant) -> Result<()> {
     if started.elapsed() > Duration::from_secs(5) {
         return Err("Inventor processing exceeded the cooperative five-second budget".into());
@@ -131,19 +150,23 @@ fn check_time(started: Instant) -> Result<()> {
     Ok(())
 }
 
+/// Return a byte range with checked offset arithmetic and a truncation error.
 fn bytes(data: &[u8], offset: usize, count: usize) -> Result<&[u8]> {
     data.get(offset..offset.checked_add(count).ok_or("Inventor range overflow")?)
         .ok_or_else(|| "truncated Inventor metadata or image".into())
 }
 
+/// Read a checked little-endian 16-bit property or bitmap integer.
 fn u16_le(data: &[u8], offset: usize) -> Result<u16> {
     Ok(u16::from_le_bytes(bytes(data, offset, 2)?.try_into()?))
 }
 
+/// Read a checked little-endian 32-bit property or bitmap integer.
 fn u32_le(data: &[u8], offset: usize) -> Result<u32> {
     Ok(u32::from_le_bytes(bytes(data, offset, 4)?.try_into()?))
 }
 
+/// Identify a qualified root property set and rank native summaries before legacy summaries.
 fn summary_priority(data: &[u8]) -> Result<Option<usize>> {
     if data.len() < 48 || u16_le(data, 0)? != 0xfffe {
         return Ok(None);
@@ -165,6 +188,7 @@ fn summary_priority(data: &[u8]) -> Result<Option<usize>> {
     Ok(priority)
 }
 
+/// Validate property tables and return the optional thumbnail clipboard value.
 fn property_thumbnail(data: &[u8], started: Instant) -> Result<Option<&[u8]>> {
     if ![0, 1].contains(&u16_le(data, 2)?) {
         return Err("invalid Inventor property-set version".into());
@@ -225,6 +249,7 @@ fn property_thumbnail(data: &[u8], started: Instant) -> Result<Option<&[u8]>> {
     Ok(None)
 }
 
+/// Dispatch qualified clipboard PNG, BMP or DIB data and enforce normalized-output limits.
 fn normalize(clipboard: &[u8], started: Instant) -> Result<Option<Vec<u8>>> {
     if clipboard.len() > MAX_BYTES {
         return Err("Inventor clipboard image exceeds the 8 MiB limit".into());
@@ -261,6 +286,7 @@ fn normalize(clipboard: &[u8], started: Instant) -> Result<Option<Vec<u8>>> {
     Ok(output)
 }
 
+/// Require nonempty dimensions within the Inventor extraction axis and pixel limits.
 fn dimensions(width: usize, height: usize) -> Result<()> {
     if width == 0
         || height == 0
@@ -273,6 +299,12 @@ fn dimensions(width: usize, height: usize) -> Result<()> {
     Ok(())
 }
 
+/// Append one bounded PNG chunk with its length and freshly computed CRC.
+#[allow(
+    clippy::trivially_copy_pass_by_ref,
+    clippy::cast_possible_truncation,
+    reason = "Chunk callers provide borrowed byte-array tags and payloads bounded to eight MiB"
+)]
 fn append_chunk(output: &mut Vec<u8>, kind: &[u8; 4], data: &[u8]) {
     output.extend_from_slice(&(data.len() as u32).to_be_bytes());
     output.extend_from_slice(kind);
@@ -285,6 +317,11 @@ fn append_chunk(output: &mut Vec<u8>, kind: &[u8; 4], data: &[u8]) {
 
 // Preserve validated critical pixel chunks and tRNS, stripping other metadata.
 // The scanline validation is independent of decoder palette error recovery.
+/// Validate PNG structure and scanlines while preserving critical pixel chunks and transparency.
+#[allow(
+    clippy::too_many_lines,
+    reason = "PNG chunk order and validation share state across the complete parsing loop"
+)]
 fn normalize_png(data: &[u8], started: Instant) -> Result<Option<Vec<u8>>> {
     let mut offset = 8;
     let mut seen = HashSet::new();
@@ -406,6 +443,12 @@ fn normalize_png(data: &[u8], started: Instant) -> Result<Option<Vec<u8>>> {
     Err("truncated Inventor PNG".into())
 }
 
+/// Check exact deflate length, row filters and indexed-color palette references.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::manual_midpoint,
+    reason = "Inflation is bounded to 64 MiB; PNG filter averages and packed palette masks fit a byte"
+)]
 fn validate_scanlines(
     compressed: &[u8],
     header: (usize, usize, u8, u8, usize),
@@ -493,4 +536,8 @@ fn validate_scanlines(
 
 #[cfg(test)]
 #[path = "inventor_tests.rs"]
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "Test builders serialize small fixed carrier fields and deliberately quantize their sample colors"
+)]
 mod tests;

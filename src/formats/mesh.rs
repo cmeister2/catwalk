@@ -7,9 +7,16 @@ use crate::{Error, Result};
 
 // Limit declared counts before allocating. This is deliberately much larger than
 // a useful thumbnail, but bounds corrupt-file allocations.
+/// Maximum geometry or attribute item count accepted by this importer.
 const MAX_ITEMS: usize = 20_000_000;
+/// Maximum vertices permitted in one polygon before triangulation.
 const MAX_FACE_VERTICES: usize = 100_000;
 
+/// Read a bounded mesh or point-cloud file and decode its preview geometry.
+///
+/// # Errors
+/// Returns an error for unreadable input, unsupported/malformed geometry, invalid indices,
+/// nonfinite coordinates or importer size limits.
 pub fn load(path: &Path) -> Result<Scene> {
     let bytes = super::read_file(path)?;
     let ext = path
@@ -37,12 +44,15 @@ pub fn load(path: &Path) -> Result<Scene> {
     Ok(scene)
 }
 
+/// Decode a mesh text payload as UTF-8.
 fn text(bytes: &[u8]) -> Result<&str> {
     Ok(std::str::from_utf8(bytes)?)
 }
+/// Convert a mesh parser diagnostic into the shared error type.
 fn err(message: impl Into<String>) -> Error {
     message.into().into()
 }
+/// Parse and reject nonfinite mesh coordinates or material values.
 fn finite(s: &str) -> Result<f64> {
     let n: f64 = s.parse()?;
     if !n.is_finite() {
@@ -50,6 +60,7 @@ fn finite(s: &str) -> Result<f64> {
     }
     Ok(n)
 }
+/// Parse a nonnegative mesh record count within the item limit.
 fn count(s: &str) -> Result<usize> {
     let n: usize = s.parse()?;
     if n > MAX_ITEMS {
@@ -57,6 +68,7 @@ fn count(s: &str) -> Result<usize> {
     }
     Ok(n)
 }
+/// Require three coordinate fields and decode one finite vertex.
 fn vertex(values: &[&str]) -> Result<Vec3> {
     if values.len() < 3 {
         return Err(err("expected three coordinates"));
@@ -67,6 +79,12 @@ fn vertex(values: &[&str]) -> Result<Vec3> {
         finite(values[2])?,
     ))
 }
+/// Convert declared normalized or byte-range color channels to rounded RGB.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Channels are finite, clamped to the byte range and intentionally rounded before quantization."
+)]
 fn rgb(values: &[&str], normalized: bool) -> Result<[u8; 3]> {
     if values.len() < 3 {
         return Err(err("expected three color channels"));
@@ -82,6 +100,14 @@ fn rgb(values: &[&str], normalized: bool) -> Result<[u8; 3]> {
 
 /// Triangulate a simple planar polygon by projecting onto its dominant plane.
 /// Convex fans alone are incorrect for common concave OBJ/OFF/PLY faces.
+///
+/// # Errors
+/// Returns an error for too few or too many vertices, nonfinite coordinates,
+/// degenerate/self-intersecting boundaries or failed triangulation.
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keep polygon validation, dominant-plane projection and triangulation consistency checks together."
+)]
 pub(crate) fn triangulate_polygon(vertices: &[Vec3]) -> Result<Vec<[Vec3; 3]>> {
     if vertices.len() < 3 {
         return Err(err("face has fewer than three vertices"));
@@ -202,6 +228,7 @@ pub(crate) fn triangulate_polygon(vertices: &[Vec3]) -> Result<Vec<[Vec3; 3]>> {
     Ok(triangles)
 }
 
+/// Resolve polygon indices, triangulate the face and append it within the item budget.
 fn add_face(
     scene: &mut Scene,
     indices: &[usize],
@@ -223,6 +250,7 @@ fn add_face(
     Ok(())
 }
 
+/// Decode an exact-length binary STL or structurally validated ASCII facets.
 fn stl(bytes: &[u8]) -> Result<Scene> {
     // Binary headers may begin with "solid"; the count and record length take
     // precedence over that unreliable discriminator.
@@ -233,7 +261,7 @@ fn stl(bytes: &[u8]) -> Result<Scene> {
                 return Err(err("too many STL triangles"));
             }
             let mut scene = Scene::default();
-            for record in bytes[84..].as_chunks::<50>().0.iter() {
+            for record in bytes[84..].as_chunks::<50>().0 {
                 let mut vertices = [Vec3::default(); 3];
                 for (i, p) in vertices.iter_mut().enumerate() {
                     let offset = 12 + i * 12;
@@ -294,14 +322,19 @@ fn stl(bytes: &[u8]) -> Result<Scene> {
     Ok(scene)
 }
 
+/// Resolve positive or relative-negative OBJ vertex references with optional slash fields.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    reason = "The caller bounds vertex counts to MAX_ITEMS; signed OBJ references are range checked before native indexing."
+)]
 fn obj_vertex_index(word: &str, vertex_count: usize) -> Result<usize> {
     let index: i64 = word.split('/').next().unwrap_or("").parse()?;
-    let index = if index > 0 {
-        index - 1
-    } else if index < 0 {
-        vertex_count as i64 + index
-    } else {
-        return Err(err("OBJ indices are one-based; zero is invalid"));
+    let index = match index.cmp(&0) {
+        std::cmp::Ordering::Greater => index - 1,
+        std::cmp::Ordering::Less => vertex_count as i64 + index,
+        std::cmp::Ordering::Equal => return Err(err("OBJ indices are one-based; zero is invalid")),
     };
     if index < 0 || index as usize >= vertex_count {
         return Err(err("OBJ index out of bounds"));
@@ -309,6 +342,11 @@ fn obj_vertex_index(word: &str, vertex_count: usize) -> Result<usize> {
     Ok(index as usize)
 }
 
+/// Average available indexed vertex RGB values without allocating an intermediate palette.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "A mean of available byte channels is guaranteed to remain within the byte range."
+)]
 fn indexed_color(indices: &[usize], colors: &[Option<[u8; 3]>]) -> Option<[u8; 3]> {
     let mut sum = [0_u64; 3];
     let mut count = 0_u64;
@@ -324,6 +362,11 @@ fn indexed_color(indices: &[usize], colors: &[Option<[u8; 3]>]) -> Option<[u8; 3
     (count != 0).then(|| sum.map(|value| (value / count) as u8))
 }
 
+/// Decode OBJ polygons, polylines, points, vertex colors and adjacent MTL diffuse colors.
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keep OBJ directives together because they share evolving vertex, material and index state."
+)]
 fn obj(source: &str, directory: &Path) -> Result<Scene> {
     let mut vertices = Vec::new();
     let mut colors = Vec::new();
@@ -407,7 +450,7 @@ fn obj(source: &str, directory: &Path) -> Result<Scene> {
                 Some("curv" | "curv2" | "surf") => {
                     return Err(err("OBJ free-form curves and surfaces are not implemented"));
                 }
-                Some("usemtl") => material = words.get(1).map(|s| s.to_string()),
+                Some("usemtl") => material = words.get(1).map(std::string::ToString::to_string),
                 Some("mtllib") => {
                     for name in &words[1..] {
                         // A missing optional appearance file should not hide geometry.
@@ -424,7 +467,7 @@ fn obj(source: &str, directory: &Path) -> Result<Scene> {
                                     .split_whitespace()
                                     .collect();
                                 if words.first() == Some(&"newmtl") {
-                                    name = words.get(1).map(|s| s.to_string());
+                                    name = words.get(1).map(std::string::ToString::to_string);
                                 } else if words.first() == Some(&"Kd")
                                     && words.len() >= 4
                                     && let (Some(name), Ok(color)) =
@@ -458,6 +501,15 @@ fn obj(source: &str, directory: &Path) -> Result<Scene> {
     Ok(scene)
 }
 
+/// Decode OFF or COFF polygon meshes with checked counts and optional vertex/face colors.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "A mean of byte vertex colors remains within the byte range before conversion."
+)]
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keep OFF/COFF header, vertex and face-count validation in one record traversal."
+)]
 fn off(source: &str) -> Result<Scene> {
     let lines: Vec<Vec<&str>> = source
         .lines()
@@ -546,7 +598,7 @@ fn off(source: &str) -> Result<Scene> {
                 None
             } else {
                 Some(std::array::from_fn(|i| {
-                    (cs.iter().map(|c| c[i] as u64).sum::<u64>() / cs.len() as u64) as u8
+                    (cs.iter().map(|c| u64::from(c[i])).sum::<u64>() / cs.len() as u64) as u8
                 }))
             }
         });
@@ -563,17 +615,27 @@ fn off(source: &str) -> Result<Scene> {
 }
 
 #[derive(Clone, Copy, Debug)]
+/// Supported scalar storage types for the mesh or point-cloud file.
 enum ScalarType {
+    /// Signed eight-bit integer values.
     I8,
+    /// Unsigned eight-bit integer values.
     U8,
+    /// Signed 16-bit integer values.
     I16,
+    /// Unsigned 16-bit integer values.
     U16,
+    /// Signed 32-bit integer values.
     I32,
+    /// Unsigned 32-bit integer values.
     U32,
+    /// IEEE single-precision floating-point values.
     F32,
+    /// IEEE double-precision floating-point values.
     F64,
 }
 impl ScalarType {
+    /// Resolve the supported PLY scalar type names and aliases.
     fn parse(s: &str) -> Result<Self> {
         Ok(match s {
             "char" | "int8" => Self::I8,
@@ -587,6 +649,7 @@ impl ScalarType {
             _ => return Err(err(format!("unsupported PLY scalar type: {s}"))),
         })
     }
+    /// Return the declared PLY scalar byte width.
     fn size(self) -> usize {
         match self {
             Self::I8 | Self::U8 => 1,
@@ -595,31 +658,52 @@ impl ScalarType {
             Self::F64 => 8,
         }
     }
+    /// Identify PLY floating-point storage instead of integer connectivity.
     fn floating(self) -> bool {
         matches!(self, Self::F32 | Self::F64)
     }
 }
 #[derive(Debug)]
+/// One PLY scalar or counted-list property declaration.
 struct PlyProperty {
+    /// Property identifier from the PLY header.
     name: String,
+    /// Scalar type of a value or list item.
     item: ScalarType,
+    /// Scalar type of a list length; absent for a scalar property.
     count: Option<ScalarType>,
 }
 #[derive(Debug)]
+/// Count and ordered properties for one PLY element kind.
 struct PlyElement {
+    /// Element identifier such as vertex, face or edge.
     name: String,
+    /// Declared number of records for this element.
     count: usize,
+    /// Properties in their declared payload order.
     properties: Vec<PlyProperty>,
 }
+/// State for ASCII or endian-selected binary PLY scalar reads.
 enum PlyValues<'a> {
+    /// Whitespace-delimited ASCII scalar values.
     Ascii(std::str::SplitWhitespace<'a>),
+    /// Byte-addressed binary scalar values with a selected byte order.
     Binary {
+        /// Borrowed complete binary scalar payload.
         data: &'a [u8],
+        /// Byte position of the next scalar value.
         cursor: usize,
+        /// Whether binary words use little-endian byte order.
         little: bool,
     },
 }
 impl PlyValues<'_> {
+    /// Read one PLY ASCII or endian-selected binary scalar.
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_precision_loss,
+        reason = "The declared PLY word width bounds packed values; narrowing preserves signed/IEEE bit patterns before f64 decoding."
+    )]
     fn value(&mut self, kind: ScalarType) -> Result<f64> {
         match self {
             Self::Ascii(tokens) => {
@@ -627,13 +711,13 @@ impl PlyValues<'_> {
                     .next()
                     .ok_or_else(|| err("truncated ASCII PLY data"))?;
                 Ok(match kind {
-                    ScalarType::I8 => token.parse::<i8>()? as f64,
-                    ScalarType::U8 => token.parse::<u8>()? as f64,
-                    ScalarType::I16 => token.parse::<i16>()? as f64,
-                    ScalarType::U16 => token.parse::<u16>()? as f64,
-                    ScalarType::I32 => token.parse::<i32>()? as f64,
-                    ScalarType::U32 => token.parse::<u32>()? as f64,
-                    ScalarType::F32 => token.parse::<f32>()? as f64,
+                    ScalarType::I8 => f64::from(token.parse::<i8>()?),
+                    ScalarType::U8 => f64::from(token.parse::<u8>()?),
+                    ScalarType::I16 => f64::from(token.parse::<i16>()?),
+                    ScalarType::U16 => f64::from(token.parse::<u16>()?),
+                    ScalarType::I32 => f64::from(token.parse::<i32>()?),
+                    ScalarType::U32 => f64::from(token.parse::<u32>()?),
+                    ScalarType::F32 => f64::from(token.parse::<f32>()?),
                     ScalarType::F64 => token.parse::<f64>()?,
                 })
             }
@@ -650,21 +734,17 @@ impl PlyValues<'_> {
                     .ok_or_else(|| err("truncated binary PLY data"))?;
                 *cursor = end;
                 let n = match kind.size() {
-                    1 => bytes[0] as u64,
-                    2 => {
-                        (if *little {
-                            u16::from_le_bytes(bytes.try_into()?)
-                        } else {
-                            u16::from_be_bytes(bytes.try_into()?)
-                        }) as u64
-                    }
-                    4 => {
-                        (if *little {
-                            u32::from_le_bytes(bytes.try_into()?)
-                        } else {
-                            u32::from_be_bytes(bytes.try_into()?)
-                        }) as u64
-                    }
+                    1 => u64::from(bytes[0]),
+                    2 => u64::from(if *little {
+                        u16::from_le_bytes(bytes.try_into()?)
+                    } else {
+                        u16::from_be_bytes(bytes.try_into()?)
+                    }),
+                    4 => u64::from(if *little {
+                        u32::from_le_bytes(bytes.try_into()?)
+                    } else {
+                        u32::from_be_bytes(bytes.try_into()?)
+                    }),
                     8 => {
                         if *little {
                             u64::from_le_bytes(bytes.try_into()?)
@@ -675,18 +755,23 @@ impl PlyValues<'_> {
                     _ => unreachable!(),
                 };
                 Ok(match kind {
-                    ScalarType::I8 => n as i8 as f64,
-                    ScalarType::U8 => n as f64,
-                    ScalarType::I16 => n as i16 as f64,
-                    ScalarType::U16 => n as f64,
-                    ScalarType::I32 => n as i32 as f64,
-                    ScalarType::U32 => n as f64,
-                    ScalarType::F32 => f32::from_bits(n as u32) as f64,
+                    ScalarType::I8 => f64::from(n as i8),
+                    ScalarType::U8 | ScalarType::U16 | ScalarType::U32 => n as f64,
+                    ScalarType::I16 => f64::from(n as i16),
+                    ScalarType::I32 => f64::from(n as i32),
+                    ScalarType::F32 => f64::from(f32::from_bits(n as u32)),
                     ScalarType::F64 => f64::from_bits(n),
                 })
             }
         }
     }
+    /// Read a bounded nonnegative PLY list length.
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_precision_loss,
+        clippy::cast_sign_loss,
+        reason = "PLY list lengths are integral, nonnegative and bounded to MAX_FACE_VERTICES before native conversion."
+    )]
     fn list_count(&mut self, kind: ScalarType) -> Result<usize> {
         let value = self.value(kind)?;
         if value < 0.0 || value > MAX_ITEMS as f64 || kind.floating() {
@@ -696,6 +781,17 @@ impl PlyValues<'_> {
     }
 }
 
+/// Decode PLY polygons, standard edge records and colored point fallback.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    reason = "PLY counts and indices are range checked; color channels are clamped and intentionally rounded into bytes."
+)]
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keep ordered PLY element/property decoding together to preserve cross-element edge and face references."
+)]
 fn ply(bytes: &[u8]) -> Result<Scene> {
     let mut cursor = 0;
     let mut format = None;
@@ -939,6 +1035,7 @@ fn ply(bytes: &[u8]) -> Result<Scene> {
     Ok(scene)
 }
 
+/// Split nonempty noncomment point-cloud lines into whitespace fields.
 fn point_lines(source: &str) -> Vec<Vec<&str>> {
     source
         .lines()
@@ -952,6 +1049,7 @@ fn point_lines(source: &str) -> Vec<Vec<&str>> {
         .filter(|values: &Vec<_>| !values.is_empty())
         .collect()
 }
+/// Decode optional-count PTS records with finite positions and optional RGB.
 fn pts(source: &str) -> Result<Scene> {
     let mut lines = point_lines(source);
     let expected = if lines.first().is_some_and(|line| line.len() == 1) {
@@ -984,6 +1082,7 @@ fn pts(source: &str) -> Result<Scene> {
         ..Scene::default()
     })
 }
+/// Decode gridded PTX scans and apply their scanner transforms.
 fn ptx(source: &str) -> Result<Scene> {
     let lines = point_lines(source);
     let mut cursor = 0;
@@ -1008,7 +1107,7 @@ fn ptx(source: &str) -> Result<Scene> {
         // Scanner position and three axes are metadata; the following matrix
         // maps scan-local coordinates into the model's coordinate system.
         for _ in 0..4 {
-            vertex(next(&mut cursor)?)?;
+            let _ = vertex(next(&mut cursor)?)?;
         }
         let mut transform = [[0.0; 4]; 4];
         for row in &mut transform {
@@ -1051,12 +1150,13 @@ fn ptx(source: &str) -> Result<Scene> {
     Ok(scene)
 }
 
+/// Sample fixed-layout Gaussian-splat centers and stored RGB values.
 fn splat(bytes: &[u8]) -> Result<Scene> {
     if !bytes.len().is_multiple_of(32) || bytes.len() / 32 > MAX_ITEMS {
         return Err(err("invalid splat file length (expected 32-byte records)"));
     }
     let mut points = Vec::with_capacity(bytes.len() / 32);
-    for record in bytes.as_chunks::<32>().0.iter() {
+    for record in bytes.as_chunks::<32>().0 {
         let position = Vec3::from(std::array::from_fn(|i| {
             let j = i * 4;
             f32::from_le_bytes([record[j], record[j + 1], record[j + 2], record[j + 3]])
@@ -1077,39 +1177,59 @@ fn splat(bytes: &[u8]) -> Result<Scene> {
 }
 
 #[derive(Debug)]
+/// PCD field layout in interleaved and field-major payloads.
 struct PcdField {
+    /// Named semantic from the PCD FIELDS header.
     name: String,
+    /// Signed, unsigned or floating-point TYPE code.
     kind: char,
+    /// Stored byte width of each component.
     size: usize,
+    /// Components per point record for this field.
     count: usize,
+    /// Byte offset in an interleaved point record.
     offset: usize,
+    /// Byte offset of this field in a decompressed field-major payload.
     block_offset: usize,
 }
+/// Decode one binary PCD field while retaining packed integer color bits.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_precision_loss,
+    reason = "PCD word widths are validated; casts preserve packed signed/IEEE bit patterns and intentionally approximate 64-bit scalar values."
+)]
 fn pcd_numeric(bytes: &[u8], kind: char) -> Result<(f64, u64)> {
     let bits = match bytes.len() {
-        1 => bytes[0] as u64,
-        2 => u16::from_le_bytes(bytes.try_into()?) as u64,
-        4 => u32::from_le_bytes(bytes.try_into()?) as u64,
+        1 => u64::from(bytes[0]),
+        2 => u64::from(u16::from_le_bytes(bytes.try_into()?)),
+        4 => u64::from(u32::from_le_bytes(bytes.try_into()?)),
         8 => u64::from_le_bytes(bytes.try_into()?),
         _ => return Err(err("unsupported PCD field size")),
     };
     let value = match (kind, bytes.len()) {
-        ('F', 4) => f32::from_bits(bits as u32) as f64,
+        ('F', 4) => f64::from(f32::from_bits(bits as u32)),
         ('F', 8) => f64::from_bits(bits),
-        ('I', 1) => bits as i8 as f64,
-        ('I', 2) => bits as i16 as f64,
-        ('I', 4) => bits as i32 as f64,
+        ('I', 1) => f64::from(bits as i8),
+        ('I', 2) => f64::from(bits as i16),
+        ('I', 4) => f64::from(bits as i32),
         ('I', 8) => bits as i64 as f64,
         ('U', _) => bits as f64,
         _ => return Err(err("unsupported PCD field type")),
     };
     Ok((value, bits))
 }
+/// Decode an ASCII PCD field with its declared type, width and raw packed bits.
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    reason = "Signed PCD values retain their two-complement packed color bits; scalar previews intentionally use f64."
+)]
 fn pcd_ascii(token: &str, field: &PcdField) -> Result<(f64, u64)> {
     Ok(match (field.kind, field.size) {
         ('F', 4) => {
             let n = token.parse::<f32>()?;
-            (n as f64, n.to_bits() as u64)
+            (f64::from(n), u64::from(n.to_bits()))
         }
         ('F', 8) => {
             let n = token.parse::<f64>()?;
@@ -1117,15 +1237,15 @@ fn pcd_ascii(token: &str, field: &PcdField) -> Result<(f64, u64)> {
         }
         ('I', 1) => {
             let n = token.parse::<i8>()?;
-            (n as f64, n as u8 as u64)
+            (f64::from(n), u64::from(n as u8))
         }
         ('I', 2) => {
             let n = token.parse::<i16>()?;
-            (n as f64, n as u16 as u64)
+            (f64::from(n), u64::from(n as u16))
         }
         ('I', 4) => {
             let n = token.parse::<i32>()?;
-            (n as f64, n as u32 as u64)
+            (f64::from(n), u64::from(n as u32))
         }
         ('I', 8) => {
             let n = token.parse::<i64>()?;
@@ -1133,15 +1253,15 @@ fn pcd_ascii(token: &str, field: &PcdField) -> Result<(f64, u64)> {
         }
         ('U', 1) => {
             let n = token.parse::<u8>()?;
-            (n as f64, n as u64)
+            (f64::from(n), u64::from(n))
         }
         ('U', 2) => {
             let n = token.parse::<u16>()?;
-            (n as f64, n as u64)
+            (f64::from(n), u64::from(n))
         }
         ('U', 4) => {
             let n = token.parse::<u32>()?;
-            (n as f64, n as u64)
+            (f64::from(n), u64::from(n))
         }
         ('U', 8) => {
             let n = token.parse::<u64>()?;
@@ -1150,6 +1270,7 @@ fn pcd_ascii(token: &str, field: &PcdField) -> Result<(f64, u64)> {
         _ => return Err(err("unsupported PCD field type or size")),
     })
 }
+/// Expand bounded PCD LZF literals and overlapping backward copies.
 fn lzf(input: &[u8], expected: usize) -> Result<Vec<u8>> {
     let mut output = Vec::with_capacity(expected.min(1_048_576));
     let mut cursor = 0;
@@ -1201,6 +1322,16 @@ fn lzf(input: &[u8], expected: usize) -> Result<Vec<u8>> {
     }
     Ok(output)
 }
+/// Decode PCD ASCII, binary or field-major LZF-compressed records using named fields.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "PCD counts and field layouts are checked; packed RGB extracts low bytes and normalized colors intentionally quantize to bytes."
+)]
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keep PCD header/layout validation and encoding dispatch together with the same field-offset table."
+)]
 fn pcd(bytes: &[u8]) -> Result<Scene> {
     let mut header: HashMap<String, Vec<String>> = HashMap::new();
     let mut cursor = 0;
@@ -1415,7 +1546,7 @@ fn pcd(bytes: &[u8]) -> Result<Scene> {
                     "y" => position.y = value,
                     "z" => position.z = value,
                     "rgb" | "rgba" => {
-                        color = Some([(bits >> 16) as u8, (bits >> 8) as u8, bits as u8])
+                        color = Some([(bits >> 16) as u8, (bits >> 8) as u8, bits as u8]);
                     }
                     "r" | "red" => channels[0] = Some(value),
                     "g" | "green" => channels[1] = Some(value),
@@ -1718,7 +1849,10 @@ mod tests {
         let expected = pcd(&ascii).unwrap();
         assert_eq!(expected.points[0].color, Some([255, 0, 0]));
         let mut binary = pcd_header("binary");
-        for (p, color) in [([1_f32, 2., 3.], 0xff0000_u32), ([4., 5., 6.], 0x00ff00)] {
+        for (p, color) in [
+            ([1_f32, 2., 3.], 0x00ff_0000_u32),
+            ([4., 5., 6.], 0x0000_ff00),
+        ] {
             for x in p {
                 binary.extend_from_slice(&x.to_le_bytes());
             }
@@ -1735,7 +1869,7 @@ mod tests {
                 field_major.extend_from_slice(&x.to_le_bytes());
             }
         }
-        for color in [0xff0000_u32, 0x00ff00] {
+        for color in [0x00ff_0000_u32, 0x0000_ff00] {
             field_major.extend_from_slice(&color.to_le_bytes());
         }
         // LZF supports a literal run of up to 32 bytes.

@@ -1,17 +1,23 @@
 //! LEPCC v1 decoding from Esri's published byte-stream specification.
-//! Algorithms checked against https://github.com/Esri/lepcc (Apache-2.0).
+//! Algorithms checked against <https://github.com/Esri/lepcc> (Apache-2.0).
 use crate::scene::Vec3;
 use crate::{Error, Result};
 use std::collections::HashMap;
+/// Maximum declared point count accepted before geometry allocation.
 const MAX_POINTS: usize = 5_000_000;
+/// Convert an importer diagnostic into the shared error type.
 fn error(message: impl Into<String>) -> Error {
     message.into().into()
 }
+/// Bounds-checked byte cursor for LEPCC compressed point-cloud attribute records.
 struct Bytes<'a> {
+    /// Borrowed complete input byte stream.
     data: &'a [u8],
+    /// Byte position of the next unread record.
     offset: usize,
 }
 impl<'a> Bytes<'a> {
+    /// Consume the requested bytes, rejecting offset overflow and truncated records.
     fn take(&mut self, n: usize) -> Result<&'a [u8]> {
         let end = self
             .offset
@@ -24,18 +30,23 @@ impl<'a> Bytes<'a> {
         self.offset = end;
         Ok(value)
     }
+    /// Read one unsigned byte from the current record.
     fn u8(&mut self) -> Result<u8> {
         Ok(self.take(1)?[0])
     }
+    /// Read one unsigned 16-bit word from the current record.
     fn u16(&mut self) -> Result<u16> {
         Ok(u16::from_le_bytes(self.take(2)?.try_into()?))
     }
+    /// Read one unsigned 32-bit word from the current record.
     fn u32(&mut self) -> Result<u32> {
         Ok(u32::from_le_bytes(self.take(4)?.try_into()?))
     }
+    /// Read one unsigned 64-bit word from the current record.
     fn u64(&mut self) -> Result<u64> {
         Ok(u64::from_le_bytes(self.take(8)?.try_into()?))
     }
+    /// Read one finite double-precision number from the current record.
     fn f64(&mut self) -> Result<f64> {
         let n = f64::from_le_bytes(self.take(8)?.try_into()?);
         if !n.is_finite() {
@@ -43,9 +54,11 @@ impl<'a> Bytes<'a> {
         }
         Ok(n)
     }
+    /// Read three consecutive finite components into a geometry vector.
     fn vector(&mut self) -> Result<Vec3> {
         Ok(Vec3::new(self.f64()?, self.f64()?, self.f64()?))
     }
+    /// Reject unused records after the expected object payload.
     fn done(&self) -> Result<()> {
         if self.offset != self.data.len() {
             return Err(error("trailing bytes after LEPCC payload"));
@@ -53,12 +66,13 @@ impl<'a> Bytes<'a> {
         Ok(())
     }
 }
+/// Compute the LEPCC byte checksum used to validate the compressed payload.
 fn checksum(data: &[u8]) -> u32 {
     let mut one = 0xffff_u32;
     let mut two = 0xffff_u32;
     for block in data.chunks(718) {
         for word in block.chunks(2) {
-            one += ((word[0] as u32) << 8) + word.get(1).copied().unwrap_or(0) as u32;
+            one += (u32::from(word[0]) << 8) + u32::from(word.get(1).copied().unwrap_or(0));
             two += one;
         }
         one = (one & 0xffff) + (one >> 16);
@@ -68,6 +82,7 @@ fn checksum(data: &[u8]) -> u32 {
     two = (two & 0xffff) + (two >> 16);
     (two << 16) | one
 }
+/// Validate LEPCC signature, version, declared byte length and checksum.
 fn header<'a>(data: &'a [u8], signature: &[u8; 10]) -> Result<Bytes<'a>> {
     let mut reader = Bytes { data, offset: 0 };
     if reader.take(10)? != signature || reader.u16()? != 1 {
@@ -83,6 +98,7 @@ fn header<'a>(data: &'a [u8], signature: &[u8; 10]) -> Result<Bytes<'a>> {
     }
     Ok(reader)
 }
+/// Read a fixed number of unsigned values from an LSB-first packed-bit stream.
 fn packed(reader: &mut Bytes<'_>, count: usize, bits: usize) -> Result<Vec<u32>> {
     if count > MAX_POINTS || bits > 32 {
         return Err(error("LEPCC packed-array limit exceeded"));
@@ -96,12 +112,13 @@ fn packed(reader: &mut Bytes<'_>, count: usize, bits: usize) -> Result<Vec<u32>>
         let mut value = 0_u32;
         for bit in 0..bits {
             let position = index * bits + bit;
-            value |= (((bytes[position / 8] >> (position % 8)) & 1) as u32) << bit;
+            value |= u32::from((bytes[position / 8] >> (position % 8)) & 1) << bit;
         }
         values.push(value);
     }
     Ok(values)
 }
+/// Decode the LEPCC bit-stuffing header and its bounded packed values.
 fn bitstuff(reader: &mut Bytes<'_>) -> Result<Vec<u32>> {
     let flags = reader.u8()?;
     let width = match flags >> 6 {
@@ -124,7 +141,7 @@ fn bitstuff(reader: &mut Bytes<'_>) -> Result<Vec<u32>> {
         .ok_or_else(|| error("invalid LEPCC lookup size"))? as usize;
     let mut table = vec![0];
     table.extend(packed(reader, n, bits)?);
-    let index_bits = (usize::BITS - n.leading_zeros()) as usize;
+    let index_bits = n.bit_width() as usize;
     packed(reader, count, index_bits)?
         .into_iter()
         .map(|i| {
@@ -135,6 +152,7 @@ fn bitstuff(reader: &mut Bytes<'_>) -> Result<Vec<u32>> {
         })
         .collect()
 }
+/// Expand the counted sequence of LEPCC bit-stuffed segments.
 fn segments(reader: &mut Bytes<'_>) -> Result<Vec<u32>> {
     let minimums = bitstuff(reader)?;
     let mut data = Vec::new();
@@ -157,6 +175,15 @@ fn segments(reader: &mut Bytes<'_>) -> Result<Vec<u32>> {
     }
     Ok(data)
 }
+/// Expand compressed row/column coordinate deltas and apply the stored origin and error scale.
+///
+/// # Errors
+/// Returns an error for invalid LEPCC headers/checksums, malformed coordinate delta segments,
+/// nonfinite placement/error values, count mismatches or point limits.
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "Stored integer coordinate deltas intentionally become f64 positions when applying the quantization/error scale."
+)]
 pub(super) fn xyz(data: &[u8]) -> Result<Vec<Vec3>> {
     let mut reader = header(data, b"LEPCC     ")?;
     let minimum = reader.vector()?;
@@ -182,7 +209,7 @@ pub(super) fn xyz(data: &[u8]) -> Result<Vec<Vec3>> {
     if ys.len() != rows.len()
         || xs.len() != count
         || zs.len() != count
-        || rows.iter().map(|&n| n as u64).sum::<u64>() != count as u64
+        || rows.iter().map(|&n| u64::from(n)).sum::<u64>() != count as u64
     {
         return Err(error("LEPCC row/coordinate counts differ from header"));
     }
@@ -192,17 +219,17 @@ pub(super) fn xyz(data: &[u8]) -> Result<Vec<Vec3>> {
     let mut index = 0;
     for (dy, n) in ys.into_iter().zip(rows) {
         y = y
-            .checked_add(dy as u64)
+            .checked_add(u64::from(dy))
             .ok_or_else(|| error("LEPCC Y delta overflow"))?;
         let mut x = 0_u64;
         for _ in 0..n {
             x = x
-                .checked_add(xs[index] as u64)
+                .checked_add(u64::from(xs[index]))
                 .ok_or_else(|| error("LEPCC X delta overflow"))?;
             let point = Vec3::new(
                 (minimum.x + x as f64 * 2. * error_bound.x).min(maximum.x),
                 (minimum.y + y as f64 * 2. * error_bound.y).min(maximum.y),
-                (minimum.z + zs[index] as f64 * 2. * error_bound.z).min(maximum.z),
+                (minimum.z + f64::from(zs[index]) * 2. * error_bound.z).min(maximum.z),
             );
             if !point.is_finite() {
                 return Err(error("LEPCC reconstructed point overflow"));
@@ -213,11 +240,15 @@ pub(super) fn xyz(data: &[u8]) -> Result<Vec<Vec3>> {
     }
     Ok(points)
 }
+/// LSB-first reader over LEPCC Huffman code words.
 struct WordBits<'a> {
+    /// Borrowed little-endian Huffman word stream.
     data: &'a [u8],
+    /// Position of the next bit to consume.
     position: usize,
 }
 impl WordBits<'_> {
+    /// Read the requested Huffman bits across little-endian word boundaries.
     fn read(&mut self, n: usize) -> Result<u32> {
         if n > 32 {
             return Err(error("LEPCC Huffman code exceeds 32 bits"));
@@ -237,10 +268,12 @@ impl WordBits<'_> {
         }
         Ok(value)
     }
+    /// Return the number of source bytes touched by the bit reader.
     fn consumed(&self) -> usize {
         self.position.div_ceil(32) * 4
     }
 }
+/// Decode a bounded Huffman palette-index stream from its canonical code table.
 fn huffman(reader: &mut Bytes<'_>, count: usize) -> Result<Vec<usize>> {
     let version = reader.u32()?;
     let size = reader.u32()? as usize;
@@ -303,6 +336,11 @@ fn huffman(reader: &mut Bytes<'_>, count: usize) -> Result<Vec<usize>> {
     reader.take(stream_size)?;
     Ok(values)
 }
+/// Decode raw, constant or Huffman-paletted LEPCC RGB while checking the expected point count.
+///
+/// # Errors
+/// Returns an error for invalid LEPCC headers/checksums, unsupported color encodings, malformed
+/// palette/index streams or a mismatch with the expected point count.
 pub(super) fn rgb(data: &[u8], expected: usize) -> Result<Vec<[u8; 3]>> {
     let mut reader = header(data, b"ClusterRGB")?;
     let count = reader.u32()? as usize;
@@ -320,7 +358,7 @@ pub(super) fn rgb(data: &[u8], expected: usize) -> Result<Vec<[u8; 3]>> {
     }
     let mut colors = Vec::with_capacity(count);
     if palette_size == 0 {
-        for bytes in reader.take(count * 3)?.as_chunks::<3>().0.iter() {
+        for bytes in reader.take(count * 3)?.as_chunks::<3>().0 {
             colors.push(*bytes);
         }
     } else {

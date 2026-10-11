@@ -16,4 +16,23 @@ These packages are unmodified upstream resources, renamed only for the corpus. T
 
 Upstream package metadata is retained verbatim. The Bambu/Orca packages contain production-extension paths; this is real slicer output, distinct from the clearly labeled authored XML regression packages. Public producer provenance is recorded at exact source commits. These representative files do not establish compatibility with every slicer version, project extension or material type.
 
+## glTF appearances and repeated instances
+
+Authored texture fixtures use deterministic Rust-encoded 8-by-8 PNGs with four distinguishable colors. The external glTF and buffer-view GLB cube cases contain the same positions, normalized vertex colors, UVs, normals and nonidentity node transform. The UV1 case intentionally supplies a constant incorrect UV0 stream and three samplers with repeat, mirrored repeat and clamp wrapping. The alpha-mask case has four alpha levels and a separate opaque backing surface; the translucent case submits geometry in an order different from depth order. GPU-instancing cases use three actual placed instances, including ancestor/node transforms and omitted rotation/scale defaults. These cases are authored controls, distinct from upstream assets below.
+
+The following Khronos sample resources are retained byte for byte at [glTF-Sample-Assets commit `edc7c9e67c639d230715049ee31f9a96a6babbbe`](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/edc7c9e67c639d230715049ee31f9a96a6babbbe). Only corpus input filenames have been changed; image and buffer references keep their original names. Models were created by Ed Mackey for Analytical Graphics, Inc. Texture Coordinate Test is copyright 2017 and its model/texture files are CC0-1.0; Texture Settings Test is copyright 2017 and Alpha Blend Mode Test is copyright 2018, both CC-BY-4.0. Original license notices and metadata are retained for every model, alongside complete `KHRONOS-CC0-LICENSE.txt` and `KHRONOS-CC-BY-LICENSE.txt` texts. Upstream metadocumentation is CC-BY-4.0. No source resource has been edited or repackaged. Preview PNGs are generated renderings of those separately licensed model assets.
+
+| Corpus resource | Original upstream path | SHA-256 |
+| --- | --- | --- |
+| `gltf-khronos-texture-coordinates.gltf` | `Models/TextureCoordinateTest/glTF/TextureCoordinateTest.gltf` | `424f373518a4451c612d952290dc3aa217de8f17008c4030e378da0d582ab1da` |
+| `TextureCoordinateTest.bin` | `Models/TextureCoordinateTest/glTF/TextureCoordinateTest.bin` | `428cf36c6431d3252568295ea9bd5301813c96bb9cdd0f141de7a40a5abc9858` |
+| `TextureCoordinateTemplate.png` | `Models/TextureCoordinateTest/glTF/TextureCoordinateTemplate.png` | `07728c817d1f3d0b86d1fcc4610ed5ae4cf5064cb7f245bb891e84fb95fe28c8` |
+| `glb-khronos-texture-settings.glb` | `Models/TextureSettingsTest/glTF-Binary/TextureSettingsTest.glb` | `44013a0602cbbdcaf703905ed47cc6b6fb49f067d7de0e1a0a568a5bbfa9d769` |
+| `glb-khronos-alpha-modes.glb` | `Models/AlphaBlendModeTest/glTF-Binary/AlphaBlendModeTest.glb` | `37c3577d143071b42dd46e9d942b157837eb25c6340112171d7faecaa987b14e` |
+| `glb-khronos-simple-instancing.glb` | `Models/SimpleInstancing/glTF-Binary/SimpleInstancing.glb` | `1c9425627481346a8c226118f7000db7cd7f80198e9f54331f8b664d16726f3f` |
+
+Simple Instancing was created by Marco Hutter with JglTF. Its model is CC0-1.0 and its upstream metadocumentation is CC-BY-4.0; the original notice and metadata are retained. It contains 125 cubes with varying translations, rotations and scales, and declares GPU instancing as used without making it required. The Texture Coordinate Test model-specific license now identifies CC0-1.0, while its historical embedded copyright string still names CC-BY-4.0. Both are preserved, with full attribution and both license texts.
+
+These assets exercise real exported UVs, embedded/external PNG and JPEG decoding, material alpha modes, sampler wrapping, sidedness and repeated instances. They do not establish full physically based rendering, metallic/roughness/normal texture support, or compatibility with every glTF extension.
+
 All referenced corpus resources remain inside this directory. Regeneration uses Rust and retained fixture bytes, without external executables or native codecs.

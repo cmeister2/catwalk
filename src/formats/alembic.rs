@@ -1,7 +1,7 @@
 //! Static Alembic schemas, read from bounded Ogawa groups or pure Rust HDF5.
 //! Storage and transform conventions follow the primary Alembic sources:
-//! https://github.com/alembic/alembic/tree/master/lib/Alembic/AbcCoreOgawa
-//! https://github.com/alembic/alembic/tree/master/lib/Alembic/AbcGeom
+//! <https://github.com/alembic/alembic/tree/master/lib/Alembic/AbcCoreOgawa>
+//! <https://github.com/alembic/alembic/tree/master/lib/Alembic/AbcGeom>
 use super::{MAX_INPUT_BYTES, mesh::triangulate_polygon, read_file, transform::Transform};
 use crate::{
     Result,
@@ -13,45 +13,69 @@ use std::{
     path::Path,
 };
 
+/// High bit identifying an Ogawa data pointer rather than a group pointer.
 const DATA: u64 = 1 << 63;
+/// Maximum decoded numeric components and geometry elements.
 const MAX_ITEMS: usize = 5_000_000;
+/// Maximum archive objects and properties traversed.
 const MAX_NODES: usize = 100_000;
+/// Maximum archive hierarchy and instance expansion depth.
 const MAX_DEPTH: usize = 256;
+/// Alembic schema metadata decoded from semicolon-separated key-value pairs.
 type Metadata = HashMap<String, String>;
 
 #[derive(Default)]
+/// A compound or sampled Alembic property.
 struct Property {
+    /// Property name within its owning compound.
     name: String,
+    /// Schema and interpretation metadata.
     metadata: Metadata,
+    /// Nested properties for a compound property.
     children: Vec<Property>,
+    /// First authored sample for a scalar or array property.
     sample: Option<Sample>,
 }
+/// Raw first-sample data with its declared component encoding.
 struct Sample {
+    /// Alembic POD component type tag.
     pod: u8,
+    /// Number of scalar components in each logical sample element.
     extent: usize,
+    /// Whether numeric components use big-endian byte order.
     big_endian: bool,
+    /// Raw component bytes, bounded by the aggregate decoding budget.
     bytes: Vec<u8>,
 }
+/// One archive object with its properties and nested objects.
 struct Object {
+    /// Absolute object path used to resolve archive instances.
     path: String,
+    /// Object schema and instance metadata.
     metadata: Metadata,
+    /// Root compound property for this object.
     properties: Property,
+    /// Child objects in archive order.
     children: Vec<Object>,
 }
 impl Property {
+    /// Find a direct property child by name.
     fn child(&self, name: &str) -> Option<&Self> {
         self.children.iter().find(|p| p.name == name)
     }
+    /// Decode the property's first sample as finite numeric components.
     fn numbers(&self) -> Result<Vec<f64>> {
         self.sample
             .as_ref()
             .ok_or_else(|| format!("Alembic property {} has no sample", self.name).into())
             .and_then(Sample::numbers)
     }
+    /// Require a named property child needed by the current schema.
     fn required(&self, name: &str) -> Result<&Self> {
         self.child(name)
             .ok_or_else(|| format!("Alembic schema is missing {name}").into())
     }
+    /// Read a single UTF-8 string sample, allowing one trailing terminator.
     fn text(&self) -> Result<&str> {
         let sample = self
             .sample
@@ -68,6 +92,13 @@ impl Property {
     }
 }
 impl Sample {
+    /// Decode aligned POD numeric bytes according to their declared width and byte order.
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        reason = "POD width bounds each bit reinterpretation; integer samples intentionally convert to the common f64 geometry representation."
+    )]
     fn numbers(&self) -> Result<Vec<f64>> {
         let width = pod_width(self.pod)?;
         if !self.bytes.len().is_multiple_of(width) {
@@ -108,6 +139,7 @@ impl Sample {
             .collect()
     }
 }
+/// Decode a binary16 component, preserving non-finite encodings for later rejection.
 fn half(bits: u16) -> f64 {
     let sign = if bits & 0x8000 == 0 { 1. } else { -1. };
     let e = (bits >> 10) & 31;
@@ -124,17 +156,17 @@ fn half(bits: u16) -> f64 {
         _ => (1. + f64::from(m) / 1024.) * 2f64.powi(i32::from(e) - 15),
     }
 }
+/// Return the component byte width for a supported Alembic POD type.
 fn pod_width(pod: u8) -> Result<usize> {
     match pod {
-        0..=2 => Ok(1),
+        0..=2 | 12 => Ok(1),
         3 | 4 | 9 => Ok(2),
-        5 | 6 | 10 => Ok(4),
+        5 | 6 | 10 | 13 => Ok(4),
         7 | 8 | 11 => Ok(8),
-        12 => Ok(1),
-        13 => Ok(4),
         _ => Err("unknown Alembic POD type".into()),
     }
 }
+/// Parse bounded UTF-8 schema metadata into key-value pairs.
 fn metadata(bytes: &[u8]) -> Result<Metadata> {
     if bytes.len() > 1_048_576 {
         return Err("Alembic metadata exceeds one MiB".into());
@@ -147,11 +179,15 @@ fn metadata(bytes: &[u8]) -> Result<Metadata> {
         .collect())
 }
 #[derive(Default)]
+/// Aggregate archive traversal and first-sample allocation counters.
 struct Budget {
+    /// Objects and properties visited so far.
     nodes: usize,
+    /// Total first-sample bytes decoded across the archive.
     decoded: u64,
 }
 impl Budget {
+    /// Charge one hierarchy item and enforce node and depth limits.
     fn node(&mut self, depth: usize) -> Result<()> {
         self.nodes += 1;
         if depth > MAX_DEPTH || self.nodes > MAX_NODES {
@@ -159,6 +195,7 @@ impl Budget {
         }
         Ok(())
     }
+    /// Charge sample bytes and enforce the aggregate input-size budget.
     fn bytes(&mut self, count: usize) -> Result<()> {
         self.decoded = self
             .decoded
@@ -171,6 +208,12 @@ impl Budget {
     }
 }
 
+/// Load first-sample static geometry from an Ogawa or HDF5 Alembic archive.
+///
+/// # Errors
+/// Returns an error for unsupported storage versions or schemas, malformed records,
+/// missing samples or references, invalid transforms or geometry, and exceeded
+/// archive, sample or geometry budgets.
 pub(super) fn load(path: &Path) -> Result<Scene> {
     let bytes = read_file(path)?;
     let root = if bytes.starts_with(b"Ogawa") {
@@ -183,14 +226,19 @@ pub(super) fn load(path: &Path) -> Result<Scene> {
     build_scene(&root)
 }
 
+/// Bounds-checked cursor over one Alembic metadata or property record.
 struct Bytes<'a> {
+    /// Bytes belonging to the current record.
     data: &'a [u8],
+    /// Offset of the next unread byte.
     offset: usize,
 }
 impl<'a> Bytes<'a> {
+    /// Create a cursor positioned at the start of a record.
     fn new(data: &'a [u8]) -> Self {
         Self { data, offset: 0 }
     }
+    /// Consume an exact byte count, rejecting overflow or truncated records.
     fn take(&mut self, n: usize) -> Result<&'a [u8]> {
         let end = self
             .offset
@@ -203,6 +251,7 @@ impl<'a> Bytes<'a> {
         self.offset = end;
         Ok(data)
     }
+    /// Read a little-endian unsigned value of the specified byte width.
     fn uint(&mut self, n: usize) -> Result<u64> {
         Ok(self
             .take(n)?
@@ -210,6 +259,7 @@ impl<'a> Bytes<'a> {
             .rev()
             .fold(0, |v, &b| (v << 8) | u64::from(b)))
     }
+    /// Read a property size encoded using its one-, two- or four-byte size hint.
     fn hint(&mut self, hint: u32) -> Result<usize> {
         let width = match hint {
             0 => 1,
@@ -219,6 +269,7 @@ impl<'a> Bytes<'a> {
         };
         Ok(usize::try_from(self.uint(width)?)?)
     }
+    /// Read a nonempty bounded UTF-8 name without embedded terminators.
     fn name(&mut self, len: usize) -> Result<String> {
         if len == 0 || len > 4096 {
             return Err("invalid Alembic name length".into());
@@ -229,18 +280,30 @@ impl<'a> Bytes<'a> {
         }
         Ok(name.to_owned())
     }
+    /// Whether the record has no remaining bytes.
     fn done(&self) -> bool {
         self.offset == self.data.len()
     }
 }
+/// Bounded Ogawa archive reader with metadata references and cycle detection.
 struct Ogawa<'a> {
+    /// Complete archive bytes.
     bytes: &'a [u8],
+    /// Metadata entries indexed by their archive references.
     metadata: Vec<Metadata>,
+    /// Root archive group child pointers.
     archive: Vec<u64>,
+    /// Shared hierarchy and sample byte budgets.
     budget: Budget,
+    /// Active group pointers for detecting recursive archive records.
     active: HashSet<u64>,
 }
 impl<'a> Ogawa<'a> {
+    /// Validate the Ogawa header and initialize archive and metadata groups.
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "Metadata entry sizes are read from exactly one byte."
+    )]
     fn new(bytes: &'a [u8]) -> Result<Self> {
         if bytes.get(..8) != Some(b"Ogawa\xff\0\x01") {
             return Err("unsupported or unclosed Ogawa archive; expected version1".into());
@@ -276,6 +339,7 @@ impl<'a> Ogawa<'a> {
         reader.archive = archive;
         Ok(reader)
     }
+    /// Read a bounded Ogawa group's child pointers.
     fn group(&self, pointer: u64) -> Result<Vec<u64>> {
         if pointer & DATA != 0 {
             return Err("Alembic data record used as a group".into());
@@ -297,6 +361,7 @@ impl<'a> Ogawa<'a> {
             Bytes::new(b.take(count.checked_mul(8).ok_or("Ogawa group size overflow")?)?);
         (0..count).map(|_| entries.uint(8)).collect()
     }
+    /// Read a tagged Ogawa data block within the input bounds.
     fn data(&self, pointer: u64) -> Result<&'a [u8]> {
         if pointer & DATA == 0 {
             return Err("Alembic group record used as data".into());
@@ -313,6 +378,7 @@ impl<'a> Ogawa<'a> {
         let size = usize::try_from(b.uint(8)?)?;
         b.take(size)
     }
+    /// Resolve metadata either inline or by archive metadata index.
     fn meta(&self, index: usize, b: &mut Bytes<'_>, hint: Option<u32>) -> Result<Metadata> {
         if index == 255 {
             let size = if let Some(h) = hint {
@@ -328,10 +394,16 @@ impl<'a> Ogawa<'a> {
                 .ok_or_else(|| "invalid Alembic metadata index".into())
         }
     }
+    /// Decode the archive's top-level object hierarchy.
     fn root(mut self) -> Result<Object> {
         let md = metadata(self.data(self.archive[3])?)?;
         self.object(self.archive[2], "/".to_owned(), md, 0)
     }
+    /// Decode an Ogawa object, its properties and child objects with cycle detection.
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "Metadata indices are read from exactly one byte."
+    )]
     fn object(&mut self, pointer: u64, path: String, md: Metadata, depth: usize) -> Result<Object> {
         self.budget.node(depth)?;
         if pointer != 0 && !self.active.insert(pointer) {
@@ -389,6 +461,12 @@ impl<'a> Ogawa<'a> {
             children,
         })
     }
+    /// Decode compound property headers and bounded first-sample data recursively.
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::too_many_lines,
+        reason = "Property header words are read from exactly four bytes; the bounded property decoder keeps header and sample validation together."
+    )]
     fn compound(
         &mut self,
         pointer: u64,
@@ -518,6 +596,7 @@ impl<'a> Ogawa<'a> {
     }
 }
 
+/// Open a supported Alembic HDF5 storage version and decode its object hierarchy.
 fn hdf_archive(bytes: Vec<u8>) -> Result<Object> {
     let file = Hdf5File::from_vec(bytes)?;
     let root = file.root_group()?;
@@ -532,12 +611,14 @@ fn hdf_archive(bytes: Vec<u8>) -> Result<Object> {
         0,
     )
 }
+/// Read optional HDF5 metadata from a named string attribute.
 fn hdf_meta(attributes: &[Attribute], name: &str) -> Result<Metadata> {
     match attributes.iter().find(|a| a.name == name) {
         Some(a) => metadata(a.read_string()?.as_bytes()),
         None => Ok(Metadata::new()),
     }
 }
+/// Decode an HDF5 object group and its child object and property groups.
 fn hdf_object(group: &Group, path: String, budget: &mut Budget, depth: usize) -> Result<Object> {
     budget.node(depth)?;
     let attrs = group.attributes()?;
@@ -577,6 +658,7 @@ fn hdf_object(group: &Group, path: String, budget: &mut Budget, depth: usize) ->
         children,
     })
 }
+/// Determine the byte order of an HDF5 numeric component, including array wrappers.
 fn byte_order(dtype: &Datatype) -> Result<bool> {
     match dtype {
         Datatype::FixedPoint { byte_order, .. } | Datatype::FloatingPoint { byte_order, .. } => {
@@ -586,6 +668,11 @@ fn byte_order(dtype: &Datatype) -> Result<bool> {
         _ => Err("unsupported Alembic HDF5 numeric datatype".into()),
     }
 }
+/// Decode HDF5 compound headers and first scalar or array samples within shared budgets.
+#[allow(
+    clippy::case_sensitive_file_extension_comparisons,
+    reason = "The Alembic .info suffix is a case-sensitive HDF5 attribute name, not a filename extension."
+)]
 fn hdf_compound(
     group: &Group,
     name: String,
@@ -687,6 +774,7 @@ fn hdf_compound(
     })
 }
 
+/// Index archive objects and traverse their visible first-sample geometry.
 fn build_scene(root: &Object) -> Result<Scene> {
     let mut objects = HashMap::new();
     index_objects(root, &mut objects);
@@ -703,12 +791,14 @@ fn build_scene(root: &Object) -> Result<Scene> {
     scene.validate()?;
     Ok(scene)
 }
+/// Index every decoded object by its archive path for instance resolution.
 fn index_objects<'a>(object: &'a Object, index: &mut HashMap<&'a str, &'a Object>) {
     index.insert(&object.path, object);
     for child in &object.children {
         index_objects(child, index);
     }
 }
+/// Traverse object transforms, visibility, schemas and bounded archive instances.
 fn walk(
     object: &Object,
     parent: Transform,
@@ -741,11 +831,7 @@ fn walk(
         Some([-1.]) | None => hidden,
         _ => return Err("invalid Alembic visibility sample".into()),
     };
-    let schema = object
-        .metadata
-        .get("schema")
-        .map(String::as_str)
-        .unwrap_or("");
+    let schema = object.metadata.get("schema").map_or("", String::as_str);
     let mut world = parent;
     if schema.starts_with("AbcGeom_Xform_") || object.properties.child(".xform").is_some() {
         let p = object.properties.required(".xform")?;
@@ -785,6 +871,13 @@ fn walk(
     active.remove(&object.path);
     geometry_limit(scene)
 }
+/// Compose the encoded Alembic transform operation stack and validate its channels.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::float_cmp,
+    reason = "Transform opcodes are range-checked integral bytes; affine row entries require exact protocol constants."
+)]
 fn xform(p: &Property) -> Result<Transform> {
     let Some(ops) = p.child(".ops") else {
         if p.child(".vals").is_some() {
@@ -857,21 +950,38 @@ fn xform(p: &Property) -> Result<Transform> {
     }
     Ok(result)
 }
+/// Build an axis-angle rotation from an angle in degrees, rejecting a zero axis.
 fn rotate(axis: Vec3, degrees: f64) -> Result<Transform> {
     if axis.length() == 0. {
         return Err("Alembic rotation has a zero axis".into());
     }
-    let a = axis.normalized();
-    let (s, c) = degrees.to_radians().sin_cos();
-    let t = 1. - c;
-    let (x, y, z) = (a.x, a.y, a.z);
+    let axis = axis.normalized();
+    let (sin, cos) = degrees.to_radians().sin_cos();
+    let complement = 1. - cos;
+    let (x, y, z) = (axis.x, axis.y, axis.z);
     Ok(Transform([
-        [t * x * x + c, t * x * y + s * z, t * x * z - s * y, 0.],
-        [t * x * y - s * z, t * y * y + c, t * y * z + s * x, 0.],
-        [t * x * z + s * y, t * y * z - s * x, t * z * z + c, 0.],
+        [
+            complement * x * x + cos,
+            complement * x * y + sin * z,
+            complement * x * z - sin * y,
+            0.,
+        ],
+        [
+            complement * x * y - sin * z,
+            complement * y * y + cos,
+            complement * y * z + sin * x,
+            0.,
+        ],
+        [
+            complement * x * z + sin * y,
+            complement * y * z - sin * x,
+            complement * z * z + cos,
+            0.,
+        ],
         [0., 0., 0., 1.],
     ]))
 }
+/// Read finite three-component position samples from the schema's P property.
 fn positions(p: &Property) -> Result<Vec<Vec3>> {
     let p = p.required("P")?;
     if p.sample.as_ref().is_none_or(|s| s.extent != 3) {
@@ -888,6 +998,13 @@ fn positions(p: &Property) -> Result<Vec<Vec3>> {
         .map(|v| Vec3::new(v[0], v[1], v[2]))
         .collect())
 }
+/// Convert bounded nonnegative integral sample values into geometry indices.
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Indices are finite nonnegative integers bounded by five million, which is represented exactly by f64."
+)]
 fn indices(p: &Property) -> Result<Vec<usize>> {
     p.numbers()?
         .into_iter()
@@ -899,6 +1016,7 @@ fn indices(p: &Property) -> Result<Vec<usize>> {
         })
         .collect()
 }
+/// Append transformed point samples with optional geometry colors.
 fn point_cloud(p: &Property, world: Transform, scene: &mut Scene) -> Result<()> {
     let positions = positions(p)?;
     let colors = Colors::new(p)?;
@@ -910,6 +1028,7 @@ fn point_cloud(p: &Property, world: Transform, scene: &mut Scene) -> Result<()> 
     }
     geometry_limit(scene)
 }
+/// Triangulate polygon samples, skipping declared hole faces and resolving colors.
 fn mesh(p: &Property, world: Transform, scene: &mut Scene) -> Result<()> {
     let vertices = positions(p)?;
     let counts = indices(p.required(".faceCounts")?)?;
@@ -959,12 +1078,17 @@ fn mesh(p: &Property, world: Transform, scene: &mut Scene) -> Result<()> {
     }
     Ok(())
 }
+/// Alembic RGB values with optional indices and geometry scope.
 struct Colors {
+    /// Decoded linear color components.
     values: Vec<Vec3>,
+    /// Optional indirection from geometry color elements to values.
     indices: Option<Vec<usize>>,
+    /// Constant, uniform, varying, vertex or face-varying scope token.
     scope: String,
 }
 impl Colors {
+    /// Find a supported color geometry parameter and validate its layout and scope.
     fn new(p: &Property) -> Result<Option<Self>> {
         let params = p.child(".arbGeomParams").unwrap_or(p);
         let Some(color) = params.children.iter().find(|p| {
@@ -1001,8 +1125,7 @@ impl Colors {
                     .child(".vals")
                     .and_then(|p| p.metadata.get("geoScope"))
             })
-            .map(String::as_str)
-            .unwrap_or("con")
+            .map_or("con", String::as_str)
             .to_owned();
         if !matches!(scope.as_str(), "con" | "uni" | "var" | "vtx" | "fvr") {
             return Err("unsupported Alembic color geometry scope".into());
@@ -1013,6 +1136,11 @@ impl Colors {
             scope,
         }))
     }
+    /// Resolve and average the colors of a face or point under its geometry scope.
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "The divisor is a bounded geometry element count, well within exact f64 integer precision."
+    )]
     fn color(&self, ids: &[usize], face: usize, corner: usize) -> Result<[u8; 3]> {
         let mut sum = Vec3::default();
         for (offset, &vertex) in ids.iter().enumerate() {
@@ -1039,15 +1167,26 @@ impl Colors {
         Ok([srgb(c.x), srgb(c.y), srgb(c.z)])
     }
 }
+/// Clamp a linear color component and encode it as an sRGB byte.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Color components are clamped and rounded to the inclusive byte range before conversion."
+)]
 fn srgb(v: f64) -> u8 {
     let v = v.clamp(0., 1.);
-    ((if v <= 0.0031308 {
+    ((if v <= 0.003_130_8 {
         v * 12.92
     } else {
         1.055 * v.powf(1. / 2.4) - 0.055
     }) * 255.)
         .round() as u8
 }
+/// Append first-sample linear or tessellated cubic curves under their declared basis.
+#[allow(
+    clippy::float_cmp,
+    reason = "Curve kind and wrap are discrete schema tags decoded from numeric samples."
+)]
 fn curves(p: &Property, world: Transform, scene: &mut Scene) -> Result<()> {
     let positions = positions(p)?;
     let counts = indices(p.required("nVertices")?)?;
@@ -1132,6 +1271,7 @@ fn curves(p: &Property, world: Transform, scene: &mut Scene) -> Result<()> {
     }
     Ok(())
 }
+/// Evaluate four curve controls at a parameter using the declared cubic basis.
 fn cubic(q: [Vec3; 4], basis: f64, t: f64) -> Vec3 {
     let t2 = t * t;
     let t3 = t2 * t;
@@ -1166,6 +1306,7 @@ fn cubic(q: [Vec3; 4], basis: f64, t: f64) -> Vec3 {
         .zip(weights)
         .fold(Vec3::default(), |v, (q, w)| v + q * w)
 }
+/// Enforce the aggregate output point, line and triangle budget.
 fn geometry_limit(scene: &Scene) -> Result<()> {
     if scene
         .triangles
@@ -1215,6 +1356,11 @@ mod tests {
             ..Property::default()
         }
     }
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "The authored test samples use small integral byte or i32 values."
+    )]
     fn value(name: &str, extent: usize, values: &[f64]) -> Property {
         let (pod, bytes) = match name {
             ".ops" | "curveBasisAndType" | ".inherits" => {
@@ -1254,6 +1400,10 @@ mod tests {
             ..Property::default()
         }
     }
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "The test archive uses small authored names, extents and metadata lengths."
+    )]
     fn object(
         path: &str,
         schema: &str,
@@ -1321,6 +1471,10 @@ mod tests {
             }
             ptr
         }
+        #[allow(
+            clippy::cast_possible_truncation,
+            reason = "The test archive uses small authored names, extents and metadata lengths."
+        )]
         fn property(&mut self, p: &Property) -> u64 {
             let mut children = Vec::new();
             let mut headers = Vec::new();
@@ -1394,6 +1548,10 @@ mod tests {
             children.push(self.data(&headers));
             self.group(&children)
         }
+        #[allow(
+            clippy::cast_possible_truncation,
+            reason = "The authored archive uses short object names and bounded metadata lengths."
+        )]
         fn object(&mut self, o: &Object) -> u64 {
             let mut children = vec![self.property(&o.properties)];
             let mut headers = Vec::new();

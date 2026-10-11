@@ -1,0 +1,171 @@
+{
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 4,
+      "max": [
+        2.0,
+        1.600000023841858,
+        2.299999952316284
+      ],
+      "min": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5123,
+      "count": 12,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 2,
+      "componentType": 5121,
+      "count": 4,
+      "normalized": true,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 3,
+      "componentType": 5126,
+      "count": 3,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 4,
+      "componentType": 5126,
+      "count": 3,
+      "type": "VEC4"
+    },
+    {
+      "bufferView": 5,
+      "componentType": 5126,
+      "count": 3,
+      "type": "VEC3"
+    }
+  ],
+  "asset": {
+    "generator": "Catwalk authored fixtures",
+    "version": "2.0"
+  },
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteLength": 48,
+      "byteOffset": 0
+    },
+    {
+      "buffer": 0,
+      "byteLength": 24,
+      "byteOffset": 48
+    },
+    {
+      "buffer": 0,
+      "byteLength": 12,
+      "byteOffset": 72
+    },
+    {
+      "buffer": 0,
+      "byteLength": 36,
+      "byteOffset": 84
+    },
+    {
+      "buffer": 0,
+      "byteLength": 48,
+      "byteOffset": 120
+    },
+    {
+      "buffer": 0,
+      "byteLength": 36,
+      "byteOffset": 168
+    }
+  ],
+  "buffers": [
+    {
+      "byteLength": 204,
+      "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAM3MzD8AAAAAMzOzPmZm5j4zMxNAAAACAAEAAAABAAMAAQACAAMAAgAAAAMA5mk3N5bcX7lkuVq+AAAAwAAAAAAAAAAAAACAPwAAgD8AAAAAAAAAAAAAAMAAAIA/AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAA8wQ1P/MENT8AAAAAAACAPwAAAAAAAAAAAACAPwAAgD8AAIA/AAAAPwAAwD8AAIA/AACgPwAAQD8AAAA/"
+    }
+  ],
+  "extensionsRequired": [
+    "EXT_mesh_gpu_instancing"
+  ],
+  "extensionsUsed": [
+    "EXT_mesh_gpu_instancing"
+  ],
+  "meshes": [
+    {
+      "primitives": [
+        {
+          "attributes": {
+            "COLOR_0": 2,
+            "POSITION": 0
+          },
+          "indices": 1
+        }
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "children": [
+        1
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.7071067811865476,
+        0.7071067811865476
+      ],
+      "scale": [
+        2,
+        1,
+        1
+      ],
+      "translation": [
+        2,
+        1,
+        -3
+      ]
+    },
+    {
+      "extensions": {
+        "EXT_mesh_gpu_instancing": {
+          "attributes": {
+            "ROTATION": 4,
+            "SCALE": 5,
+            "TRANSLATION": 3
+          }
+        }
+      },
+      "mesh": 0,
+      "rotation": [
+        0.0,
+        0.7071067811865476,
+        0.0,
+        0.7071067811865476
+      ],
+      "scale": [
+        1,
+        1,
+        2
+      ],
+      "translation": [
+        1,
+        0,
+        2
+      ]
+    }
+  ],
+  "scene": 0,
+  "scenes": [
+    {
+      "nodes": [
+        0
+      ]
+    }
+  ]
+}

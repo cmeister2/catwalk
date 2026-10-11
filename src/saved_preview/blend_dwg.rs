@@ -1,7 +1,7 @@
 //! Qualified saved preview extraction. No model geometry is loaded or regenerated.
 //!
-//! Carrier layouts are described in Blender's BLO_core_blend_header.hh,
-//! BLO_core_bhead.hh and blendthumb_extract.cc, and LibreDWG's header.spec/dwg.c.
+//! Carrier layouts are described in Blender's `BLO_core_blend_header.hh`,
+//! `BLO_core_bhead.hh` and `blendthumb_extract.cc`, and `LibreDWG`'s `header.spec`/`dwg.c`.
 //! This independently written implementation serves the saved-preview API only.
 
 use crate::Result;
@@ -12,17 +12,24 @@ use std::{
     path::Path,
 };
 
+/// Maximum saved-preview carrier file size before decompression.
 const MAX_INPUT: usize = 256 * 1024 * 1024;
+/// Maximum combined decompressed Blender block stream size.
 const MAX_DECOMPRESSED: usize = 512 * 1024 * 1024;
+/// Maximum embedded raster payload size and decoder allocation budget.
 const MAX_PREVIEW: usize = 64 * 1024 * 1024;
+/// Maximum decoded pixel count allowed by the saved-preview API.
 const MAX_PIXELS: u64 = 16_000_000;
+/// DWG preview-section beginning sentinel required at the declared address.
 const BEGIN: [u8; 16] = [
     0x1f, 0x25, 0x6d, 0x07, 0xd4, 0x36, 0x28, 0x28, 0x9d, 0x57, 0xca, 0x3f, 0x9d, 0x44, 0x10, 0x2b,
 ];
+/// DWG preview-section ending sentinel required after the declared payload.
 const END: [u8; 16] = [
     0xe0, 0xda, 0x92, 0xf8, 0x2b, 0xc9, 0xd7, 0xd7, 0x62, 0xa8, 0x35, 0xc0, 0x62, 0xbb, 0xef, 0xd4,
 ];
 
+/// Read a carrier with a metadata check and a bounded read to detect growth.
 fn read_input(path: &Path) -> Result<Vec<u8>> {
     if fs::metadata(path)?.len() > MAX_INPUT as u64 {
         return Err("saved preview input exceeds 256 MiB".into());
@@ -37,6 +44,7 @@ fn read_input(path: &Path) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 
+/// Limit decompressed output to the remaining Blender byte budget.
 fn bounded_decode(reader: impl Read, remaining: usize) -> Result<Vec<u8>> {
     let mut bytes = Vec::new();
     reader.take(remaining as u64 + 1).read_to_end(&mut bytes)?;
@@ -46,6 +54,7 @@ fn bounded_decode(reader: impl Read, remaining: usize) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 
+/// Decode a raw, gzip or concatenated Zstandard Blender stream with bounded output.
 fn blend_bytes(bytes: &[u8]) -> Result<Vec<u8>> {
     if bytes.starts_with(b"BLENDER") {
         return Ok(bytes.to_vec());
@@ -99,6 +108,7 @@ fn blend_bytes(bytes: &[u8]) -> Result<Vec<u8>> {
     Err("input is not a raw, gzip or Zstandard Blender file".into())
 }
 
+/// Read a little-endian integer from a checked byte range.
 fn u32_at(bytes: &[u8], offset: usize) -> Result<u32> {
     Ok(u32::from_le_bytes(
         bytes
@@ -108,6 +118,7 @@ fn u32_at(bytes: &[u8], offset: usize) -> Result<u32> {
     ))
 }
 
+/// Reject empty or excessive raster dimensions before image allocation.
 fn dimensions(width: u32, height: u32) -> Result<()> {
     if width == 0
         || height == 0
@@ -122,6 +133,7 @@ fn dimensions(width: u32, height: u32) -> Result<()> {
     Ok(())
 }
 
+/// Read the qualified initial Blender block sequence and decode its optional TEST raster.
 fn blend_thumbnail(bytes: &[u8]) -> Result<Option<RgbaImage>> {
     if !bytes.starts_with(b"BLENDER") {
         return Err("decompressed input is not a Blender file".into());
@@ -218,10 +230,16 @@ fn blend_thumbnail(bytes: &[u8]) -> Result<Option<RgbaImage>> {
 }
 
 /// Extract the saved scene thumbnail. A valid GLOB/ENDB without TEST returns None.
+///
+/// # Errors
+///
+/// Returns an error for I/O or decompression failures, malformed or unqualified Blender headers
+/// or thumbnail blocks, and exceeded file, decompression or raster limits.
 pub fn extract_blend(path: &Path) -> Result<Option<RgbaImage>> {
     blend_thumbnail(&blend_bytes(&read_input(path)?)?)
 }
 
+/// Construct per-decoder axis and allocation limits for embedded DWG rasters.
 fn image_limits() -> image::Limits {
     let mut limits = image::Limits::default();
     limits.max_image_width = Some(8192);
@@ -230,6 +248,7 @@ fn image_limits() -> image::Limits {
     limits
 }
 
+/// Decode an explicitly typed DWG DIB or PNG payload under raster limits.
 fn decode_dwg_image(kind: u8, payload: &[u8]) -> Result<RgbaImage> {
     if payload.is_empty() || payload.len() > MAX_PREVIEW {
         return Err("DWG saved image length exceeds preview limits".into());
@@ -256,6 +275,11 @@ fn decode_dwg_image(kind: u8, payload: &[u8]) -> Result<RgbaImage> {
     }
 }
 
+/// Validate the addressed DWG preview table and select its largest supported raster.
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keep the ordered preview-table validation and candidate selection in one parser"
+)]
 fn dwg_thumbnail(bytes: &[u8]) -> Result<Option<RgbaImage>> {
     let version = bytes.get(..6).ok_or("truncated DWG version header")?;
     if !matches!(
@@ -367,11 +391,22 @@ fn dwg_thumbnail(bytes: &[u8]) -> Result<Option<RgbaImage>> {
 }
 
 /// Extract a typed, explicitly addressed DIB/PNG preview from a qualified DWG header.
+///
+/// # Errors
+///
+/// Returns an error for I/O failures, unqualified or encrypted headers, malformed preview tables,
+/// unsupported raster carriers without a usable alternative, or exceeded image limits.
 pub fn extract_dwg(path: &Path) -> Result<Option<RgbaImage>> {
     dwg_thumbnail(&read_input(path)?)
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::trivially_copy_pass_by_ref,
+    reason = "Test builders serialize small fixed carrier fields and deliberately quantize their sample colors"
+)]
 mod tests {
     use super::*;
     use std::io::Write;
@@ -472,10 +507,6 @@ mod tests {
 
     #[test]
     fn gzip_and_concatenated_zstd_preserve_the_same_saved_pixels() {
-        let original = blend(false, false, true);
-        let mut gzip = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
-        gzip.write_all(&original).unwrap();
-        assert_eq!(blend_bytes(&gzip.finish().unwrap()).unwrap(), original);
         // A standards-compliant single-segment Zstd frame with an uncompressed block.
         fn raw_frame(bytes: &[u8]) -> Vec<u8> {
             assert!(bytes.len() < 256);
@@ -485,11 +516,15 @@ mod tests {
             frame.extend(bytes);
             frame
         }
+        let original = blend(false, false, true);
+        let mut gzip = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        gzip.write_all(&original).unwrap();
+        assert_eq!(blend_bytes(&gzip.finish().unwrap()).unwrap(), original);
         let mut frames = raw_frame(&original[..16]);
         frames.extend(raw_frame(&original[16..]));
         assert_eq!(blend_bytes(&frames).unwrap(), original);
         let mut seekable = frames.clone();
-        seekable.extend(0x184d2a5eu32.to_le_bytes());
+        seekable.extend(0x184d_2a5e_u32.to_le_bytes());
         seekable.extend(3u32.to_le_bytes());
         seekable.extend([0; 3]);
         assert_eq!(blend_bytes(&seekable).unwrap(), original);
