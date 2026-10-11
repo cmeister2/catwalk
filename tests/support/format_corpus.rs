@@ -480,7 +480,7 @@ pub fn run(
                 std::fs::remove_file(path)?;
             }
         }
-        let mut entry = json!({"id":case.id,"extension":case.extension,"title":case.title,"kind":case.kind,"provenance":case.provenance,"input":case.input,"input_url":format!("https://github.com/cmeister2/catwalk/blob/{source_ref}/tests/fixtures/formats/{}",case.input),"actual_url":format!("images/{}.actual.png",case.id),"expected_url":format!("images/{}.expected.png",case.id),"diff_url":format!("images/{}.diff.png",case.id)});
+        let mut entry = json!({"id":case.id,"extension":case.extension,"title":case.title,"kind":case.kind,"provenance":case.provenance,"input":case.input,"input_url":format!("https://github.com/cmeister2/catwalk3d/blob/{source_ref}/tests/fixtures/formats/{}",case.input),"actual_url":format!("images/{}.actual.png",case.id),"expected_url":format!("images/{}.expected.png",case.id),"diff_url":format!("images/{}.diff.png",case.id)});
         let result: Result<Comparison> = (|| {
             let actual = render(case, workspace, &actual_path, binary)?;
             if actual.dimensions() != (WIDTH, HEIGHT) || !actual.pixels().any(|p| p[3] != 0) {

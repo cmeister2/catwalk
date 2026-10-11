@@ -1,7 +1,7 @@
 /** Publish the tested Rust crate and matching GitHub release from main. */
 export default {
   branches: ['main'],
-  repositoryUrl: 'https://github.com/cmeister2/catwalk.git',
+  repositoryUrl: 'https://github.com/cmeister2/catwalk3d.git',
   tagFormat: '${version}',
   plugins: [
     ['@semantic-release/commit-analyzer', { preset: 'conventionalcommits' }],
