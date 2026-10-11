@@ -8,7 +8,7 @@ The CLI recognizes **all 76 published extension aliases**, covering all 57 reade
 
 Each section corresponds to a reader row in the summary table. Extension aliases sharing one format remain together, and shared renderer or codec policies are linked from the relevant section.
 
-The seven additional document extensions described below are outside the published F3D baseline. Fresh geometry readers support Blender, LightBurn and a DWG drawing subset. Inventor `.ipt`/`.iam` and Fusion `.f3d` support saved-image extraction only; their geometry rendering is unsupported in Catwalk. Saved-image extraction does not regenerate geometry or establish compatibility with every application release.
+AMF and the seven additional document extensions described below are outside the published F3D baseline. Fresh geometry readers support Blender, LightBurn and a DWG drawing subset. Inventor `.ipt`/`.iam` and Fusion `.f3d` support saved-image extraction only; their geometry rendering is unsupported in Catwalk. Saved-image extraction does not regenerate geometry or establish compatibility with every application release.
 
 | F3D reader | Extensions | Current Rust preview coverage |
 | --- | --- | --- |
@@ -72,7 +72,7 @@ The seven additional document extensions described below are outside the publish
 
 ## Shared preview policies
 
-The renderer uses an automatically fitted orthographic view, a depth buffer, simple lighting, colored triangles, points and line segments. Optional triangle appearances support base-color texture sampling, interpolated linear RGBA and normals, unlit shading, sidedness, alpha masks and per-sample depth-sorted transparency. glTF/GLB and textured 3MF populate these appearances; each reader retains its stated material subset. LightBurn drawings use an XY view. Static scene importers select the authored pose or earliest supported transform sample. Animation playback, authored camera views, scene lighting, full physically based materials, volume transfer functions and Gaussian opacity/covariance are outside the current preview policy. Supporting a first static view permits omission of interactive viewer features, but does not remove the need to parse each model format correctly.
+The renderer uses an automatically fitted orthographic view, a depth buffer, simple lighting, colored triangles, points and line segments. Optional triangle appearances support base-color texture sampling, interpolated linear RGBA and normals, unlit shading, sidedness, alpha masks and per-sample depth-sorted transparency. glTF/GLB, textured 3MF and constant AMF colors populate these appearances; each reader retains its stated material subset. LightBurn drawings use an XY view. Static scene importers select the authored pose or earliest supported transform sample. Animation playback, authored camera views, scene lighting, full physically based materials, volume transfer functions and Gaussian opacity/covariance are outside the current preview policy. Supporting a first static view permits omission of interactive viewer features, but does not remove the need to parse each model format correctly.
 
 All current importers ignore non-geometric fields that do not affect their supported static geometry. Exact encoding restrictions are enforced by each reader. New variants need representative fixtures and thumbnail checks before this matrix changes to implemented.
 
@@ -641,6 +641,20 @@ See [survey-point conventions](#survey-point-conventions) for source conventions
 **Coverage:** Subset: I3S point-cloud packages, hierarchy and Rust LEPCC XYZ/RGB decoding.
 
 SLPK supports I3S PointCloud 1.6–1.9/2.0 packages, legacy and node-page hierarchies, resource IDs and leaf selection. ZIP/gzip and LEPCC XYZ/RGB streams are decoded in Rust, including supported raw, palette, constant and Huffman color layouts. Geographic WGS84/CGCS2000 points become a local tangent frame in meters; projected coordinates are retained. Mesh layers, terrain-relative elevations, unsupported geographic/custom-WKT systems and invalid hierarchies/checksums fail. Classification/stretch drawing styles are omitted; available RGB is rendered. A licensed [Esri I3S point-cloud sample](https://github.com/Esri/i3s-spec) is included under `tests/fixtures/slpk` with its notice. Aggregate decoded data and preview points are bounded.
+
+## AMF
+
+**Extension:** `.amf`. **Status:** Additional Rust geometry reader outside the F3D baseline; a bounded subset.
+
+The reader loads UTF-8 AMF XML and a ZIP containing one regular `.amf` model member, with stored or deflated compression. It preserves indexed flat triangles from every supported object volume, validates references, and normalizes millimeter, meter, micron, inch and feet units to millimeters. Only top-level, unreferenced object/constellation definitions render; referenced definitions contribute their placed instances without an extra copy at the origin. Nested constellations retain translation and qualified single-axis rotations. Standard angles use degrees within ±360°; mixed-axis rotations within one instance fail explicitly. Constant sRGB material, object, volume and triangle colors follow that precedence from least to most specific and retain alpha through the shared renderer.
+
+The [official ISO AMF schema](https://standards.iso.org/iso/52915/ISOASTM52915(2016)AMF.xsd) supplies the core fields and units. The separately qualified [Slic3r 1.3.1 exporter](https://github.com/slic3r/Slic3r/blob/026c1380e0ad12176dd2fc8cdf8f6f181deeb071/xs/src/libslic3r/IO/AMF.cpp) stores Z rotation in radians and adds dimensionless uniform scale. Documents identified by that application/version metadata use its convention, including positive uniform scale and Z rotations within one turn (approximately ±2π radians, allowing the exporter's numeric rounding). Other Slic3r rotation dialects and scale in standard AMF fail rather than guessing. Supported definitions use nonnegative integer IDs; unsupported namespaces, duplicated IDs or fields, missing references, cycles and invalid numeric fields fail.
+
+Curved-patch vertex normals, edge tangents, vertex color gradients, textures, color/material expressions, composite materials, custom color profiles, void/support volumes and slicer modifier volumes are unsupported and rejected. Manufacturing metadata is not interpreted. This importer does not repair meshes or evaluate process settings, and does not claim full AMF specification or slicer-version compatibility.
+
+The [unchanged original Slic3r XML export and compressed reference](../tests/fixtures/formats/amf/README.md) are separately licensed AGPL-3.0 assets with the full original license and source notice. Their XML payloads are byte-identical. Independent assertions check twelve triangles, placed bounds, surface area and signed volume; both encodings also have CLI PNG comparisons. The compressed reference is an upstream ZIP-reader test around exporter XML, rather than evidence that Slic3r wrote that ZIP container. Authored controls independently check units, individual rotation axes, nested placement, scale, color precedence and explicit malformed/unsupported errors.
+
+Inputs and expanded XML are limited to 64 MiB, XML nodes to two million, scalar fields to 128 bytes, resource/instance records to 100,000, source vertices/source triangles/placed triangles to one million each, nested constellations to 64 levels, cumulative geometry accounting to 256 MiB and charged instance work to fifty million operations. ZIP paths are validated without writing extracted files. Multiple members, unsafe or nonregular members, unsupported compression and failed CRC/length validation are rejected.
 
 ## Autodesk Inventor
 

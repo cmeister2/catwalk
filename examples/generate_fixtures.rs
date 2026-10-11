@@ -16,6 +16,10 @@ mod saved_previews;
 /// Generate scientific datasets and CAD boundary representations.
 mod scientific_cad;
 
+#[path = "fixtures/amf.rs"]
+/// Register original plain and compressed AMF exporter references.
+mod amf;
+
 use catwalk3d::{Result, formats};
 use serde_json::json;
 use std::{collections::BTreeSet, path::Path};
@@ -60,7 +64,8 @@ pub fn fixture(
 fn main() -> Result<()> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/formats");
     std::fs::create_dir_all(&root)?;
-    let mut cases = images_points::generate(&root)?;
+    let mut cases = amf::generate(&root)?;
+    cases.extend(images_points::generate(&root)?);
     cases.extend(mesh_scene::generate(&root)?);
     cases.extend(scientific_cad::generate(&root)?);
     cases.extend(saved_previews::generate_lightburn(&root)?);

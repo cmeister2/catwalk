@@ -1,0 +1,11 @@
+Separately licensed AMF test assets from slic3r/Slic3r.
+Pinned upstream commit: 026c1380e0ad12176dd2fc8cdf8f6f181deeb071.
+Original source URLs:
+https://github.com/slic3r/Slic3r/blob/026c1380e0ad12176dd2fc8cdf8f6f181deeb071/src/test/inputs/test_amf/20mmbox.amf
+https://github.com/slic3r/Slic3r/blob/026c1380e0ad12176dd2fc8cdf8f6f181deeb071/src/test/inputs/test_amf/20mmbox_deflated.amf
+Full original license:
+https://github.com/slic3r/Slic3r/blob/026c1380e0ad12176dd2fc8cdf8f6f181deeb071/LICENSE
+GNU Affero General Public License version 3; see SLIC3R-LICENSE.
+The original XML includes the Slic3r 1.3.1-dev application metadata.
+Unchanged source bytes are retained under different corpus filenames.
+Catwalk independently renders PNG comparisons from the model geometry.
