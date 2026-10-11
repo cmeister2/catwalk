@@ -46,7 +46,7 @@ The seven additional document extensions described below are outside the publish
 | [OBJ](#obj) | `.obj` | Subset: static polygons, polylines and points, vertex RGB and local MTL diffuse colors. |
 | [GLTF, GLTFDraco](#gltf) | `.gltf` | Subset: textured triangle/point/line scenes, alpha, normals, first poses, skins/morphs, GPU instances and Rust Draco/quantized decoding. |
 | [GLB, GLBDraco](#glb) | `.glb` | Subset: textured triangle/point/line scenes, alpha, normals, first poses, skins/morphs, GPU instances and Rust Draco/quantized decoding. |
-| [Draco](#draco) | `.drc` | Subset: sequential/Edgebreaker meshes and sequential/kd-tree point clouds, positions and colors. |
+| [Draco](#draco) | `.drc` | Subset: sequential/Edgebreaker meshes with authored corner normals, sequential/kd-tree point clouds, positions and colors. |
 | [3DS](#3ds) | `.3ds` | Subset: static triangle meshes, diffuse colors and earliest-key object hierarchy. |
 | [VRMLReader](#vrml) | `.wrl`, `.vrml` | Subset: VRML97 text, static shapes, lines, terrain, extrusions, DEF/USE, transforms and colors. |
 | [FBX](#fbx) | `.fbx` | Subset: ASCII/binary static polygon scenes, weighted linear skins, progressive morphs, hierarchy, pivots, units, first keys and colors. |
@@ -444,9 +444,11 @@ GLB decodes the binary glTF container, its JSON chunk and binary buffer chunk. G
 
 **Extensions:** `.drc`.
 
-**Coverage:** Subset: sequential/Edgebreaker meshes and sequential/kd-tree point clouds, positions and colors.
+**Coverage:** Subset: sequential/Edgebreaker meshes with authored corner normals, sequential/kd-tree point clouds, positions and colors.
 
-Standalone Draco accepts sequential and Edgebreaker meshes, including valence and supported legacy streams, and sequential/kd-tree point clouds. Positions and mapped numeric colors are rendered; limits cap decoded geometry at five million points/faces and expanded attributes at 512 MiB. Generated tests and ten [Google Draco reference fixtures](https://github.com/google/draco/tree/main/testdata) exercise different encodings.
+Standalone Draco accepts sequential and Edgebreaker meshes, including valence and supported legacy streams, and sequential/kd-tree point clouds. Positions, mapped numeric colors and three-component authored mesh normals are rendered. Normals follow point-to-attribute mappings and become interpolated unit directions at triangle corners; a zero corner uses its face direction, while a triangle with entirely zero normals retains flat shading. Nonfinite, ambiguous or incorrectly sized mesh normal attributes fail explicitly. Point-cloud normals are ignored, retaining the existing position/color rendering. Standalone UV textures remain unsupported.
+
+Limits cap decoded geometry at five million points/faces and expanded attributes at 512 MiB. Meshes with normals also preflight their combined decoded attributes, expanded tuples, topology and conservatively estimated appearance storage against 512 MiB. [Three unchanged Google cube encodings](../tests/fixtures/draco/README.md) qualify producer geometry, all face-normal associations, area and volume. Authored controls check differing mappings, integer and extreme finite directions, zero/malformed normals, storage limits and interpolated lighting. Existing colors and custom fallback colors remain effective for appearances that supply only normals; explicit material and texture colors retain their own semantics.
 
 ## 3DS
 

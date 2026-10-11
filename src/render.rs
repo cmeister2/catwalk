@@ -27,7 +27,8 @@ pub struct RenderOptions {
     pub transparent: bool,
     /// sRGB background color used when transparency is disabled.
     pub background: [u8; 3],
-    /// sRGB fallback color for primitives without a supplied color or appearance.
+    /// sRGB fallback color for primitives without a supplied color or material,
+    /// including triangles whose appearance supplies only normals.
     pub color: [u8; 3],
     /// Samples along each pixel axis; values from 1 through 4 are supported.
     pub supersampling: u32,
@@ -726,6 +727,33 @@ fn srgb_to_linear(value: f64) -> f64 {
     }
 }
 
+/// Resolve a normals-only appearance against the triangle's existing sRGB color.
+/// Explicit materials, corner colors, UVs and coverage settings retain their own color semantics.
+#[allow(
+    clippy::float_cmp,
+    reason = "Only the exact default-white multiplier identifies the normals-only fallback contract."
+)]
+fn normal_color_fallback(
+    appearance: &TriangleAppearance,
+    color: [u8; 3],
+) -> Option<TriangleAppearance> {
+    if appearance.normals.is_none()
+        || appearance.base_color != [1.0; 4]
+        || appearance.colors.is_some()
+        || appearance.texcoords.is_some()
+        || appearance.texture.is_some()
+        || !matches!(appearance.alpha_mode, AlphaMode::Opaque)
+        || appearance.unlit
+        || !appearance.double_sided
+    {
+        return None;
+    }
+    let mut resolved = appearance.clone();
+    let [r, g, b] = color.map(|value| srgb_to_linear(f64::from(value) / 255.0));
+    resolved.base_color = [r, g, b, 1.0];
+    Some(resolved)
+}
+
 /// Clamp a linear intensity and encode it with the sRGB transfer function.
 fn linear_to_srgb(value: f64) -> f64 {
     let value = value.clamp(0.0, 1.0);
@@ -1036,9 +1064,11 @@ fn render_view(
     for (index, triangle) in scene.triangles.iter().enumerate() {
         if let Some((vertices, normal)) = geometry.triangle(triangle) {
             if let Some(appearance) = scene.appearances.get(&index) {
+                let resolved =
+                    normal_color_fallback(appearance, triangle.color.unwrap_or(options.color));
                 fragments += canvas.appearance_triangle(
                     vertices.map(|p| projection.project(p)),
-                    appearance,
+                    resolved.as_ref().unwrap_or(appearance),
                     normal,
                     projection.camera,
                 )?;

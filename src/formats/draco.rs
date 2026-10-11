@@ -1,5 +1,5 @@
 //! Pure Rust Draco geometry decoding, also shared with compressed glTF primitives.
-use crate::scene::{Point, Scene, Triangle, Vec3};
+use crate::scene::{Point, Scene, Triangle, TriangleAppearance, Vec3};
 use crate::{Error, Result};
 use draco_core::{
     DataType, DecodeLimits, DecoderBuffer, GeometryAttributeType, Mesh, MeshDecoder,
@@ -11,6 +11,8 @@ use std::path::Path;
 const MAX_POINTS: usize = 5_000_000;
 /// Maximum decoded triangle count accepted from one stream.
 const MAX_FACES: usize = 5_000_000;
+/// Maximum estimated retained and expanded storage for a mesh with authored normals.
+const MAX_NORMAL_BYTES: usize = 512 * 1024 * 1024;
 /// Convert an importer diagnostic into the shared error type.
 fn error(message: impl Into<String>) -> Error {
     message.into().into()
@@ -273,17 +275,209 @@ fn color(value: f64, attribute: &DecodedAttribute) -> u8 {
     };
     (value * factor).clamp(0., 255.).round() as u8
 }
-/// Expand standalone Draco positions and optional RGB into triangle or point geometry.
+/// Normalize a finite direction without overflowing or underflowing its length.
+/// Zero vectors have no direction and request the triangle's geometric fallback.
+fn unit_normal(value: Vec3) -> Option<Vec3> {
+    if !value.is_finite() {
+        return None;
+    }
+    let scale = value.x.abs().max(value.y.abs()).max(value.z.abs());
+    (scale > 0.).then(|| (value / scale).normalized())
+}
+
+/// Compute a fallback face direction using scaled positions and independently scaled edges.
+fn face_normal(vertices: [Vec3; 3]) -> Option<Vec3> {
+    let scale = vertices
+        .iter()
+        .flat_map(|point| [point.x.abs(), point.y.abs(), point.z.abs()])
+        .fold(0., f64::max);
+    if scale == 0. {
+        return None;
+    }
+    let points = vertices.map(|point| point / scale);
+    let a = unit_normal(points[1] - points[0])?;
+    let b = unit_normal(points[2] - points[0])?;
+    unit_normal(a.cross(b))
+}
+
+/// Bound normal-bearing mesh expansion before allocating its attribute tuples or appearances.
+///
+/// # Errors
+///
+/// Checked size accounting overflows or estimated retained storage exceeds 512 MiB.
+fn normal_storage(
+    points: usize,
+    faces: usize,
+    attribute_bytes: usize,
+    attribute_count: usize,
+    color_components: usize,
+) -> Result<()> {
+    let point_size = 2 * std::mem::size_of::<Vec3>()
+        + 3 * std::mem::size_of::<f64>()
+        + std::mem::size_of::<Option<Vec3>>()
+        + usize::from(color_components != 0) * std::mem::size_of::<[u8; 3]>();
+    let point_size = color_components
+        .checked_mul(std::mem::size_of::<f64>())
+        .and_then(|bytes| bytes.checked_add(point_size))
+        .ok_or_else(|| error("Draco authored-normal storage accounting overflows"))?;
+    let face_size = std::mem::size_of::<[usize; 3]>() + std::mem::size_of::<Triangle>();
+    // The appearance B-tree retains unused key/value slots in partially filled
+    // nodes. Charge three slots per face plus an entire root's slack, with
+    // pointer/header overhead per slot; do not estimate only populated entries.
+    let appearance_slot =
+        std::mem::size_of::<TriangleAppearance>() + 5 * std::mem::size_of::<usize>();
+    let appearance_bytes = faces
+        .checked_mul(3)
+        .and_then(|slots| slots.checked_add(12))
+        .and_then(|slots| slots.checked_mul(appearance_slot))
+        .ok_or_else(|| error("Draco authored-normal storage accounting overflows"))?;
+    let bytes = points
+        .checked_mul(point_size)
+        .and_then(|bytes| faces.checked_mul(face_size)?.checked_add(bytes))
+        .and_then(|bytes| bytes.checked_add(appearance_bytes))
+        .and_then(|bytes| bytes.checked_add(attribute_bytes))
+        .and_then(|bytes| {
+            // Identity mappings use less storage; charge a dense point mapping conservatively.
+            let mapping = points.checked_mul(std::mem::size_of::<u32>())?;
+            let metadata = std::mem::size_of::<PointAttribute>()
+                .checked_add(4 * std::mem::size_of::<usize>())?;
+            attribute_count
+                .checked_mul(mapping.checked_add(metadata)?)?
+                .checked_add(bytes)
+        })
+        .ok_or_else(|| error("Draco authored-normal storage accounting overflows"))?;
+    if bytes > MAX_NORMAL_BYTES {
+        return Err(error(
+            "Draco authored-normal mesh exceeds 512 MiB expanded storage",
+        ));
+    }
+    Ok(())
+}
+
+/// Resolve mesh-only authored normal directions in decoded point order.
+///
+/// # Errors
+///
+/// Normal semantics or tuples are ambiguous, malformed, nonfinite or exceed storage limits.
+fn mesh_normals(decoded: &DecodedGeometry) -> Result<Option<Vec<Option<Vec3>>>> {
+    let Some(faces) = &decoded.faces else {
+        return Ok(None);
+    };
+    if decoded
+        .attribute_id(GeometryAttributeType::Normal)?
+        .is_none()
+    {
+        return Ok(None);
+    }
+    let normal = decoded
+        .attributes
+        .named_attribute(GeometryAttributeType::Normal)
+        .ok_or_else(|| error("Draco NORMAL semantic has no attribute"))?;
+    if normal.num_components() != 3 {
+        return Err(error("Draco NORMAL must have three components"));
+    }
+    let mut attribute_bytes = 0usize;
+    for index in 0..decoded.attributes.num_attributes() {
+        attribute_bytes = attribute_bytes
+            .checked_add(
+                decoded
+                    .attributes
+                    .try_attribute(index)?
+                    .buffer()
+                    .data()
+                    .len(),
+            )
+            .ok_or_else(|| error("Draco attribute storage accounting overflows"))?;
+    }
+    let colors = decoded
+        .attributes
+        .named_attribute(GeometryAttributeType::Color)
+        .map_or(0, |attribute| usize::from(attribute.num_components()));
+    normal_storage(
+        decoded.point_count,
+        faces.len(),
+        attribute_bytes,
+        usize::try_from(decoded.attributes.num_attributes())?,
+        colors,
+    )?;
+    let normal = decoded
+        .semantic_attribute(GeometryAttributeType::Normal)?
+        .ok_or_else(|| error("Draco NORMAL semantic has no decoded attribute"))?;
+    Ok(Some(
+        normal
+            .values
+            .as_chunks::<3>()
+            .0
+            .iter()
+            .map(|values| {
+                unit_normal(Vec3::new(
+                    normal_component(values[0], &normal),
+                    normal_component(values[1], &normal),
+                    normal_component(values[2], &normal),
+                ))
+            })
+            .collect(),
+    ))
+}
+
+/// Saturate the signed normalized minimum before direction normalization cancels its common scale.
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "The normalized 64-bit signed limit intentionally uses the decoded attribute's f64 approximation."
+)]
+fn normal_component(value: f64, attribute: &DecodedAttribute) -> f64 {
+    if !attribute.normalized {
+        return value;
+    }
+    let limit = match attribute.data_type {
+        DataType::Int8 => f64::from(i8::MAX),
+        DataType::Int16 => f64::from(i16::MAX),
+        DataType::Int32 => f64::from(i32::MAX),
+        DataType::Int64 => i64::MAX as f64,
+        _ => return value,
+    };
+    value.max(-limit)
+}
+
+/// Choose authored corner directions, replacing zero entries with the geometric face direction.
+/// Entirely zero normal triples and degenerate fallback triangles retain legacy flat rendering.
+fn corner_normals(
+    indices: [usize; 3],
+    vertices: [Vec3; 3],
+    normals: &[Option<Vec3>],
+) -> Option<[Vec3; 3]> {
+    let values = indices.map(|index| normals[index]);
+    if values.iter().all(Option::is_none) {
+        return None;
+    }
+    if let [Some(a), Some(b), Some(c)] = values {
+        Some([a, b, c])
+    } else {
+        let fallback = face_normal(vertices)?;
+        Some(values.map(|value| value.unwrap_or(fallback)))
+    }
+}
+
+/// Expand standalone Draco positions, optional RGB and authored mesh normals into a preview.
 ///
 /// # Errors
 /// Returns an error for malformed topology, invalid or ambiguous attributes, nonfinite values,
 /// truncated storage or decoder resource limits.
+pub(super) fn decode(bytes: &[u8]) -> Result<Scene> {
+    decoded_scene(decode_geometry(bytes)?)
+}
+
+/// Expand validated point-order attributes while retaining the legacy normal-absent path.
+///
+/// # Errors
+///
+/// Selected positions, colors or mesh normals are malformed or exceed preview limits.
 #[allow(
     clippy::cast_possible_truncation,
     reason = "A mean of three byte colors remains within the byte range before quantization."
 )]
-pub(super) fn decode(bytes: &[u8]) -> Result<Scene> {
-    let decoded = decode_geometry(bytes)?;
+fn decoded_scene(decoded: DecodedGeometry) -> Result<Scene> {
+    let normals = mesh_normals(&decoded)?;
     let positions = decoded
         .semantic_attribute(GeometryAttributeType::Position)?
         .ok_or_else(|| error("Draco has no POSITION attribute"))?;
@@ -313,6 +507,7 @@ pub(super) fn decode(bytes: &[u8]) -> Result<Scene> {
     });
     let mut scene = Scene::default();
     if let Some(faces) = decoded.faces {
+        scene.triangles.try_reserve_exact(faces.len())?;
         for indices in faces {
             let vertices = indices.map(|i| positions[i]);
             let color = colors.as_ref().map(|colors| {
@@ -324,6 +519,18 @@ pub(super) fn decode(bytes: &[u8]) -> Result<Scene> {
                         / 3) as u8
                 })
             });
+            if let Some(normals) = normals
+                .as_ref()
+                .and_then(|normals| corner_normals(indices, vertices, normals))
+            {
+                scene.appearances.insert(
+                    scene.triangles.len(),
+                    TriangleAppearance {
+                        normals: Some(normals),
+                        ..TriangleAppearance::default()
+                    },
+                );
+            }
             scene.triangles.push(Triangle { vertices, color });
         }
     } else {
@@ -345,6 +552,10 @@ pub(super) fn decode(bytes: &[u8]) -> Result<Scene> {
 pub(super) fn load(path: &Path) -> Result<Scene> {
     decode(&super::read_file(path)?)
 }
+
+#[cfg(test)]
+#[path = "draco_normal_tests.rs"]
+mod normal_tests;
 
 #[cfg(test)]
 mod tests {
