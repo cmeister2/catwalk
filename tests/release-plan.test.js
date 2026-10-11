@@ -44,7 +44,7 @@ async function checkout(t, message) {
   git(cwd, 'add', 'Cargo.toml', 'Cargo.lock', 'src/main.rs');
   git(cwd, '-c', 'commit.gpgsign=false', 'commit', '--no-verify', '-m', 'feat: initial crate');
   git(cwd, 'tag', '1.0.0');
-  git(directory, 'init', '--bare', remote);
+  git(directory, 'init', '--bare', '--initial-branch=main', remote);
   git(cwd, 'remote', 'add', 'origin', remote);
   git(cwd, '-c', 'commit.gpgsign=false', 'commit', '--no-verify', '--allow-empty', '-m', message);
   git(cwd, 'push', 'origin', 'main', '--tags');
