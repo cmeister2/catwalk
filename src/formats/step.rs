@@ -1,5 +1,5 @@
 //! STEP Part 21 boundary-representation tessellation through the Rust Truck kernel.
-use super::transform::Transform;
+use super::{step_parameters, step_tessellation, transform::Transform};
 use crate::Result;
 use crate::scene::{Scene, Triangle, Vec3};
 use ruststep::ast::{EntityInstance, Name, Parameter, Record};
@@ -614,7 +614,8 @@ fn inverse_frame(transform: Transform) -> Transform {
 
 /// Identify supported representation schema names.
 fn is_shape_representation(name: &str) -> bool {
-    name.ends_with("SHAPE_REPRESENTATION") && name != "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION"
+    (name.ends_with("SHAPE_REPRESENTATION") && name != "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION")
+        || name == "TESSELLATED_SHAPE_REPRESENTATION_WITH_ACCURACY_PARAMETERS"
 }
 
 /// Shape items and authored unit scale belonging to one representation.
@@ -651,6 +652,10 @@ struct Assembly<'a> {
 struct Expansion<'a> {
     /// Cached tessellated item scenes indexed by source geometry identifier.
     meshes: &'a HashMap<u64, Scene>,
+    /// Owned AP242 decoder loading only geometry selected by shape ownership.
+    decoder: step_tessellation::Decoder<'a>,
+    /// Decoded AP242 item scenes reused across repeated part occurrences.
+    tessellated: HashMap<u64, Scene>,
     /// Scene receiving all expanded assembly occurrences.
     scene: Scene,
     /// Active representation identifiers used to reject expansion cycles.
@@ -876,6 +881,21 @@ impl<'a> Assembly<'a> {
         // Mapping-origin subtraction matters when the referenced part is not
         // authored at the origin. Frames and geometry use each context's units.
         let mut mapped_owners = HashMap::<u64, Vec<u64>>::new();
+        let mut presentation_items = HashSet::new();
+        for (&id, entity) in entities {
+            if records(entity)
+                .1
+                .iter()
+                .any(|record| record.name.as_str() == "DRAUGHTING_MODEL")
+            {
+                let record = named_record(entities, id, "REPRESENTATION")?
+                    .or(named_record(entities, id, "DRAUGHTING_MODEL")?)
+                    .ok_or("STEP draughting model lacks representation attributes")?;
+                for item in list(field(record, 1)?)? {
+                    presentation_items.insert(reference(item)?);
+                }
+            }
+        }
         for (&parent, representation) in &assembly.representations {
             for &item in &representation.items {
                 if named_record(entities, item, "MAPPED_ITEM")?.is_some() {
@@ -889,6 +909,7 @@ impl<'a> Assembly<'a> {
                 .iter()
                 .any(|r| r.name.as_str() == "MAPPED_ITEM")
                 && !mapped_owners.contains_key(&id)
+                && !presentation_items.contains(&id)
             {
                 return Err("STEP mapped item has no owning shape representation".into());
             }
@@ -1092,6 +1113,8 @@ impl<'a> Assembly<'a> {
     fn render(&self, meshes: &HashMap<u64, Scene>) -> Result<Scene> {
         let mut expansion = Expansion {
             meshes,
+            decoder: step_tessellation::Decoder::new(self.entities),
+            tessellated: HashMap::new(),
             scene: Scene::default(),
             visiting: HashSet::new(),
             used: HashSet::new(),
@@ -1125,6 +1148,35 @@ impl<'a> Assembly<'a> {
         if !expansion.visiting.insert(id) {
             return Err("STEP assembly contains a representation cycle".into());
         }
+        let mut exact_items = HashSet::new();
+        for &member in self
+            .groups
+            .get(&id)
+            .ok_or("missing STEP representation group")?
+        {
+            let representation = self.representation(member)?;
+            for &item in &representation.items {
+                if let Some(record) = named_record(self.entities, item, "MANIFOLD_SOLID_BREP")? {
+                    exact_items.insert((item, representation.scale.to_bits()));
+                    exact_items.insert((
+                        reference(field(record, 1)?)?,
+                        representation.scale.to_bits(),
+                    ));
+                } else if let Some(record) =
+                    named_record(self.entities, item, "SHELL_BASED_SURFACE_MODEL")?
+                {
+                    for shell in list(field(record, 1)?)? {
+                        exact_items.insert((reference(shell)?, representation.scale.to_bits()));
+                    }
+                } else if records(self.entities[&item])
+                    .1
+                    .iter()
+                    .any(|record| matches!(record.name.as_str(), "OPEN_SHELL" | "CLOSED_SHELL"))
+                {
+                    exact_items.insert((item, representation.scale.to_bits()));
+                }
+            }
+        }
         let mut included = HashSet::new();
         for &member in self
             .groups
@@ -1146,6 +1198,15 @@ impl<'a> Assembly<'a> {
                 return Err("STEP assembled placement is non-finite".into());
             }
             for &item in &representation.items {
+                // An explicit top-level geometric link names the same exact body
+                // in this equivalent representation group. Preserve separate
+                // bodies and occurrences; matching coordinates are insufficient.
+                if let Some(link) =
+                    step_tessellation::exact_body_link(self.entities[&item], self.entities)?
+                    && exact_items.contains(&(link, representation.scale.to_bits()))
+                {
+                    continue;
+                }
                 if included.insert((item, representation.scale.to_bits())) {
                     self.append_item(item, geometry_transform, 0, expansion)?;
                 }
@@ -1180,6 +1241,16 @@ impl<'a> Assembly<'a> {
         if depth > MAX_REFERENCE_DEPTH || expansion.work > MAX_ENTITIES {
             return Err("STEP assembly exceeds geometry-item expansion limit".into());
         }
+        if !expansion.tessellated.contains_key(&id)
+            && let Some(mesh) = expansion.decoder.decode(id)?
+        {
+            expansion.tessellated.insert(id, mesh);
+        }
+        if let Some(mesh) = expansion.tessellated.get(&id) {
+            append_mesh(mesh, transform, &mut expansion.scene)?;
+            expansion.used.insert(id);
+            return Ok(());
+        }
         let record = simple_record(self.entities, id)?;
         match record.name.as_str() {
             "AXIS2_PLACEMENT_3D" | "MAPPED_ITEM" => {}
@@ -1199,15 +1270,7 @@ impl<'a> Assembly<'a> {
                     .meshes
                     .get(&id)
                     .ok_or("STEP component references an unsupported shell")?;
-                if expansion.scene.triangles.len() + mesh.triangles.len() > MAX_TRIANGLES {
-                    return Err("STEP assembled preview exceeds triangle limit".into());
-                }
-                for triangle in &mesh.triangles {
-                    expansion.scene.triangles.push(Triangle {
-                        vertices: triangle.vertices.map(|p| transform.apply(p)),
-                        color: triangle.color,
-                    });
-                }
+                append_mesh(mesh, transform, &mut expansion.scene)?;
                 expansion.used.insert(id);
             }
             _ => {
@@ -1222,6 +1285,47 @@ impl<'a> Assembly<'a> {
     }
 }
 
+/// Append cached triangles and rotate their authored normals under a rigid frame and positive scale.
+///
+/// # Errors
+///
+/// The expanded geometry exceeds the triangle limit or a transformed normal is invalid.
+fn append_mesh(mesh: &Scene, transform: Transform, scene: &mut Scene) -> Result<()> {
+    if scene.triangles.len() + mesh.triangles.len() > MAX_TRIANGLES {
+        return Err("STEP assembled preview exceeds triangle limit".into());
+    }
+    let offset = scene.triangles.len();
+    for triangle in &mesh.triangles {
+        scene.triangles.push(Triangle {
+            vertices: triangle.vertices.map(|point| transform.apply(point)),
+            color: triangle.color,
+        });
+    }
+    for (&index, appearance) in &mesh.appearances {
+        let mut appearance = appearance.clone();
+        if let Some(normals) = appearance.normals {
+            let mut transformed = normals;
+            for normal in &mut transformed {
+                let components = [normal.x, normal.y, normal.z];
+                let result: [f64; 3] = std::array::from_fn(|row| {
+                    (0..3)
+                        .map(|column| transform.0[column][row] * components[column])
+                        .sum()
+                });
+                let direction = Vec3::new(result[0], result[1], result[2]);
+                let length = direction.length();
+                if !length.is_finite() || length <= 0. {
+                    return Err("STEP placement produces an invalid tessellated normal".into());
+                }
+                *normal = direction / length;
+            }
+            appearance.normals = Some(transformed);
+        }
+        scene.appearances.insert(offset + index, appearance);
+    }
+    Ok(())
+}
+
 /// Parse Part 21 entities, tessellate required shells and instantiate assembly geometry.
 ///
 /// # Errors
@@ -1233,8 +1337,7 @@ impl<'a> Assembly<'a> {
 )]
 fn parse(text: &str) -> Result<Scene> {
     check_nesting(text)?;
-    let exchange =
-        ruststep::parser::parse(text).map_err(|_| "invalid STEP Part 21 exchange file")?;
+    let exchange = step_parameters::parse(text)?;
     if exchange.data.is_empty() {
         return Err("STEP file has no DATA section".into());
     }
@@ -1255,11 +1358,17 @@ fn parse(text: &str) -> Result<Scene> {
         }
         entities.insert(id, entity);
         // Avoid Table::from_data_section, which logs and skips malformed entities.
-        table
-            .push_instance(entity)
-            .map_err(|error| format!("cannot decode STEP entity #{id}: {error}"))?;
+        if !step_tessellation::handles(entity) {
+            table
+                .push_instance(entity)
+                .map_err(|error| format!("cannot decode STEP entity #{id}: {error}"))?;
+        }
     }
-    if table.shell.is_empty() {
+    if table.shell.is_empty()
+        && !entities
+            .values()
+            .any(|entity| step_tessellation::handles(entity))
+    {
         return Err("STEP file has no supported open/closed B-rep shells".into());
     }
     if table.face_surface.len() > MAX_FACES {
@@ -1391,7 +1500,7 @@ fn parse(text: &str) -> Result<Scene> {
     }
     if entities.values().any(|entity| {
         records(entity).1.iter().any(|record| {
-            record.name.as_str().ends_with("SHAPE_REPRESENTATION")
+            is_shape_representation(record.name.as_str())
                 || matches!(
                     record.name.as_str(),
                     "MAPPED_ITEM"

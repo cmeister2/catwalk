@@ -21,12 +21,16 @@ const PROVENANCE: &str =
 const DIR: &str = "scientific_cad";
 /// Upstream license, exact source revision, and retained-asset checksum.
 const CADQUERY: &str = "Unmodified CadQuery tests/testdata/red_cube_blue_cylinder.step; Apache-2.0; https://github.com/CadQuery/cadquery/blob/5f5bc62b255f62e3512105740025361b6c31eddd/tests/testdata/red_cube_blue_cylinder.step; SHA-256 1fd5c7d9325bcfb9863365faf84554f89e7e7a5e86760a0fc8d5db00619d9ef5; original license and provenance retained in scientific_cad/step-cadquery-LICENSE and step-cadquery-NOTICE.txt";
+/// NIST source revision, unrestricted-reuse terms and unchanged STEP checksum.
+const NIST: &str = "Unmodified NIST FTC 08 ASME1 nist_ftc_08_asme1_ap242-e4-tg.stp from usnistgov/SFA Release/NIST-PMI-STEP-Files.zip at commit 72375d17c09cf7072c30d9393b5c08b7aa272285; unrestricted reuse with NIST acknowledgement, no endorsement. SHA-256 40cd4e5e2e02b5742e0884ba5b132f2e37d2215c45f57afb48962a05a060c384; source and terms retained in scientific_cad/step-nist-NOTICE.txt. https://github.com/usnistgov/SFA/blob/72375d17c09cf7072c30d9393b5c08b7aa272285/Release/NIST-PMI-STEP-Files.zip";
 /// Written corpus provenance explaining authored geometry and retained licensing.
 const README: &str = r"# Scientific and CAD fixtures
 
 Authored examples are generated deterministically by `examples/fixtures/scientific_cad.rs` and are MIT licensed with Catwalk. The STEP assembly examples use actual B-rep surfaces, repeated product occurrences and nested representation mappings, with nonzero source-frame origins and rotated/translated components. Geometry checks compare their placed vertices independently; PNG snapshots check the resulting thumbnails.
 
 `step-cadquery-placed-bodies.step` is an unmodified upstream test asset, renamed only for the corpus, from [CadQuery at commit 5f5bc62b255f62e3512105740025361b6c31eddd](https://github.com/CadQuery/cadquery/blob/5f5bc62b255f62e3512105740025361b6c31eddd/tests/testdata/red_cube_blue_cylinder.step). It retains its Apache-2.0 license in `step-cadquery-LICENSE`; source provenance and the exact SHA-256 are recorded in `step-cadquery-NOTICE.txt`. The file contains two placed bodies and a conversion-based metre context. It checks curved surfaces and millimeter unit conversion, without claiming an independently exported assembly hierarchy. STEP material colors are not currently rendered.
+
+`step-nist-ap242-tessellated.stp` is the unchanged NIST FTC 08 ASME1 AP242 export from [the pinned NIST archive](https://github.com/usnistgov/SFA/blob/72375d17c09cf7072c30d9393b5c08b7aa272285/Release/NIST-PMI-STEP-Files.zip), renamed only for the corpus. [Source and reuse terms](step-nist-NOTICE.txt) acknowledge NIST and retain its unrestricted-reuse terms. The snapshot renders the product-owned tessellated part with its authored normals. Geometry tests check triangle count, bounds and the producer's embedded surface area, while excluding construction geometry, validation copies and drafting views. This is one real export; fans, surface sets and linked B-rep alternatives have separate authored tests.
 
 Regeneration uses Rust and retained fixture bytes; no CAD application, native writer or network is required. The separately licensed upstream asset is not relabeled as an authored fixture.
 ";
@@ -686,6 +690,18 @@ fn cad(f: &mut Fixtures<'_>) -> Result<()> {
         "step",
         "STEP independently exported cube and cylinder with metre units",
         CADQUERY,
+    )?;
+    f.resource(
+        "step-nist-ap242-tessellated.stp",
+        include_bytes!(
+            "../../tests/fixtures/formats/scientific_cad/step-nist-ap242-tessellated.stp"
+        ),
+    )?;
+    f.register(
+        "step-nist-ap242-tessellated",
+        "stp",
+        "NIST AP242 tessellated part with authored surface normals",
+        NIST,
     )?;
     for (ext, kind) in [("iges", "box"), ("igs", "cylinder")] {
         let (model, root) = cad_body(kind)?;

@@ -1,0 +1,20 @@
+NIST Fully-Toleranced Test Case 08, ASME1, AP242 tessellated geometry
+
+The retained file step-nist-ap242-tessellated.stp is an unchanged copy of
+NIST-PMI-STEP-Files/nist_ftc_08_asme1_ap242-e4-tg.stp, renamed for the corpus.
+Source archive at usnistgov/SFA commit 72375d17c09cf7072c30d9393b5c08b7aa272285:
+https://github.com/usnistgov/SFA/blob/72375d17c09cf7072c30d9393b5c08b7aa272285/Release/NIST-PMI-STEP-Files.zip
+File SHA-256: 40cd4e5e2e02b5742e0884ba5b132f2e37d2215c45f57afb48962a05a060c384
+Archive SHA-256: 1fb91bb8ff0fe02032b948fda0775bc74591cd0bebc0988347d32574e5884f90
+
+Acknowledgement: National Institute of Standards and Technology (NIST),
+MBE PMI Validation and Conformance Testing project.
+https://www.nist.gov/ctl/smart-connected-systems-division/smart-connected-manufacturing-systems-group/mbe-pmi-0
+
+NIST permits unrestricted reuse of these test cases, CAD models and STEP
+files, requests acknowledgement, and prohibits promotional use of its logo.
+Use does not imply NIST recommendation or endorsement of Catwalk.
+The upstream archive explains that its STEP files are not error-free
+reference files, and identifies this export as tessellated part geometry.
+This fixture qualifies the selected part's geometry and thumbnail; it does
+not establish full AP242 schema or PMI conformance.

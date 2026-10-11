@@ -66,6 +66,23 @@ Simple Instancing was created by Marco Hutter with JglTF. Its model is CC0-1.0 a
 These assets exercise real exported UVs, embedded/external PNG and JPEG decoding, material alpha modes, sampler wrapping, sidedness and repeated instances. They do not establish full physically based rendering, metallic/roughness/normal texture support, or compatibility with every glTF extension.
 
 All referenced corpus resources remain inside this directory. Regeneration uses Rust and retained fixture bytes, without external executables or native codecs.
+
+### Original textured 3MF references
+
+The following archives are retained byte for byte, including their packaged
+textures and original XML. The two lib3mf assets are from
+[3MFConsortium/lib3mf at `bfb5df00057fae7e306c511fa7c6ff476dfaad28`](https://github.com/3MFConsortium/lib3mf/tree/bfb5df00057fae7e306c511fa7c6ff476dfaad28);
+the JPEG model is from
+[3MFConsortium/3mf-samples at `665e20dc4d7777fd4c9702bca86a2d4028440337`](https://github.com/3MFConsortium/3mf-samples/tree/665e20dc4d7777fd4c9702bca86a2d4028440337).
+Their complete BSD-2-Clause licenses are retained as `LIB3MF-LICENSE.txt` and
+`3MF-SAMPLES-LICENSE.txt`. Only corpus filenames have changed. Preview images
+are generated from geometry rather than an embedded document thumbnail.
+
+| Corpus archive | Original upstream path | Geometry and texture evidence | SHA-256 |
+| --- | --- | --- | --- |
+| `3mf-lib3mf-png-texture.3mf` | `Tests/TestFiles/CPP_UnitTests/Texture.3mf` | 675 vertices, 1,346 triangles; a PNG color texture with package relationships. | `52f787357062da8bfbb14c1b5258a11513717b4beb072b00aa0161aa76a34b36` |
+| `3mf-lib3mf-escaped-textures.3mf` | `Tests/TestFiles/Mixed/texturecube_with_EscapeCharacters.3mf` | Eight vertices, twelve triangles; six PNGs with spaces, XML-escaped ampersands and an apostrophe in part paths. | `55fe819e98ab5377a9cfeaf295f30ae8a046259a022349cde86110b8b03c095e` |
+| `3mf-consortium-jpeg-textures.3mf` | `examples/material/multipletextures.3mf` | 48,334 vertices, 96,692 triangles; two independently decoded JPEG textures. | `1024c33276043c5ef25bf111496056d87bf5a816ae2f6eb6a6804d75ced02d59` |
 ";
 
 /// Fixture resource writer and validated manifest accumulator.

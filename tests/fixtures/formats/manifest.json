@@ -1162,6 +1162,14 @@
     },
     {
       "extension": "stp",
+      "id": "step-nist-ap242-tessellated",
+      "input": "scientific_cad/step-nist-ap242-tessellated.stp",
+      "kind": "model",
+      "provenance": "Unmodified NIST FTC 08 ASME1 nist_ftc_08_asme1_ap242-e4-tg.stp from usnistgov/SFA Release/NIST-PMI-STEP-Files.zip at commit 72375d17c09cf7072c30d9393b5c08b7aa272285; unrestricted reuse with NIST acknowledgement, no endorsement. SHA-256 40cd4e5e2e02b5742e0884ba5b132f2e37d2215c45f57afb48962a05a060c384; source and terms retained in scientific_cad/step-nist-NOTICE.txt. https://github.com/usnistgov/SFA/blob/72375d17c09cf7072c30d9393b5c08b7aa272285/Release/NIST-PMI-STEP-Files.zip",
+      "title": "NIST AP242 tessellated part with authored surface normals"
+    },
+    {
+      "extension": "stp",
       "id": "step-stp-cylinder",
       "input": "scientific_cad/step-stp-cylinder.stp",
       "kind": "model",

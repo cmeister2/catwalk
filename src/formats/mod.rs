@@ -43,8 +43,12 @@ mod scientific;
 mod slpk;
 /// Compressed Gaussian-center positions and colors.
 mod spz;
-/// STEP B-rep shells, length contexts and assembly placements.
+/// STEP B-rep and tessellated geometry, length contexts and assembly placements.
 mod step;
+/// Bounded Part 21 entity loading into unchanged upstream syntax objects.
+mod step_parameters;
+/// Direct AP242 triangle geometry and authored corner normals.
+mod step_tessellation;
 /// Survey point and trajectory binary layouts.
 mod survey;
 /// Static 3DS triangle geometry and earliest-key object hierarchy.
