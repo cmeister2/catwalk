@@ -105,9 +105,7 @@ Dependencies are published crates without local patches. Owned adapters decode t
 
 Successful CI runs on `main` publish the `catwalk3d` crate and a matching GitHub release through semantic-release. Conventional commits determine the version: `fix:` produces a patch, `feat:` a minor release, and a breaking change a major release. The first release is `1.0.0`. Documentation-only commits do not trigger a release.
 
-Publication waits for formatting, strict Clippy, documentation and every operating-system test job. The release checkout stamps the selected version into `Cargo.toml` and its local `Cargo.lock` entry, verifies the packaged crate and its size, and publishes with locked dependencies before semantic-release creates a version tag. An existing non-yanked version is accepted only when the official crates.io checksum matches the exact verified archive. A failed first upload therefore leaves the version untagged; retrying an identical successful upload does not upload it twice. GitHub releases include the `.crate` source archive. Node dependencies are used only by the release tooling.
-
-Registry publication, Git tagging and GitHub releases are separate operations. If GitHub publication fails after the version tag is pushed, maintainers must finish or repair that tagged GitHub release; rerunning semantic-release alone does not republish an existing tag. Keep the published crate and tag when recovering this partial state.
+Publication waits for formatting, strict Clippy, documentation, package verification and every operating-system test job. The `semantic-release-cargo` plugin updates the crate version and publishes to crates.io; `@semantic-release/github` creates the matching GitHub release. Node dependencies are used only by the release tooling.
 
 Maintainers configure a crates.io publishing token in the repository secret `CARGO_REGISTRY_TOKEN`; `PUBLISH_SECRET` is also accepted. Release automation skips publication while neither secret is configured. Local `.env` files are excluded from Git and Cargo packages.
 

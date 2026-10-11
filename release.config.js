@@ -6,19 +6,12 @@ export default {
   plugins: [
     ['@semantic-release/commit-analyzer', { preset: 'conventionalcommits' }],
     ['@semantic-release/release-notes-generator', { preset: 'conventionalcommits' }],
-    ['@semantic-release/exec', {
-      prepareCmd: 'python3 prepare.py ${nextRelease.version} && python3 publish.py ${nextRelease.version}',
-    }],
+    '@semantic-release-cargo/semantic-release-cargo',
     ['@semantic-release/github', {
       successComment: false,
       failComment: false,
       failTitle: false,
       releasedLabels: false,
-      assets: [{
-        path: 'target/release-artifacts/catwalk3d.crate',
-        name: 'catwalk3d-${nextRelease.version}.crate',
-        label: 'Rust crate source',
-      }],
     }],
   ],
 };

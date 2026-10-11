@@ -30,8 +30,6 @@ jobs:
         run: |
           cargo package --locked
           python3 -c 'from pathlib import Path; archive = next(Path("target/package").glob("catwalk3d-*.crate")); assert archive.stat().st_size < 10_000_000, "Crate exceeds the registry upload limit"'
-      - name: Check release preparation and publication guards
-        run: python3 -m unittest discover -s tests -p 'test_*.py'
       - name: Check runtime geometry and compression backends
         shell: bash
         run: |

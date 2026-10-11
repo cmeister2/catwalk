@@ -6,7 +6,7 @@
     "release": "semantic-release"
   },
   "devDependencies": {
-    "@semantic-release/exec": "^7.1.0",
+    "@semantic-release-cargo/semantic-release-cargo": "2.4.84",
     "conventional-changelog-conventionalcommits": "^9.1.0",
     "semantic-release": "^25.0.2"
   }
