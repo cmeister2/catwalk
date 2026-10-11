@@ -1,0 +1,92 @@
+{
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 4,
+      "max": [
+        2.0,
+        1.600000023841858,
+        2.299999952316284
+      ],
+      "min": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5123,
+      "count": 12,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 2,
+      "componentType": 5121,
+      "count": 4,
+      "normalized": true,
+      "type": "VEC3"
+    }
+  ],
+  "asset": {
+    "generator": "Catwalk authored fixtures",
+    "version": "2.0"
+  },
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteLength": 48,
+      "byteOffset": 0
+    },
+    {
+      "buffer": 0,
+      "byteLength": 24,
+      "byteOffset": 48
+    },
+    {
+      "buffer": 0,
+      "byteLength": 12,
+      "byteOffset": 72
+    }
+  ],
+  "buffers": [
+    {
+      "byteLength": 84,
+      "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAM3MzD8AAAAAMzOzPmZm5j4zMxNAAAACAAEAAAABAAMAAQACAAMAAgAAAAMA5mk3N5bcX7lkuVq+"
+    }
+  ],
+  "meshes": [
+    {
+      "primitives": [
+        {
+          "attributes": {
+            "COLOR_0": 2,
+            "POSITION": 0
+          },
+          "indices": 1
+        }
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "mesh": 0,
+      "rotation": [
+        0.0,
+        0.17364817766693033,
+        0.0,
+        0.984807753012208
+      ]
+    }
+  ],
+  "scene": 0,
+  "scenes": [
+    {
+      "nodes": [
+        0
+      ]
+    }
+  ]
+}

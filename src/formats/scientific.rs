@@ -1,0 +1,1285 @@
+//! Geometry subsets of the documented VTK formats; unsupported encodings fail explicitly.
+use crate::Result;
+use crate::scene::{Line, Point, Scene, Triangle, Vec3};
+use roxmltree::Node;
+use std::collections::{BTreeMap, HashSet};
+use std::path::{Path, PathBuf};
+
+const MAX_ITEMS: usize = 5_000_000;
+
+#[path = "scientific_arrays.rs"]
+mod arrays;
+#[path = "scientific_legacy.rs"]
+mod legacy;
+use arrays::XmlData;
+
+pub(crate) fn load(path: &Path) -> Result<Scene> {
+    ReadContext::default().load(path, 0)
+}
+
+#[derive(Default)]
+struct ReadContext {
+    active: HashSet<PathBuf>,
+    total_bytes: u64,
+    files: usize,
+}
+
+impl ReadContext {
+    fn load(&mut self, path: &Path, depth: usize) -> Result<Scene> {
+        if depth > 32 || self.files >= 256 {
+            return Err("VTK composite dataset exceeds nesting or reference limit".into());
+        }
+        let path = path.canonicalize()?;
+        if !self.active.insert(path.clone()) {
+            return Err("VTK composite dataset contains cyclic file references".into());
+        }
+        self.files += 1;
+        let result = (|| {
+            let bytes = super::read_file(&path)?;
+            self.total_bytes = self
+                .total_bytes
+                .checked_add(bytes.len() as u64)
+                .ok_or("VTK composite byte count overflow")?;
+            if self.total_bytes > super::MAX_INPUT_BYTES {
+                return Err(
+                    "VTK composite dataset exceeds the aggregate 512 MiB input limit".into(),
+                );
+            }
+            match super::extension(&path)?.as_str() {
+                "vtk" => legacy::parse(&bytes),
+                "vtp" | "vtu" | "vtr" | "vts" => parse_vtk_xml_bytes(&bytes),
+                "vti" => super::volume::vti_scene(&bytes),
+                "vtm" => self.multiblock(
+                    &path,
+                    std::str::from_utf8(&bytes)?.trim_start_matches('\u{feff}'),
+                    depth + 1,
+                ),
+                _ => Err("VTK composite references an unsupported geometry extension".into()),
+            }
+        })();
+        self.active.remove(&path);
+        result
+    }
+
+    fn multiblock(&mut self, path: &Path, text: &str, depth: usize) -> Result<Scene> {
+        let document = roxmltree::Document::parse(text)?;
+        let root = document.root_element();
+        if !root.has_tag_name("VTKFile") || root.attribute("type") != Some("vtkMultiBlockDataSet") {
+            return Err("expected a VTK XML multiblock dataset".into());
+        }
+        let mut scene = Scene::default();
+        self.blocks(
+            child(root, "vtkMultiBlockDataSet")?,
+            path,
+            depth,
+            &mut scene,
+        )?;
+        scene.validate()?;
+        Ok(scene)
+    }
+
+    fn blocks(
+        &mut self,
+        node: Node<'_, '_>,
+        path: &Path,
+        depth: usize,
+        scene: &mut Scene,
+    ) -> Result<()> {
+        if depth > 32 {
+            return Err("VTK composite block hierarchy exceeds nesting limit".into());
+        }
+        for entry in node.children().filter(Node::is_element) {
+            match entry.tag_name().name() {
+                "Block" => self.blocks(entry, path, depth + 1, scene)?,
+                "DataSet" => {
+                    let Some(file) = entry.attribute("file").filter(|value| !value.is_empty())
+                    else {
+                        continue; // VTK represents null dataset slots without a filename.
+                    };
+                    let parent = path.parent().ok_or("VTK composite path has no directory")?;
+                    let resource = super::relative_resource(parent, file)?;
+                    let mut child = self.load(&resource, depth)?;
+                    if scene.triangles.len() + child.triangles.len() > MAX_ITEMS
+                        || scene.points.len() + child.points.len() > MAX_ITEMS
+                        || scene.lines.len() + child.lines.len() > MAX_ITEMS
+                    {
+                        return Err("VTK composite output exceeds geometry limit".into());
+                    }
+                    scene.triangles.append(&mut child.triangles);
+                    scene.points.append(&mut child.points);
+                    scene.lines.append(&mut child.lines);
+                }
+                "FieldData" => {} // Dataset metadata does not alter child placement/topology.
+                _ => return Err("unsupported VTK composite hierarchy element".into()),
+            }
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+fn parse_vtk(text: &str) -> Result<Scene> {
+    legacy::parse(text.as_bytes())
+}
+
+fn child<'a, 'input>(node: Node<'a, 'input>, name: &str) -> Result<Node<'a, 'input>> {
+    node.children()
+        .find(|n| n.has_tag_name(name))
+        .ok_or_else(|| format!("missing VTK XML {name}").into())
+}
+
+fn count_attribute(node: Node<'_, '_>, name: &str) -> Result<usize> {
+    let count: usize = node
+        .attribute(name)
+        .ok_or_else(|| format!("missing VTK XML {name}"))?
+        .parse()?;
+    if count > MAX_ITEMS {
+        return Err("VTK XML count exceeds geometry limit".into());
+    }
+    Ok(count)
+}
+
+fn named_array<'a, 'input>(node: Node<'a, 'input>, name: &str) -> Result<Node<'a, 'input>> {
+    node.children()
+        .find(|n| n.has_tag_name("DataArray") && n.attribute("Name") == Some(name))
+        .ok_or_else(|| format!("missing VTK XML {name} array").into())
+}
+
+fn xml_cells(node: Node<'_, '_>, count: usize, data: &XmlData<'_>) -> Result<Vec<Vec<usize>>> {
+    let connectivity = data.indices(named_array(node, "connectivity")?, MAX_ITEMS)?;
+    let offsets = data.indices(named_array(node, "offsets")?, count)?;
+    if offsets.len() != count {
+        return Err("VTK XML offsets disagree with cell count".into());
+    }
+    let mut start = 0usize;
+    let mut cells = Vec::new();
+    for end in offsets {
+        if end < start || end > connectivity.len() {
+            return Err("invalid VTK XML connectivity offset".into());
+        }
+        cells.push(connectivity[start..end].to_vec());
+        start = end;
+    }
+    if start != connectivity.len() {
+        return Err("unused VTK XML connectivity indices".into());
+    }
+    Ok(cells)
+}
+
+fn xml_positions(piece: Node<'_, '_>, count: usize, data: &XmlData<'_>) -> Result<Vec<Vec3>> {
+    let points_node = child(piece, "Points")?;
+    let mut arrays = points_node
+        .children()
+        .filter(|n| n.has_tag_name("DataArray"));
+    let points_array = arrays.next().ok_or("missing VTK XML point DataArray")?;
+    if arrays.next().is_some() {
+        return Err("VTK XML Points must contain one coordinate array".into());
+    }
+    if points_array.attribute("NumberOfComponents").unwrap_or("3") != "3" {
+        return Err("VTK XML point array must have three components".into());
+    }
+    let values = data.floats(
+        points_array,
+        count.checked_mul(3).ok_or("VTK point count overflow")?,
+    )?;
+    if values.len() != count * 3 {
+        return Err("VTK XML point count disagrees with coordinates".into());
+    }
+    Ok(values
+        .chunks_exact(3)
+        .map(|p| Vec3::new(p[0], p[1], p[2]))
+        .collect())
+}
+
+fn xml_extent(node: Node<'_, '_>, attribute: &str) -> Result<[i64; 6]> {
+    let values = node
+        .attribute(attribute)
+        .ok_or("missing VTK structured extent")?
+        .split_whitespace()
+        .map(str::parse::<i64>)
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    let extent: [i64; 6] = values
+        .try_into()
+        .map_err(|_| "VTK structured extent needs six integers")?;
+    for axis in 0..3 {
+        if extent[axis * 2] > extent[axis * 2 + 1] {
+            return Err("VTK structured extent is reversed or empty".into());
+        }
+    }
+    Ok(extent)
+}
+
+fn structured_dimensions(extent: [i64; 6]) -> Result<[usize; 3]> {
+    let mut dimensions = [0usize; 3];
+    let mut count = 1usize;
+    for axis in 0..3 {
+        let size = extent[axis * 2 + 1]
+            .checked_sub(extent[axis * 2])
+            .and_then(|n| n.checked_add(1))
+            .ok_or("VTK structured extent overflow")?;
+        dimensions[axis] = usize::try_from(size)?;
+        count = count
+            .checked_mul(dimensions[axis])
+            .ok_or("VTK structured point count overflow")?;
+        if count > MAX_ITEMS {
+            return Err("VTK structured point count exceeds geometry limit".into());
+        }
+    }
+    Ok(dimensions)
+}
+
+fn xml_structured(root: Node<'_, '_>, dataset: &str, data: &XmlData<'_>) -> Result<Scene> {
+    let grid = child(root, dataset)?;
+    let extent = xml_extent(grid, "WholeExtent")?;
+    let dimensions = structured_dimensions(extent)?;
+    let mut pieces = grid.children().filter(|n| n.has_tag_name("Piece"));
+    let piece = pieces.next().ok_or("VTK structured grid has no piece")?;
+    if pieces.next().is_some() || xml_extent(piece, "Extent")? != extent {
+        return Err(
+            "VTK structured reader currently requires one piece covering WholeExtent".into(),
+        );
+    }
+    for array in piece
+        .descendants()
+        .filter(|n| n.has_tag_name("DataArray") && n.attribute("Name") == Some("vtkGhostType"))
+    {
+        if data
+            .indices(array, MAX_ITEMS)?
+            .iter()
+            .any(|&value| value != 0)
+        {
+            return Err("VTK structured blanking and ghost cells are not implemented".into());
+        }
+    }
+    let positions = if dataset == "StructuredGrid" {
+        xml_positions(piece, dimensions.iter().product(), data)?
+    } else {
+        let coordinates = child(piece, "Coordinates")?;
+        let arrays: Vec<_> = coordinates
+            .children()
+            .filter(|n| n.has_tag_name("DataArray"))
+            .collect();
+        if arrays.len() != 3 {
+            return Err("VTK rectilinear grid needs three coordinate arrays".into());
+        }
+        let mut axes = Vec::new();
+        for (array, &size) in arrays.into_iter().zip(&dimensions) {
+            if array.attribute("NumberOfComponents").unwrap_or("1") != "1" {
+                return Err("VTK rectilinear coordinate array must have one component".into());
+            }
+            let values = data.floats(array, size)?;
+            if values.len() != size {
+                return Err("VTK rectilinear coordinate count disagrees with extent".into());
+            }
+            if values.len() > 1 {
+                let increasing = values[1] > values[0];
+                if values
+                    .windows(2)
+                    .any(|pair| pair[0] == pair[1] || (pair[1] > pair[0]) != increasing)
+                {
+                    return Err("VTK rectilinear coordinates must be strictly monotonic".into());
+                }
+            }
+            axes.push(values);
+        }
+        let mut positions = Vec::new();
+        for &z in &axes[2] {
+            for &y in &axes[1] {
+                for &x in &axes[0] {
+                    positions.push(Vec3::new(x, y, z));
+                }
+            }
+        }
+        positions
+    };
+    let mut scene = Scene::default();
+    append_structured(&positions, dimensions, &mut scene)?;
+    scene.validate()?;
+    Ok(scene)
+}
+
+/// Extract outer quadrilateral cell faces while preserving every boundary grid point.
+pub(super) fn structured_scene(positions: &[Vec3], dimensions: [usize; 3]) -> Result<Scene> {
+    let count = dimensions.iter().try_fold(1usize, |n, &d| n.checked_mul(d));
+    if dimensions.contains(&0) || count != Some(positions.len()) {
+        return Err("structured grid point count disagrees with dimensions".into());
+    }
+    if positions.iter().any(|p| !p.is_finite()) {
+        return Err("structured grid contains non-finite coordinates".into());
+    }
+    let mut scene = Scene::default();
+    append_structured(positions, dimensions, &mut scene)?;
+    scene.validate()?;
+    Ok(scene)
+}
+
+fn append_structured(positions: &[Vec3], dimensions: [usize; 3], scene: &mut Scene) -> Result<()> {
+    let active = dimensions.iter().filter(|&&n| n > 1).count();
+    if active == 0 {
+        append_point(positions[0], scene)?;
+        return Ok(());
+    }
+    if active == 1 {
+        return Err("VTK one-dimensional structured line geometry is not implemented".into());
+    }
+    let index = |coordinates: [usize; 3]| {
+        coordinates[0] + dimensions[0] * (coordinates[1] + dimensions[1] * coordinates[2])
+    };
+    for axis in 0..3 {
+        if active == 2 && dimensions[axis] != 1 {
+            continue;
+        }
+        let other: Vec<_> = (0..3).filter(|&a| a != axis).collect();
+        let ends = if active == 2 {
+            vec![0]
+        } else {
+            vec![0, dimensions[axis] - 1]
+        };
+        for end in ends {
+            for j in 0..dimensions[other[1]] - 1 {
+                for i in 0..dimensions[other[0]] - 1 {
+                    let mut corners = Vec::new();
+                    for (i, j) in [(i, j), (i + 1, j), (i + 1, j + 1), (i, j + 1)] {
+                        let mut coordinates = [0usize; 3];
+                        coordinates[axis] = end;
+                        coordinates[other[0]] = i;
+                        coordinates[other[1]] = j;
+                        corners.push(index(coordinates));
+                    }
+                    if (end == 0) != (axis == 1) {
+                        corners.reverse();
+                    }
+                    append_polygon(positions, &corners, scene)?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+fn parse_vtk_xml(text: &str) -> Result<Scene> {
+    parse_vtk_xml_bytes(text.as_bytes())
+}
+
+fn parse_vtk_xml_bytes(bytes: &[u8]) -> Result<Scene> {
+    let (text, raw) = arrays::xml_envelope(bytes)?;
+    let document = roxmltree::Document::parse(&text)?;
+    let root = document.root_element();
+    if !root.has_tag_name("VTKFile") {
+        return Err("missing VTKFile XML root".into());
+    }
+    let data = XmlData::new(root, raw)?;
+    let dataset = root
+        .attribute("type")
+        .ok_or("missing VTK XML dataset type")?;
+    if dataset == "RectilinearGrid" || dataset == "StructuredGrid" {
+        return xml_structured(root, dataset, &data);
+    }
+    if dataset != "PolyData" && dataset != "UnstructuredGrid" {
+        return Err(format!("VTK XML dataset {dataset} is not implemented").into());
+    }
+    let mut scene = Scene::default();
+    for piece in child(root, dataset)?
+        .children()
+        .filter(|n| n.has_tag_name("Piece"))
+    {
+        let point_count = count_attribute(piece, "NumberOfPoints")?;
+        let positions = xml_positions(piece, point_count, &data)?;
+        for array in piece
+            .descendants()
+            .filter(|n| n.has_tag_name("DataArray") && n.attribute("Name") == Some("vtkGhostType"))
+        {
+            if data.indices(array, MAX_ITEMS)?.iter().any(|&n| n != 0) {
+                return Err("VTK ghost cells and hidden points are not implemented".into());
+            }
+        }
+        if dataset == "PolyData" {
+            let mut sections = Vec::new();
+            for (tag, attr) in [
+                ("Polys", "NumberOfPolys"),
+                ("Strips", "NumberOfStrips"),
+                ("Verts", "NumberOfVerts"),
+            ] {
+                let count = piece
+                    .attribute(attr)
+                    .map(|s| s.parse::<usize>())
+                    .transpose()?
+                    .unwrap_or(0);
+                if count > MAX_ITEMS {
+                    return Err("VTK XML count exceeds geometry limit".into());
+                }
+                let section = piece.children().find(|n| n.has_tag_name(tag));
+                sections.push(match section {
+                    Some(section) => xml_cells(section, count, &data)?,
+                    None if count == 0 => Vec::new(),
+                    None => return Err(format!("missing VTK XML {tag}").into()),
+                });
+            }
+            let lines = piece
+                .attribute("NumberOfLines")
+                .map(|s| s.parse::<usize>())
+                .transpose()?
+                .unwrap_or(0);
+            if lines > MAX_ITEMS {
+                return Err("VTK XML line count exceeds geometry limit".into());
+            }
+            if lines != 0 {
+                for line in xml_cells(child(piece, "Lines")?, lines, &data)? {
+                    append_line(&positions, &line, &mut scene)?;
+                }
+            }
+            let mut sections = sections.into_iter();
+            append_polydata(
+                &positions,
+                sections.next().unwrap(),
+                sections.next().unwrap(),
+                sections.next().unwrap(),
+                &mut scene,
+            )?;
+        } else {
+            let count = count_attribute(piece, "NumberOfCells")?;
+            let cell_node = child(piece, "Cells")?;
+            let cells = xml_cells(cell_node, count, &data)?;
+            let types = data.indices(named_array(cell_node, "types")?, count)?;
+            let polyhedra = xml_polyhedra(cell_node, &types, &data)?;
+            append_grid_with_polyhedra(&positions, &cells, &types, &mut scene, Some(&polyhedra))?;
+        }
+    }
+    scene.validate()?;
+    Ok(scene)
+}
+
+fn xml_polyhedra(
+    node: Node<'_, '_>,
+    types: &[usize],
+    data: &XmlData<'_>,
+) -> Result<BTreeMap<usize, Vec<Vec<usize>>>> {
+    let mut polyhedra = BTreeMap::new();
+    if !types.contains(&42) {
+        return Ok(polyhedra);
+    }
+    let faces = data.indices(named_array(node, "faces")?, MAX_ITEMS)?;
+    let offsets = data.integers(named_array(node, "faceoffsets")?, types.len())?;
+    if offsets.len() != types.len() {
+        return Err("VTK polyhedron faceoffset count disagrees with cells".into());
+    }
+    let mut start = 0usize;
+    for (i, (&ty, end)) in types.iter().zip(offsets).enumerate() {
+        if ty != 42 {
+            if end != -1 {
+                return Err("VTK non-polyhedron face offset must be -1".into());
+            }
+            continue;
+        }
+        let end = usize::try_from(end)?;
+        let values = faces
+            .get(start..end)
+            .ok_or("invalid VTK polyhedron face offset")?;
+        let count = *values.first().ok_or("empty VTK polyhedron face stream")?;
+        let mut at = 1usize;
+        let mut cell_faces = Vec::new();
+        for _ in 0..count {
+            let n = *values
+                .get(at)
+                .ok_or("truncated VTK polyhedron face stream")?;
+            at += 1;
+            let stop = at.checked_add(n).ok_or("VTK face size overflow")?;
+            cell_faces.push(
+                values
+                    .get(at..stop)
+                    .ok_or("truncated VTK polyhedron face indices")?
+                    .to_vec(),
+            );
+            at = stop;
+        }
+        if at != values.len() {
+            return Err("unused VTK polyhedron face indices".into());
+        }
+        polyhedra.insert(i, cell_faces);
+        start = end;
+    }
+    if start != faces.len() {
+        return Err("unused VTK polyhedron face stream".into());
+    }
+    Ok(polyhedra)
+}
+
+fn append_line(positions: &[Vec3], indices: &[usize], scene: &mut Scene) -> Result<()> {
+    if indices.len() < 2 {
+        return Err("VTK polyline needs at least two vertices".into());
+    }
+    let points = checked_positions(positions, indices)?;
+    for pair in points.windows(2) {
+        if scene.lines.len() >= MAX_ITEMS {
+            return Err("VTK output line count exceeds geometry limit".into());
+        }
+        scene.lines.push(Line {
+            vertices: [pair[0], pair[1]],
+            color: None,
+        });
+    }
+    Ok(())
+}
+
+fn checked_positions(positions: &[Vec3], indices: &[usize]) -> Result<Vec<Vec3>> {
+    indices
+        .iter()
+        .map(|&index| {
+            positions
+                .get(index)
+                .copied()
+                .ok_or_else(|| "VTK cell index is out of bounds".into())
+        })
+        .collect()
+}
+
+fn append_polygon(positions: &[Vec3], indices: &[usize], scene: &mut Scene) -> Result<()> {
+    let vertices = checked_positions(positions, indices)?;
+    for vertices in super::mesh::triangulate_polygon(&vertices)? {
+        if scene.triangles.len() >= MAX_ITEMS {
+            return Err("VTK output triangle count exceeds geometry limit".into());
+        }
+        scene.triangles.push(Triangle {
+            vertices,
+            color: None,
+        });
+    }
+    Ok(())
+}
+
+fn append_point(position: Vec3, scene: &mut Scene) -> Result<()> {
+    if scene.points.len() >= MAX_ITEMS {
+        return Err("VTK output point count exceeds geometry limit".into());
+    }
+    scene.points.push(Point {
+        position,
+        color: None,
+    });
+    Ok(())
+}
+
+fn append_strip(positions: &[Vec3], indices: &[usize], scene: &mut Scene) -> Result<()> {
+    if indices.len() < 3 {
+        return Err("VTK triangle strip has fewer than three vertices".into());
+    }
+    let points = checked_positions(positions, indices)?;
+    for i in 2..points.len() {
+        let vertices = if i % 2 == 0 {
+            [points[i - 2], points[i - 1], points[i]]
+        } else {
+            [points[i - 1], points[i - 2], points[i]]
+        };
+        if (vertices[1] - vertices[0])
+            .cross(vertices[2] - vertices[0])
+            .length()
+            > 0.0
+        {
+            if scene.triangles.len() >= MAX_ITEMS {
+                return Err("VTK output triangle count exceeds geometry limit".into());
+            }
+            scene.triangles.push(Triangle {
+                vertices,
+                color: None,
+            });
+        }
+    }
+    Ok(())
+}
+
+fn append_polydata(
+    positions: &[Vec3],
+    polygons: Vec<Vec<usize>>,
+    strips: Vec<Vec<usize>>,
+    vertices: Vec<Vec<usize>>,
+    scene: &mut Scene,
+) -> Result<()> {
+    for polygon in polygons {
+        append_polygon(positions, &polygon, scene)?;
+    }
+    for strip in strips {
+        append_strip(positions, &strip, scene)?;
+    }
+    for cell in vertices {
+        for position in checked_positions(positions, &cell)? {
+            append_point(position, scene)?;
+        }
+    }
+    Ok(())
+}
+
+/// Internal volume faces occur twice and are discarded before triangulation.
+pub(super) fn grid_scene(
+    positions: &[Vec3],
+    cells: &[Vec<usize>],
+    types: &[usize],
+) -> Result<Scene> {
+    let mut scene = Scene::default();
+    append_grid(positions, cells, types, &mut scene)?;
+    scene.validate()?;
+    Ok(scene)
+}
+
+pub(super) fn grid_scene_with_polyhedra(
+    positions: &[Vec3],
+    cells: &[Vec<usize>],
+    types: &[usize],
+    polyhedra: &BTreeMap<usize, Vec<Vec<usize>>>,
+) -> Result<Scene> {
+    let mut scene = Scene::default();
+    append_grid_with_polyhedra(positions, cells, types, &mut scene, Some(polyhedra))?;
+    scene.validate()?;
+    Ok(scene)
+}
+
+fn append_grid(
+    positions: &[Vec3],
+    cells: &[Vec<usize>],
+    types: &[usize],
+    scene: &mut Scene,
+) -> Result<()> {
+    append_grid_with_polyhedra(positions, cells, types, scene, None)
+}
+
+fn append_grid_with_polyhedra(
+    positions: &[Vec3],
+    cells: &[Vec<usize>],
+    types: &[usize],
+    scene: &mut Scene,
+    polyhedra: Option<&BTreeMap<usize, Vec<Vec<usize>>>>,
+) -> Result<()> {
+    if cells.len() != types.len() {
+        return Err("VTK cell and type counts disagree".into());
+    }
+    let mut volume_faces: BTreeMap<Vec<usize>, (usize, Vec<usize>)> = BTreeMap::new();
+    for (cell_index, (indices, &cell_type)) in cells.iter().zip(types).enumerate() {
+        checked_positions(positions, indices)?;
+        let expected = match cell_type {
+            0 => Some(0),
+            1 => Some(1),
+            5 => Some(3),
+            8 | 9 => Some(4),
+            10 => Some(4),
+            11 | 12 => Some(8),
+            13 => Some(6),
+            14 => Some(5),
+            _ => None,
+        };
+        if expected.is_some_and(|n| indices.len() != n) {
+            return Err(format!("invalid vertex count for VTK cell type {cell_type}").into());
+        }
+        if cell_type == 2 && indices.is_empty() {
+            return Err("VTK poly-vertex cell is empty".into());
+        }
+        if (10..=14).contains(&cell_type) {
+            let mut unique = indices.clone();
+            unique.sort_unstable();
+            if unique.windows(2).any(|w| w[0] == w[1]) {
+                return Err("VTK volume cell has duplicate vertices".into());
+            }
+        }
+        match cell_type {
+            0 => {}
+            1 | 2 => {
+                for &index in indices {
+                    append_point(positions[index], scene)?;
+                }
+            }
+            5 | 7 | 9 => append_polygon(positions, indices, scene)?,
+            6 => append_strip(positions, indices, scene)?,
+            8 => append_polygon(
+                positions,
+                &[indices[0], indices[1], indices[3], indices[2]],
+                scene,
+            )?,
+            42 => {
+                let faces = polyhedra
+                    .and_then(|p| p.get(&cell_index))
+                    .ok_or("VTK polyhedron cell has no face topology")?;
+                if indices.len() < 4 || faces.len() < 4 {
+                    return Err("VTK polyhedron requires at least four vertices and faces".into());
+                }
+                let mut unique = indices.clone();
+                unique.sort_unstable();
+                unique.dedup();
+                if unique.len() != indices.len() {
+                    return Err("VTK polyhedron cell repeats a vertex".into());
+                }
+                let mut used: Vec<_> = faces.iter().flatten().copied().collect();
+                used.sort_unstable();
+                used.dedup();
+                if used != unique {
+                    return Err("VTK polyhedron faces do not cover its cell vertices".into());
+                }
+                let center = indices
+                    .iter()
+                    .map(|&i| positions[i] * (1. / indices.len() as f64))
+                    .fold(Vec3::new(0., 0., 0.), |a, b| a + b);
+                let scale = indices
+                    .iter()
+                    .map(|&i| (positions[i] - center).length())
+                    .fold(0., f64::max);
+                let mut edges = BTreeMap::<(usize, usize), usize>::new();
+                for face in faces {
+                    if face.len() < 3 || face.iter().any(|i| !indices.contains(i)) {
+                        return Err(
+                            "VTK polyhedron face references a vertex outside its cell".into()
+                        );
+                    }
+                    let mut face = face.clone();
+                    let mut unique = face.clone();
+                    unique.sort_unstable();
+                    unique.dedup();
+                    if unique.len() != face.len() {
+                        return Err("VTK polyhedron face repeats a vertex".into());
+                    }
+                    let normal = (0..face.len())
+                        .map(|i| {
+                            (positions[face[i]] - center)
+                                .cross(positions[face[(i + 1) % face.len()]] - center)
+                        })
+                        .fold(Vec3::new(0., 0., 0.), |a, b| a + b)
+                        .normalized();
+                    if normal.length() == 0. {
+                        return Err("VTK polyhedron face is degenerate".into());
+                    }
+                    let outward = if normal.dot(positions[face[0]] - center) < 0. {
+                        face.reverse();
+                        normal * -1.
+                    } else {
+                        normal
+                    };
+                    if indices
+                        .iter()
+                        .any(|&i| outward.dot(positions[i] - positions[face[0]]) > scale * 1e-8)
+                    {
+                        return Err("nonconvex VTK polyhedron cells are not implemented".into());
+                    }
+                    for i in 0..face.len() {
+                        let (a, b) = (face[i], face[(i + 1) % face.len()]);
+                        *edges.entry((a.min(b), a.max(b))).or_default() += 1;
+                    }
+                    let mut key = face.clone();
+                    key.sort_unstable();
+                    let entry = volume_faces.entry(key).or_insert((0, face));
+                    entry.0 += 1;
+                    if entry.0 > 2 {
+                        return Err("VTK grid contains a non-manifold volume face".into());
+                    }
+                }
+                if edges.values().any(|&n| n != 2) {
+                    return Err("VTK polyhedron face topology is not closed".into());
+                }
+            }
+            10..=14 => {
+                let local_faces: Vec<Vec<usize>> = match cell_type {
+                    10 => vec![vec![0, 2, 1], vec![0, 1, 3], vec![1, 2, 3], vec![2, 0, 3]],
+                    11 => vec![
+                        vec![0, 2, 3, 1],
+                        vec![4, 5, 7, 6],
+                        vec![0, 1, 5, 4],
+                        vec![1, 3, 7, 5],
+                        vec![3, 2, 6, 7],
+                        vec![2, 0, 4, 6],
+                    ],
+                    12 => vec![
+                        vec![0, 3, 2, 1],
+                        vec![4, 5, 6, 7],
+                        vec![0, 1, 5, 4],
+                        vec![1, 2, 6, 5],
+                        vec![2, 3, 7, 6],
+                        vec![3, 0, 4, 7],
+                    ],
+                    13 => vec![
+                        vec![0, 2, 1],
+                        vec![3, 4, 5],
+                        vec![0, 1, 4, 3],
+                        vec![1, 2, 5, 4],
+                        vec![2, 0, 3, 5],
+                    ],
+                    14 => vec![
+                        vec![0, 3, 2, 1],
+                        vec![0, 1, 4],
+                        vec![1, 2, 4],
+                        vec![2, 3, 4],
+                        vec![3, 0, 4],
+                    ],
+                    _ => unreachable!(),
+                };
+                for face in local_faces {
+                    let face: Vec<_> = face.into_iter().map(|i| indices[i]).collect();
+                    let mut key = face.clone();
+                    key.sort_unstable();
+                    let entry = volume_faces.entry(key).or_insert((0, face));
+                    entry.0 += 1;
+                    if entry.0 > 2 {
+                        return Err("VTK grid contains a non-manifold volume face".into());
+                    }
+                }
+            }
+            _ => return Err(format!("VTK cell type {cell_type} is not implemented").into()),
+        }
+    }
+    for (_, (count, face)) in volume_faces {
+        if count == 1 {
+            append_polygon(positions, &face, scene)?;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    const HEADER: &str = "# vtk DataFile Version 3.0\ntest geometry\nASCII\n";
+
+    #[test]
+    fn legacy_polydata_renders_polygon_strip_and_vertices() {
+        let text = format!(
+            "{HEADER}DATASET POLYDATA\nPOINTS 4 float\n0 0 0 1 0 0 1 1 0 0 1 0\nPOLYGONS 1 5\n4 0 1 2 3\nTRIANGLE_STRIPS 1 5\n4 0 1 3 2\nVERTICES 1 2\n1 0\n"
+        );
+        let scene = parse_vtk(&text).unwrap();
+        assert_eq!(scene.triangles.len(), 4);
+        assert_eq!(scene.points.len(), 1);
+    }
+
+    #[test]
+    fn shared_tetrahedron_face_is_removed() {
+        let text = format!(
+            "{HEADER}DATASET UNSTRUCTURED_GRID\nPOINTS 5 double\n0 0 0 1 0 0 0 1 0 0 0 1 0 0 -1\nCELLS 2 10\n4 0 1 2 3\n4 0 2 1 4\nCELL_TYPES 2\n10 10\n"
+        );
+        let scene = parse_vtk(&text).unwrap();
+        assert_eq!(scene.triangles.len(), 6);
+        assert!(
+            scene
+                .triangles
+                .iter()
+                .all(|t| t.vertices.iter().any(|p| p.z != 0.0))
+        );
+    }
+
+    #[test]
+    fn xml_polydata_concave_polygon() {
+        let scene = parse_vtk_xml(r#"<VTKFile type="PolyData"><PolyData><Piece NumberOfPoints="5" NumberOfPolys="1"><Points><DataArray NumberOfComponents="3">0 0 0 2 0 0 2 2 0 1 1 0 0 2 0</DataArray></Points><Polys><DataArray Name="connectivity">0 1 2 3 4</DataArray><DataArray Name="offsets">5</DataArray></Polys></Piece></PolyData></VTKFile>"#).unwrap();
+        let area: f64 = scene
+            .triangles
+            .iter()
+            .map(|t| {
+                (t.vertices[1] - t.vertices[0])
+                    .cross(t.vertices[2] - t.vertices[0])
+                    .length()
+                    / 2.0
+            })
+            .sum();
+        assert!((area - 3.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn xml_grid_extracts_tetrahedron() {
+        let scene = parse_vtk_xml(r#"<VTKFile type="UnstructuredGrid"><UnstructuredGrid><Piece NumberOfPoints="4" NumberOfCells="1"><Points><DataArray>0 0 0 1 0 0 0 1 0 0 0 1</DataArray></Points><Cells><DataArray Name="connectivity">0 1 2 3</DataArray><DataArray Name="offsets">4</DataArray><DataArray Name="types">10</DataArray></Cells></Piece></UnstructuredGrid></VTKFile>"#).unwrap();
+        assert_eq!(scene.triangles.len(), 4);
+    }
+
+    #[test]
+    fn rectilinear_grid_extracts_outer_cells_without_internal_faces() {
+        let scene = parse_vtk_xml(r#"<VTKFile type="RectilinearGrid"><RectilinearGrid WholeExtent="-1 1 4 5 0 1"><Piece Extent="-1 1 4 5 0 1"><Coordinates><DataArray>1 2 4</DataArray><DataArray>2 5</DataArray><DataArray>3 7</DataArray></Coordinates></Piece></RectilinearGrid></VTKFile>"#).unwrap();
+        assert_eq!(scene.triangles.len(), 20);
+        let area: f64 = scene
+            .triangles
+            .iter()
+            .map(|t| {
+                (t.vertices[1] - t.vertices[0])
+                    .cross(t.vertices[2] - t.vertices[0])
+                    .length()
+                    * 0.5
+            })
+            .sum();
+        assert!((area - 66.).abs() < 1e-9);
+        assert!(
+            !scene
+                .triangles
+                .iter()
+                .any(|t| t.vertices.iter().all(|p| p.x == 2.))
+        );
+    }
+
+    #[test]
+    fn structured_grid_preserves_deformation_and_two_dimensional_surfaces() {
+        let mut points = String::new();
+        for z in [0., 4.] {
+            for y in [0., 3.] {
+                for x in [0., 2.] {
+                    points.push_str(&format!("{} {y} {z} ", x + z * 0.25));
+                }
+            }
+        }
+        let text = format!(
+            r#"<VTKFile type="StructuredGrid"><StructuredGrid WholeExtent="0 1 0 1 0 1"><Piece Extent="0 1 0 1 0 1"><Points><DataArray>{points}</DataArray></Points></Piece></StructuredGrid></VTKFile>"#
+        );
+        let scene = parse_vtk_xml(&text).unwrap();
+        assert_eq!(scene.triangles.len(), 12);
+        let area: f64 = scene
+            .triangles
+            .iter()
+            .map(|t| {
+                (t.vertices[1] - t.vertices[0])
+                    .cross(t.vertices[2] - t.vertices[0])
+                    .length()
+                    * 0.5
+            })
+            .sum();
+        assert!((area - 2. * (6. + 8. + 153f64.sqrt())).abs() < 1e-9);
+        assert_eq!(
+            scene
+                .positions()
+                .map(|p| p.x)
+                .fold(f64::NEG_INFINITY, f64::max),
+            3.
+        );
+
+        let sheet = parse_vtk_xml(r#"<VTKFile type="StructuredGrid"><StructuredGrid WholeExtent="0 2 0 2 0 0"><Piece Extent="0 2 0 2 0 0"><Points><DataArray>0 0 0 1 0 0 2 0 0 0 1 0 1 1 0.7 2 1 0 0 2 0 1 2 0 2 2 0</DataArray></Points></Piece></StructuredGrid></VTKFile>"#).unwrap();
+        assert_eq!(sheet.triangles.len(), 8);
+        assert!(sheet.positions().any(|p| p == Vec3::new(1., 1., 0.7)));
+        assert!(crate::render::render(&sheet, &Default::default()).is_ok());
+    }
+
+    #[test]
+    fn structured_grid_rejects_bad_extents_payloads_and_blanking() {
+        let valid = r#"<VTKFile type="RectilinearGrid"><RectilinearGrid WholeExtent="0 1 0 1 0 1"><Piece Extent="0 1 0 1 0 1"><Coordinates><DataArray>0 1</DataArray><DataArray>0 1</DataArray><DataArray>0 1</DataArray></Coordinates></Piece></RectilinearGrid></VTKFile>"#;
+        for bad in [
+            valid.replace("WholeExtent=\"0 1 0 1 0 1\"", "WholeExtent=\"0 9223372036854775807 0 1 0 1\""),
+            valid.replace("WholeExtent=\"0 1 0 1 0 1\"", "WholeExtent=\"1 0 0 1 0 1\""),
+            valid.replace("Extent=\"0 1 0 1 0 1\"><Coordinates>", "Extent=\"0 0 0 1 0 1\"><Coordinates>"),
+            valid.replacen("<DataArray>0 1</DataArray>", "<DataArray>0</DataArray>", 1),
+            valid.replacen("<DataArray>0 1</DataArray>", "<DataArray>0 0</DataArray>", 1),
+            valid.replace("<Coordinates>", "<PointData><DataArray Name=\"vtkGhostType\">1</DataArray></PointData><Coordinates>"),
+            valid.replacen("<DataArray>", "<DataArray format=\"binary\">", 1),
+            valid.replace("</RectilinearGrid>", "<Piece Extent=\"0 1 0 1 0 1\"/></RectilinearGrid>"),
+        ] { assert!(parse_vtk_xml(&bad).is_err(), "accepted {bad}"); }
+        assert!(parse_vtk_xml(r#"<VTKFile type="StructuredGrid"><StructuredGrid WholeExtent="0 1 0 0 0 0"><Piece Extent="0 1 0 0 0 0"><Points><DataArray>0 0 0 1 0 0</DataArray></Points></Piece></StructuredGrid></VTKFile>"#).is_err());
+    }
+
+    #[test]
+    fn multiblock_reads_nested_relative_datasets_and_rejects_cycles() {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
+        let directory = std::env::temp_dir().join(format!(
+            "catwalk-vtm-{}-{}",
+            std::process::id(),
+            NEXT_DIRECTORY.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let triangle = r#"<VTKFile type="PolyData"><PolyData><Piece NumberOfPoints="3" NumberOfPolys="1"><Points><DataArray>0 0 0 1 0 0 0 1 0</DataArray></Points><Polys><DataArray Name="connectivity">0 1 2</DataArray><DataArray Name="offsets">3</DataArray></Polys></Piece></PolyData></VTKFile>"#;
+        std::fs::write(directory.join("part one.vtp"), triangle).unwrap();
+        let root = directory.join("main.vtm");
+        let nested = directory.join("nested.vtm");
+        std::fs::write(&nested, r#"<VTKFile type="vtkMultiBlockDataSet"><vtkMultiBlockDataSet><DataSet index="0" file="part%20one.vtp"/><DataSet index="1"/></vtkMultiBlockDataSet></VTKFile>"#).unwrap();
+        std::fs::write(&root, r#"<VTKFile type="vtkMultiBlockDataSet"><vtkMultiBlockDataSet><Block index="0"><DataSet index="0" file="part%20one.vtp"/><Block index="1"><DataSet index="0" file="nested.vtm"/></Block></Block></vtkMultiBlockDataSet></VTKFile>"#).unwrap();
+        let scene = load(&root).unwrap();
+        assert_eq!(scene.triangles.len(), 2);
+        assert!(crate::render::render(&scene, &Default::default()).is_ok());
+
+        for file in [
+            "main.vtm",
+            "../outside.vtp",
+            "https://example.com/model.vtp",
+            "missing.vtp",
+        ] {
+            std::fs::write(&nested, format!(r#"<VTKFile type="vtkMultiBlockDataSet"><vtkMultiBlockDataSet><DataSet file="{file}"/></vtkMultiBlockDataSet></VTKFile>"#)).unwrap();
+            assert!(load(&root).is_err(), "accepted {file}");
+        }
+        let deep = format!(
+            "<VTKFile type=\"vtkMultiBlockDataSet\"><vtkMultiBlockDataSet>{}{}{}{}</vtkMultiBlockDataSet></VTKFile>",
+            "<Block>".repeat(40),
+            "<DataSet file=\"part%20one.vtp\"/>",
+            "</Block>".repeat(40),
+            ""
+        );
+        std::fs::write(&root, deep).unwrap();
+        assert!(load(&root).is_err());
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn malformed_and_unsupported_geometry_is_rejected() {
+        for body in [
+            "DATASET POLYDATA POINTS 3 float 0 0 0 1 0 0 0 1 0 POLYGONS 1 4 3 0 1 9",
+            "DATASET POLYDATA POINTS 3 float 0 0 0 1 0 0 0 1 0 POLYGONS 1 5 3 0 1 2",
+            "DATASET UNSTRUCTURED_GRID POINTS 4 float 0 0 0 1 0 0 0 1 0 0 0 1 CELLS 1 4 3 0 1 2 CELL_TYPES 1 10",
+            "DATASET UNSTRUCTURED_GRID POINTS 4 float 0 0 0 1 0 0 0 1 0 0 0 1 CELLS 1 5 4 0 1 2 3 CELL_TYPES 1 24",
+            "DATASET POLYDATA POINTS 1 float NaN 0 0 VERTICES 1 2 1 0",
+        ] {
+            assert!(
+                parse_vtk(&format!("{HEADER}{body}")).is_err(),
+                "accepted {body}"
+            );
+        }
+        assert!(parse_vtk_xml(r#"<VTKFile type="PolyData"><PolyData><Piece NumberOfPoints="1"><Points><DataArray format="binary">AAAA</DataArray></Points></Piece></PolyData></VTKFile>"#).is_err());
+    }
+
+    fn numeric(values: &[f64], big: bool) -> Vec<u8> {
+        values
+            .iter()
+            .flat_map(|&n| {
+                if big {
+                    n.to_be_bytes()
+                } else {
+                    n.to_le_bytes()
+                }
+            })
+            .collect()
+    }
+    fn integer_words(values: &[u64], width: usize, big: bool) -> Vec<u8> {
+        values
+            .iter()
+            .flat_map(|&n| {
+                let bytes = if big {
+                    n.to_be_bytes()
+                } else {
+                    n.to_le_bytes()
+                };
+                if big {
+                    bytes[8 - width..].to_vec()
+                } else {
+                    bytes[..width].to_vec()
+                }
+            })
+            .collect()
+    }
+    fn encoded_payload(
+        data: &[u8],
+        header: usize,
+        big: bool,
+        compressor: Option<&str>,
+    ) -> (Vec<u8>, String) {
+        use base64::Engine;
+        use std::io::Write;
+        let (prefix, payload) = if let Some(compressor) = compressor {
+            let size = 17;
+            let blocks: Vec<_> = data
+                .chunks(size)
+                .map(|block| {
+                    if compressor == "vtkZLibDataCompressor" {
+                        let mut writer = flate2::write::ZlibEncoder::new(
+                            Vec::new(),
+                            flate2::Compression::fast(),
+                        );
+                        writer.write_all(block).unwrap();
+                        writer.finish().unwrap()
+                    } else {
+                        lz4_flex::block::compress(block)
+                    }
+                })
+                .collect();
+            let mut words = vec![blocks.len() as u64, size as u64, (data.len() % size) as u64];
+            words.extend(blocks.iter().map(|b| b.len() as u64));
+            (integer_words(&words, header, big), blocks.concat())
+        } else {
+            (
+                integer_words(&[data.len() as u64], header, big),
+                data.to_vec(),
+            )
+        };
+        let bytes = [prefix.as_slice(), payload.as_slice()].concat();
+        let encoded = if compressor.is_some() {
+            format!(
+                "{}{}",
+                base64::engine::general_purpose::STANDARD.encode(&prefix),
+                base64::engine::general_purpose::STANDARD.encode(&payload)
+            )
+        } else {
+            base64::engine::general_purpose::STANDARD.encode(&bytes)
+        };
+        (bytes, encoded)
+    }
+    fn binary_tetrahedron(
+        mode: &str,
+        header: usize,
+        big: bool,
+        compressor: Option<&str>,
+    ) -> Vec<u8> {
+        let arrays = [
+            (
+                "Points",
+                "Float64",
+                3,
+                numeric(&[0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0., 1.], big),
+            ),
+            (
+                "connectivity",
+                "Int64",
+                1,
+                integer_words(&[0, 1, 2, 3], 8, big),
+            ),
+            ("offsets", "Int64", 1, integer_words(&[4], 8, big)),
+            ("types", "UInt8", 1, vec![10]),
+        ];
+        let mut tags = Vec::new();
+        let mut appended = Vec::new();
+        for (name, ty, components, bytes) in arrays {
+            let (raw, encoded) = encoded_payload(&bytes, header, big, compressor);
+            let placement = if mode == "binary" {
+                format!("format=\"binary\">{encoded}")
+            } else {
+                let offset = appended.len();
+                if mode == "raw" {
+                    appended.extend(raw);
+                } else {
+                    appended.extend(encoded.as_bytes());
+                }
+                format!("format=\"appended\" offset=\"{offset}\">")
+            };
+            tags.push(format!("<DataArray Name=\"{name}\" type=\"{ty}\" NumberOfComponents=\"{components}\" {placement}</DataArray>"));
+        }
+        let compression = compressor
+            .map(|c| format!(" compressor=\"{c}\""))
+            .unwrap_or_default();
+        let mut document = format!(
+            "<VTKFile type=\"UnstructuredGrid\" byte_order=\"{}\" header_type=\"UInt{}\"{compression}><UnstructuredGrid><Piece NumberOfPoints=\"4\" NumberOfCells=\"1\"><Points>{}</Points><Cells>{}{}{}</Cells></Piece></UnstructuredGrid>",
+            if big { "BigEndian" } else { "LittleEndian" }, header*8, tags[0], tags[1], tags[2], tags[3]
+        ).into_bytes();
+        if mode != "binary" {
+            document.extend(
+                format!(
+                    "<AppendedData encoding=\"{}\">\n_",
+                    if mode == "raw" { "raw" } else { "base64" }
+                )
+                .as_bytes(),
+            );
+            document.extend(appended);
+            document.extend(b"\n</AppendedData>");
+        }
+        document.extend(b"</VTKFile>");
+        document
+    }
+    #[test]
+    fn xml_binary_encodings_match_ascii_topology_and_rendering() {
+        let ascii = parse_vtk_xml(r#"<VTKFile type="UnstructuredGrid"><UnstructuredGrid><Piece NumberOfPoints="4" NumberOfCells="1"><Points><DataArray>0 0 0 1 0 0 0 1 0 0 0 1</DataArray></Points><Cells><DataArray Name="connectivity">0 1 2 3</DataArray><DataArray Name="offsets">4</DataArray><DataArray Name="types">10</DataArray></Cells></Piece></UnstructuredGrid></VTKFile>"#).unwrap();
+        let expected: Vec<_> = ascii.positions().collect();
+        let image = crate::render::render(&ascii, &Default::default()).unwrap();
+        for mode in ["binary", "raw", "base64"] {
+            for header in [4, 8] {
+                for big in [false, true] {
+                    for compressor in [
+                        None,
+                        Some("vtkZLibDataCompressor"),
+                        Some("vtkLZ4DataCompressor"),
+                    ] {
+                        let scene =
+                            parse_vtk_xml_bytes(&binary_tetrahedron(mode, header, big, compressor))
+                                .unwrap();
+                        assert_eq!(
+                            scene.positions().collect::<Vec<_>>(),
+                            expected,
+                            "{mode} {header} {big} {compressor:?}"
+                        );
+                        assert_eq!(
+                            crate::render::render(&scene, &Default::default())
+                                .unwrap()
+                                .as_raw(),
+                            image.as_raw()
+                        );
+                    }
+                }
+            }
+        }
+    }
+    #[test]
+    fn binary_arrays_reject_truncation_lengths_compression_and_raw_envelopes() {
+        let valid = binary_tetrahedron("raw", 4, false, Some("vtkZLibDataCompressor"));
+        let underscore = valid.windows(2).position(|s| s == b"\n_").unwrap() + 1;
+        for n in [1, 2, 3, 4, 5, 7, 8, 12, 16] {
+            let mut bad = valid.clone();
+            bad.drain(underscore + 1..underscore + 1 + n);
+            assert!(
+                parse_vtk_xml_bytes(&bad).is_err(),
+                "accepted truncation of {n} bytes"
+            );
+        }
+        let mut bad = valid.clone();
+        bad[underscore + 1..underscore + 5].copy_from_slice(&u32::MAX.to_le_bytes());
+        assert!(parse_vtk_xml_bytes(&bad).is_err());
+        let mut bad = valid.clone();
+        bad[underscore + 5..underscore + 9].copy_from_slice(&u32::MAX.to_le_bytes());
+        assert!(parse_vtk_xml_bytes(&bad).is_err());
+        let mut bad = valid.clone();
+        bad[underscore + 9..underscore + 13].copy_from_slice(&18u32.to_le_bytes());
+        assert!(parse_vtk_xml_bytes(&bad).is_err());
+        let inline = String::from_utf8(binary_tetrahedron("binary", 4, false, None)).unwrap();
+        for bad in [
+            inline.replace("NumberOfPoints=\"4\"", "NumberOfPoints=\"3\""),
+            inline.replace("UInt8", "Float32"),
+            inline.replace("offsets", "missing-offsets"),
+            inline.replace("LittleEndian", "unknown"),
+            inline.replace("UInt32", "UInt16"),
+        ] {
+            assert!(parse_vtk_xml(&bad).is_err());
+        }
+        for bad in [
+            b"</AppendedData><AppendedData encoding=\"raw\">_".as_slice(),
+            b"<VTKFile><AppendedData encoding=\"raw\">".as_slice(),
+        ] {
+            assert!(arrays::xml_envelope(bad).is_err());
+        }
+    }
+    #[test]
+    fn legacy_binary_and_v5_split_offsets_match_ascii() {
+        let coordinates = [0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0., 1.];
+        for version in ["3.0", "5.1"] {
+            for binary in [false, true] {
+                let mut data = format!("# vtk DataFile Version {version}\nindependent geometry\n{}\nDATASET UNSTRUCTURED_GRID\nPOINTS 4 double\n", if binary {"BINARY"} else {"ASCII"}).into_bytes();
+                if binary {
+                    data.extend(numeric(&coordinates, true));
+                } else {
+                    data.extend(b"0 0 0 1 0 0 0 1 0 0 0 1");
+                }
+                if version == "5.1" {
+                    data.extend(b"\nCELLS 2 4\nOFFSETS vtktypeint64\n");
+                    if binary {
+                        data.extend(integer_words(&[0, 4], 8, true));
+                    } else {
+                        data.extend(b"0 4");
+                    }
+                    data.extend(b"\nCONNECTIVITY vtktypeint64\n");
+                    if binary {
+                        data.extend(integer_words(&[0, 1, 2, 3], 8, true));
+                    } else {
+                        data.extend(b"0 1 2 3");
+                    }
+                } else {
+                    data.extend(b"\nCELLS 1 5\n");
+                    if binary {
+                        data.extend(integer_words(&[4, 0, 1, 2, 3], 4, true));
+                    } else {
+                        data.extend(b"4 0 1 2 3");
+                    }
+                }
+                data.extend(b"\nCELL_TYPES 1\n");
+                if binary {
+                    data.extend(10i32.to_be_bytes());
+                } else {
+                    data.extend(b"10");
+                }
+                let scene = legacy::parse(&data).unwrap();
+                assert_eq!(scene.triangles.len(), 4);
+                let volume: f64 = scene
+                    .triangles
+                    .iter()
+                    .map(|t| t.vertices[0].dot(t.vertices[1].cross(t.vertices[2])) / 6.)
+                    .sum();
+                assert!((volume - 1. / 6.).abs() < 1e-12);
+                if binary {
+                    data.pop();
+                    assert!(legacy::parse(&data).is_err());
+                }
+            }
+        }
+    }
+    #[test]
+    fn xml_polyhedron_topology_extracts_closed_boundary_and_rejects_bad_faces() {
+        let text = r#"<VTKFile type="UnstructuredGrid"><UnstructuredGrid><Piece NumberOfPoints="4" NumberOfCells="1"><Points><DataArray>0 0 0 1 0 0 0 1 0 0 0 1</DataArray></Points><Cells><DataArray Name="connectivity">0 1 2 3</DataArray><DataArray Name="offsets">4</DataArray><DataArray Name="types">42</DataArray><DataArray Name="faces">4 3 0 2 1 3 0 1 3 3 1 2 3 3 2 0 3</DataArray><DataArray Name="faceoffsets">17</DataArray></Cells></Piece></UnstructuredGrid></VTKFile>"#;
+        assert_eq!(parse_vtk_xml(text).unwrap().triangles.len(), 4);
+        assert!(parse_vtk_xml(&text.replace(">17<", ">16<")).is_err());
+        assert!(parse_vtk_xml(&text.replace("3 2 0 3", "3 0 0 3")).is_err());
+    }
+}

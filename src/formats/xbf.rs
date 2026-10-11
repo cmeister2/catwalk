@@ -1,0 +1,2128 @@
+//! Static XCAF documents, decoded from native OCAF/BinTools binary records.
+//! Layout facts follow the primary OCCT serializers, not an ASCII alias:
+//! https://github.com/Open-Cascade-SAS/OCCT/tree/V7_9_0/src/BinTools
+//! https://github.com/Open-Cascade-SAS/OCCT/tree/V7_9_0/src/BinLDrivers
+use super::transform::Transform;
+use crate::{
+    Result,
+    scene::{Scene, Vec3},
+};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Write as _,
+    path::Path,
+};
+
+const MAX_BYTES: usize = 16 * 1024 * 1024;
+const MAX_RECORDS: usize = 100_000;
+const MAX_DEPTH: usize = 64;
+const MAX_COMPONENTS: usize = 1_000_000;
+
+#[derive(Clone, Copy, Debug)]
+struct ShapeRef {
+    node: usize,
+    location: usize,
+    orientation: u8,
+}
+
+struct Shape {
+    kind: u8,
+    geometry: String,
+    flags: u8,
+    children: Vec<ShapeRef>,
+}
+
+#[derive(Default)]
+struct Tables {
+    locations: Vec<Transform>,
+    curves: Vec<String>,
+    pcurves: Vec<String>,
+    surfaces: Vec<String>,
+    shapes: Vec<Shape>,
+    shape_positions: HashMap<usize, usize>,
+    location_positions: HashMap<usize, usize>,
+    geometry_positions: HashMap<(u8, usize), usize>,
+}
+
+struct Cursor<'a> {
+    bytes: &'a [u8],
+    pos: usize,
+}
+impl<'a> Cursor<'a> {
+    fn new(bytes: &'a [u8]) -> Self {
+        Self { bytes, pos: 0 }
+    }
+    fn take(&mut self, size: usize) -> Result<&'a [u8]> {
+        let end = self.pos.checked_add(size).ok_or("XBF offset overflow")?;
+        let data = self
+            .bytes
+            .get(self.pos..end)
+            .ok_or("truncated XBF record")?;
+        self.pos = end;
+        Ok(data)
+    }
+    fn byte(&mut self) -> Result<u8> {
+        Ok(self.take(1)?[0])
+    }
+    fn boolean(&mut self) -> Result<u8> {
+        let value = self.byte()?;
+        if value > 1 {
+            return Err("invalid XBF boolean".into());
+        }
+        Ok(value)
+    }
+    fn i32(&mut self) -> Result<i32> {
+        Ok(i32::from_le_bytes(self.take(4)?.try_into()?))
+    }
+    fn u64(&mut self) -> Result<u64> {
+        Ok(u64::from_le_bytes(self.take(8)?.try_into()?))
+    }
+    fn count(&mut self, limit: usize) -> Result<usize> {
+        let count = usize::try_from(self.i32()?).map_err(|_| "negative XBF count")?;
+        if count > limit {
+            return Err("XBF count exceeds preview limit".into());
+        }
+        Ok(count)
+    }
+    fn index(&mut self, limit: usize) -> Result<usize> {
+        let index = self.count(limit)?;
+        if index == 0 {
+            return Err("XBF geometry has a null table reference".into());
+        }
+        Ok(index)
+    }
+    fn real(&mut self) -> Result<f64> {
+        let value = f64::from_le_bytes(self.take(8)?.try_into()?);
+        if !value.is_finite() {
+            return Err("XBF geometry contains non-finite values".into());
+        }
+        Ok(value)
+    }
+    fn align(&mut self) -> Result<()> {
+        let size = (4 - self.pos % 4) % 4;
+        self.take(size)?;
+        Ok(())
+    }
+    fn string(&mut self, width: usize) -> Result<String> {
+        let size = self.count(MAX_COMPONENTS)?;
+        let data = self.take(size.checked_mul(width).ok_or("XBF string overflow")?)?;
+        if width == 1 {
+            Ok(std::str::from_utf8(data)?.trim_end_matches('\0').to_owned())
+        } else {
+            let data: Vec<u16> = data
+                .chunks_exact(2)
+                .map(|b| u16::from_le_bytes([b[0], b[1]]))
+                .collect();
+            Ok(String::from_utf16(&data)?.trim_end_matches('\0').to_owned())
+        }
+    }
+    fn table_header(&mut self, expected: &str) -> Result<usize> {
+        while self
+            .bytes
+            .get(self.pos)
+            .is_some_and(u8::is_ascii_whitespace)
+        {
+            self.pos += 1;
+        }
+        let start = self.pos;
+        while self.bytes.get(self.pos).is_some_and(|b| *b != b'\n') {
+            self.pos += 1;
+        }
+        let line = std::str::from_utf8(
+            self.bytes
+                .get(start..self.pos)
+                .ok_or("truncated XBF table")?,
+        )?;
+        self.take(1)?;
+        let mut words = line.split_whitespace();
+        if words.next() != Some(expected) {
+            return Err(format!("XBF expected {expected} table").into());
+        }
+        let count = words
+            .next()
+            .ok_or("XBF table lacks a count")?
+            .parse::<usize>()?;
+        if count > MAX_RECORDS || words.next().is_some() {
+            return Err("invalid or oversized XBF table".into());
+        }
+        Ok(count)
+    }
+    fn reference(&mut self, kind: u8) -> Result<usize> {
+        let start = self.pos.checked_sub(1).ok_or("invalid XBF reference")?;
+        let delta = match kind {
+            1 => u64::from(self.byte()?),
+            2 => u64::from(u16::from_le_bytes(self.take(2)?.try_into()?)),
+            3 => u64::from(u32::from_le_bytes(self.take(4)?.try_into()?)),
+            4 => self.u64()?,
+            _ => return Err("invalid XBF reference type".into()),
+        };
+        let delta = usize::try_from(delta)?;
+        if delta == 0 {
+            return Err("zero XBF backward reference".into());
+        }
+        start
+            .checked_sub(delta)
+            .ok_or_else(|| "XBF reference precedes the file".into())
+    }
+}
+
+fn real_text(cursor: &mut Cursor<'_>, output: &mut String, count: usize) -> Result<()> {
+    if count > MAX_COMPONENTS {
+        return Err("XBF geometry exceeds one million components".into());
+    }
+    for _ in 0..count {
+        write!(output, "{} ", cursor.real()?)?;
+    }
+    if output.len() > MAX_BYTES {
+        return Err("decoded XBF geometry exceeds 16 MiB".into());
+    }
+    Ok(())
+}
+
+fn degree(cursor: &mut Cursor<'_>) -> Result<usize> {
+    let degree = usize::from(u16::from_le_bytes(cursor.take(2)?.try_into()?));
+    if !(1..=64).contains(&degree) {
+        return Err("XBF spline degree is outside 1..64".into());
+    }
+    Ok(degree)
+}
+
+/// BinTools curve payloads have the same actual geometry as their BREP records.
+fn curve(cursor: &mut Cursor<'_>, dimension: usize, depth: usize) -> Result<String> {
+    if depth > MAX_DEPTH {
+        return Err("XBF nested curves exceed 64 levels".into());
+    }
+    let kind = cursor.byte()?;
+    let mut out = format!("{kind} ");
+    match kind {
+        1 => real_text(cursor, &mut out, dimension * 2)?,
+        2..=5 => {
+            real_text(cursor, &mut out, if dimension == 2 { 6 } else { 12 })?;
+            real_text(cursor, &mut out, if matches!(kind, 3 | 5) { 2 } else { 1 })?;
+        }
+        6 | 7 => {
+            let rational = cursor.boolean()?;
+            let periodic = if kind == 7 { cursor.boolean()? } else { 0 };
+            let degree = degree(cursor)?;
+            let poles = if kind == 7 {
+                cursor.count(MAX_RECORDS)?
+            } else {
+                degree + 1
+            };
+            let knots = if kind == 7 {
+                cursor.count(MAX_RECORDS)?
+            } else {
+                2
+            };
+            if poles < 2 || knots < 2 {
+                return Err("invalid XBF spline sizes".into());
+            }
+            // Exact Bezier conversion: clamped B-spline with the same poles.
+            out = format!("7 {rational} {periodic} {degree} {poles} {knots} ");
+            real_text(
+                cursor,
+                &mut out,
+                poles * (dimension + usize::from(rational)),
+            )?;
+            if kind == 6 {
+                write!(out, "0 {} 1 {} ", degree + 1, degree + 1)?;
+            } else {
+                for _ in 0..knots {
+                    write!(out, "{} {} ", cursor.real()?, cursor.count(degree + 1)?)?;
+                }
+            }
+        }
+        8 => {
+            real_text(cursor, &mut out, 2)?;
+            out.push_str(&curve(cursor, dimension, depth + 1)?);
+        }
+        9 => {
+            real_text(cursor, &mut out, if dimension == 3 { 4 } else { 1 })?;
+            out.push_str(&curve(cursor, dimension, depth + 1)?);
+        }
+        _ => return Err(format!("unsupported XBF curve representation {kind}").into()),
+    }
+    Ok(out)
+}
+
+fn surface(cursor: &mut Cursor<'_>, depth: usize) -> Result<String> {
+    if depth > MAX_DEPTH {
+        return Err("XBF nested surfaces exceed 64 levels".into());
+    }
+    let kind = cursor.byte()?;
+    let mut out = format!("{kind} ");
+    match kind {
+        1..=5 => {
+            real_text(cursor, &mut out, 12)?;
+            real_text(
+                cursor,
+                &mut out,
+                match kind {
+                    1 => 0,
+                    2 | 4 => 1,
+                    _ => 2,
+                },
+            )?;
+        }
+        6 | 7 => {
+            real_text(cursor, &mut out, if kind == 6 { 3 } else { 6 })?;
+            out.push_str(&curve(cursor, 3, depth + 1)?);
+        }
+        8 | 9 => {
+            let ur = cursor.boolean()?;
+            let vr = cursor.boolean()?;
+            let up = if kind == 9 { cursor.boolean()? } else { 0 };
+            let vp = if kind == 9 { cursor.boolean()? } else { 0 };
+            let ud = degree(cursor)?;
+            let vd = degree(cursor)?;
+            let un = if kind == 9 {
+                cursor.count(MAX_RECORDS)?
+            } else {
+                ud + 1
+            };
+            let vn = if kind == 9 {
+                cursor.count(MAX_RECORDS)?
+            } else {
+                vd + 1
+            };
+            let uk = if kind == 9 {
+                cursor.count(MAX_RECORDS)?
+            } else {
+                2
+            };
+            let vk = if kind == 9 {
+                cursor.count(MAX_RECORDS)?
+            } else {
+                2
+            };
+            let cells = un.checked_mul(vn).ok_or("XBF spline grid overflow")?;
+            if cells > MAX_RECORDS || un < 2 || vn < 2 || uk < 2 || vk < 2 {
+                return Err("invalid or oversized XBF surface grid".into());
+            }
+            out = format!("9 {ur} {vr} {up} {vp} {ud} {vd} {un} {vn} {uk} {vk} ");
+            real_text(cursor, &mut out, cells * (3 + usize::from(ur | vr)))?;
+            if kind == 8 {
+                write!(out, "0 {} 1 {} 0 {} 1 {} ", ud + 1, ud + 1, vd + 1, vd + 1)?;
+            } else {
+                for (count, degree) in [(uk, ud), (vk, vd)] {
+                    for _ in 0..count {
+                        write!(out, "{} {} ", cursor.real()?, cursor.count(degree + 1)?)?;
+                    }
+                }
+            }
+        }
+        10 => {
+            real_text(cursor, &mut out, 4)?;
+            out.push_str(&surface(cursor, depth + 1)?);
+        }
+        11 => {
+            real_text(cursor, &mut out, 1)?;
+            out.push_str(&surface(cursor, depth + 1)?);
+        }
+        _ => return Err(format!("unsupported XBF surface representation {kind}").into()),
+    }
+    Ok(out)
+}
+
+fn read_transform(cursor: &mut Cursor<'_>) -> Result<Transform> {
+    let mut transform = Transform::IDENTITY;
+    for row in 0..3 {
+        for column in &mut transform.0 {
+            column[row] = cursor.real()?;
+        }
+    }
+    Ok(transform)
+}
+
+fn inverse(transform: Transform) -> Result<Transform> {
+    let c = transform.0;
+    let a = Vec3::new(c[0][0], c[0][1], c[0][2]);
+    let b = Vec3::new(c[1][0], c[1][1], c[1][2]);
+    let d = Vec3::new(c[2][0], c[2][1], c[2][2]);
+    let determinant = a.dot(b.cross(d));
+    if !determinant.is_finite() || determinant.abs() < 1e-30 {
+        return Err("singular XBF location".into());
+    }
+    let rows = [
+        b.cross(d) / determinant,
+        d.cross(a) / determinant,
+        a.cross(b) / determinant,
+    ];
+    let mut result = Transform::IDENTITY;
+    for (row, r) in rows.iter().enumerate() {
+        result.0[0][row] = r.x;
+        result.0[1][row] = r.y;
+        result.0[2][row] = r.z;
+    }
+    let translation = Vec3::new(c[3][0], c[3][1], c[3][2]);
+    let offset = -result.apply(translation);
+    result.0[3] = [offset.x, offset.y, offset.z, 1.0];
+    Ok(result)
+}
+
+fn power(mut transform: Transform, exponent: i32) -> Result<Transform> {
+    if exponent.unsigned_abs() > 1024 {
+        return Err("XBF location power exceeds 1024".into());
+    }
+    if exponent < 0 {
+        transform = inverse(transform)?;
+    }
+    let mut result = Transform::IDENTITY;
+    for _ in 0..exponent.unsigned_abs() {
+        result = result.then(transform);
+    }
+    if result.0.iter().flatten().any(|v| !v.is_finite()) {
+        return Err("XBF location composition overflow".into());
+    }
+    Ok(result)
+}
+
+impl Tables {
+    fn location(&mut self, cursor: &mut Cursor<'_>, depth: usize) -> Result<usize> {
+        if depth > MAX_DEPTH || self.locations.len() >= MAX_RECORDS {
+            return Err("XBF location hierarchy exceeds preview limits".into());
+        }
+        let pos = cursor.pos;
+        let kind = cursor.byte()?;
+        if matches!(kind, 7 | 8) {
+            return Ok(0);
+        }
+        if (1..=4).contains(&kind) {
+            let reference = cursor.reference(kind)?;
+            return self
+                .location_positions
+                .get(&reference)
+                .copied()
+                .ok_or_else(|| "unknown/cyclic XBF location reference".into());
+        }
+        let transform = match kind {
+            6 => read_transform(cursor)?,
+            5 => {
+                let mut result = Transform::IDENTITY;
+                loop {
+                    let id = self.location(cursor, depth + 1)?;
+                    if id == 0 {
+                        break;
+                    }
+                    let exponent = cursor.i32()?;
+                    result = power(self.locations[id - 1], exponent)?.then(result);
+                }
+                result
+            }
+            _ => return Err("unsupported XBF location representation".into()),
+        };
+        let id = self.locations.len() + 1;
+        self.locations.push(transform);
+        self.location_positions.insert(pos, id);
+        Ok(id)
+    }
+    fn geometry(&mut self, cursor: &mut Cursor<'_>, expected: u8) -> Result<usize> {
+        let pos = cursor.pos;
+        let kind = cursor.byte()?;
+        if kind == expected + 1 {
+            return Err("XBF topology references empty curve/surface geometry".into());
+        }
+        if (1..=4).contains(&kind) {
+            let reference = cursor.reference(kind)?;
+            return self
+                .geometry_positions
+                .get(&(expected, reference))
+                .copied()
+                .ok_or_else(|| "unknown XBF geometry reference".into());
+        }
+        if kind != expected {
+            return Err("XBF geometry record has the wrong type".into());
+        }
+        let text = match expected {
+            9 => curve(cursor, 3, 0)?,
+            11 => curve(cursor, 2, 0)?,
+            13 => surface(cursor, 0)?,
+            _ => return Err("unsupported XBF geometry object".into()),
+        };
+        let table = match expected {
+            9 => &mut self.curves,
+            11 => &mut self.pcurves,
+            _ => &mut self.surfaces,
+        };
+        if table.len() >= MAX_RECORDS {
+            return Err("XBF geometry table exceeds 100000 records".into());
+        }
+        table.push(text);
+        let id = table.len();
+        self.geometry_positions.insert((expected, pos), id);
+        Ok(id)
+    }
+    fn shape(&mut self, cursor: &mut Cursor<'_>, depth: usize) -> Result<Option<ShapeRef>> {
+        if depth > MAX_DEPTH || self.shapes.len() >= MAX_RECORDS {
+            return Err("XBF shape hierarchy exceeds preview limits".into());
+        }
+        let pos = cursor.pos;
+        let kind = cursor.byte()?;
+        if matches!(kind, 198 | 199) {
+            return Ok(None);
+        }
+        if (1..=4).contains(&kind) {
+            let reference = cursor.reference(kind)?;
+            let node = *self
+                .shape_positions
+                .get(&reference)
+                .ok_or("unknown/cyclic XBF shape reference")?;
+            let location = self.location(cursor, 0)?;
+            let orientation = cursor.byte()?;
+            if orientation > 3 {
+                return Err("invalid XBF shape orientation".into());
+            }
+            return Ok(Some(ShapeRef {
+                node,
+                location,
+                orientation,
+            }));
+        }
+        if !(200..=231).contains(&kind) {
+            return Err("invalid XBF shape tag".into());
+        }
+        let orientation = (kind - 200) & 3;
+        let kind = (kind - 200) >> 2;
+        let location = self.location(cursor, 0)?;
+        let geometry = self.quick_shape_geometry(cursor, kind)?;
+        let flags = cursor.byte()?;
+        if flags & 128 != 0 {
+            return Err("invalid XBF shape flags".into());
+        }
+        let mut children = Vec::new();
+        while let Some(child) = self.shape(cursor, depth + 1)? {
+            if children.len() >= MAX_RECORDS {
+                return Err("XBF shape has too many children".into());
+            }
+            children.push(child);
+        }
+        let node = self.shapes.len();
+        self.shapes.push(Shape {
+            kind,
+            geometry,
+            flags,
+            children,
+        });
+        self.shape_positions.insert(pos, node);
+        Ok(Some(ShapeRef {
+            node,
+            location,
+            orientation,
+        }))
+    }
+    fn quick_shape_geometry(&mut self, cursor: &mut Cursor<'_>, kind: u8) -> Result<String> {
+        let mut out = String::new();
+        match kind {
+            7 => {
+                real_text(cursor, &mut out, 4)?;
+                loop {
+                    let rep = cursor.byte()?;
+                    if rep == 0 {
+                        break;
+                    }
+                    cursor.real()?;
+                    match rep {
+                        1 => {
+                            self.geometry(cursor, 9)?;
+                        }
+                        2 => {
+                            self.geometry(cursor, 11)?;
+                            self.geometry(cursor, 13)?;
+                        }
+                        3 => {
+                            cursor.real()?;
+                            self.geometry(cursor, 13)?;
+                        }
+                        _ => return Err("unsupported XBF vertex representation".into()),
+                    }
+                    self.location(cursor, 0)?;
+                }
+                out.push_str("0 0\n");
+            }
+            6 => {
+                real_text(cursor, &mut out, 1)?;
+                let flags = cursor.byte()?;
+                if flags & !7 != 0 {
+                    return Err("invalid XBF edge flags".into());
+                }
+                writeln!(
+                    out,
+                    "{} {} {}",
+                    flags & 1,
+                    (flags >> 1) & 1,
+                    (flags >> 2) & 1
+                )?;
+                loop {
+                    let rep = cursor.byte()?;
+                    if rep == 0 {
+                        break;
+                    }
+                    write!(out, "{rep} ")?;
+                    match rep {
+                        1 => {
+                            let curve = self.geometry(cursor, 9)?;
+                            let loc = self.location(cursor, 0)?;
+                            self.check_representation_location(loc)?;
+                            write!(out, "{curve} {loc} ")?;
+                            real_text(cursor, &mut out, 2)?;
+                        }
+                        2 | 3 => {
+                            let curve = self.geometry(cursor, 11)?;
+                            write!(out, "{curve} ")?;
+                            if rep == 3 {
+                                let curve = self.geometry(cursor, 11)?;
+                                let continuity = cursor.byte()?;
+                                write!(out, "{curve} {} ", continuity_text(continuity)?)?;
+                            }
+                            let surface = self.geometry(cursor, 13)?;
+                            let loc = self.location(cursor, 0)?;
+                            self.check_representation_location(loc)?;
+                            write!(out, "{surface} {loc} ")?;
+                            real_text(cursor, &mut out, 2)?;
+                        }
+                        4 => {
+                            write!(out, "{} ", continuity_text(cursor.byte()?)?)?;
+                            for _ in 0..2 {
+                                let s = self.geometry(cursor, 13)?;
+                                let l = self.location(cursor, 0)?;
+                                write!(out, "{s} {l} ")?;
+                            }
+                        }
+                        _ => {
+                            return Err(
+                                "XBF polygon-only edge representations are unsupported".into()
+                            );
+                        }
+                    }
+                    out.push('\n');
+                }
+                out.push_str("0\n");
+            }
+            4 => {
+                write!(out, "{} ", cursor.boolean()?)?;
+                real_text(cursor, &mut out, 1)?;
+                let surface = self.geometry(cursor, 13)?;
+                let loc = self.location(cursor, 0)?;
+                self.check_representation_location(loc)?;
+                if surface == 0 {
+                    return Err("XBF face has no analytic surface".into());
+                }
+                writeln!(out, "{surface} {loc}")?;
+                match cursor.byte()? {
+                    0 | 1 => {}
+                    _ => return Err("XBF faces with stored triangulations are unsupported".into()),
+                }
+            }
+            0..=3 | 5 => {}
+            _ => return Err("unsupported XBF topology type".into()),
+        }
+        Ok(out)
+    }
+}
+
+fn continuity_text(kind: u8) -> Result<&'static str> {
+    ["C0", "G1", "C1", "G2", "C2", "C3", "CN"]
+        .get(usize::from(kind))
+        .copied()
+        .ok_or_else(|| "invalid XBF continuity".into())
+}
+
+pub(super) fn load(path: &Path) -> Result<Scene> {
+    let bytes = super::read_file(path)?;
+    parse(&bytes)
+}
+
+#[derive(Default)]
+struct Label {
+    path: Vec<i32>,
+    shapes: Vec<ShapeRef>,
+    location: Option<usize>,
+    shape_tool: bool,
+    trees: HashMap<u32, Tree>,
+    color: Option<[u8; 3]>,
+    external: bool,
+}
+struct Tree {
+    id: i32,
+    father: i32,
+    first: i32,
+}
+struct Document {
+    version: u32,
+    types: Vec<String>,
+    labels: Vec<Label>,
+    attribute_labels: HashMap<i32, usize>,
+}
+
+fn parse(bytes: &[u8]) -> Result<Scene> {
+    if bytes.len() > MAX_BYTES {
+        return Err("XBF input exceeds the 16 MiB preview limit".into());
+    }
+    let mut cursor = Cursor::new(bytes);
+    if cursor.take(7)? != b"BINFILE" || cursor.i32()? != 0x04030201 {
+        return Err("unsupported XBF binary signature or byte order".into());
+    }
+    let mut header = [0i32; 12];
+    for word in &mut header {
+        *word = cursor.i32()?;
+    }
+    cursor.count(MAX_RECORDS)?; // generic persistent object count
+    let version = cursor.string(1)?.parse::<u32>()?;
+    if !(6..=12).contains(&version) {
+        return Err("XBF document versions outside 6..12 are unsupported".into());
+    }
+    cursor.string(1)?;
+    cursor.string(1)?;
+    cursor.string(1)?;
+    cursor.string(2)?;
+    cursor.string(1)?;
+    cursor.string(2)?;
+    let user_count = cursor.count(MAX_RECORDS)?;
+    let mut types = Vec::new();
+    let mut in_types = false;
+    let mut xcaf = false;
+    for _ in 0..user_count {
+        let value = cursor.string(1)?;
+        match value.as_str() {
+            "START_TYPES" => in_types = true,
+            "END_TYPES" => in_types = false,
+            "FILE_FORMAT: BinXCAF" => xcaf = true,
+            _ if in_types => types.push(value),
+            _ => {}
+        }
+    }
+    if !xcaf || in_types || types.is_empty() {
+        return Err("XBF input is not a valid BinXCAF document".into());
+    }
+    let document_section =
+        usize::try_from(header[11]).map_err(|_| "invalid XBF document offset")?;
+    if document_section < cursor.pos || document_section > bytes.len() {
+        return Err("invalid XBF header section bounds".into());
+    }
+    cursor.pos = document_section;
+    let mut shape_section = None;
+    {
+        let name = cursor.string(1)?;
+        let (offset, length, post) = if version <= 9 {
+            (
+                u64::try_from(cursor.i32()?)?,
+                u64::try_from(cursor.i32()?)?,
+                u64::try_from(cursor.i32()?)?,
+            )
+        } else {
+            (cursor.u64()?, cursor.u64()?, cursor.u64()?)
+        };
+        if name == "SHAPE_SECTION_POS:" {
+            if post != 0 {
+                return Err("post-read XBF shape sections are unsupported".into());
+            }
+            let start = usize::try_from(offset)?;
+            let length = usize::try_from(length)?;
+            let end = start.checked_add(length).ok_or("XBF section overflow")?;
+            if start < cursor.pos || end > bytes.len() {
+                return Err("invalid XBF shape section bounds".into());
+            }
+            shape_section = Some((start, end));
+        } else if name != ":" || version != 12 {
+            return Err(format!("unsupported XBF document section {name}").into());
+        }
+    }
+    if version < 12 && shape_section.is_none() {
+        return Err("XBF document has no shape section".into());
+    }
+    let mut tables = Tables::default();
+    if let Some((start, end)) = shape_section {
+        let mut shape_cursor = Cursor {
+            bytes: &bytes[..end],
+            pos: start,
+        };
+        tables.read_old(&mut shape_cursor)?;
+        if shape_cursor.pos != end {
+            return Err("XBF shape section length disagrees with geometry".into());
+        }
+    }
+    if cursor.i32()? != 0 {
+        return Err("XBF document root label must have tag zero".into());
+    }
+    let mut document = Document {
+        version,
+        types,
+        labels: Vec::new(),
+        attribute_labels: HashMap::new(),
+    };
+    document.label(&mut cursor, &mut tables, vec![0], 0)?;
+    let expected_end = shape_section.map_or(bytes.len(), |(start, _)| start);
+    if cursor.pos != expected_end {
+        return Err("XBF document hierarchy has trailing or missing records".into());
+    }
+    document.render(&mut tables)
+}
+
+impl Tables {
+    fn read_old(&mut self, cursor: &mut Cursor<'_>) -> Result<()> {
+        let start = cursor.pos;
+        let prefix = cursor
+            .bytes
+            .get(start..)
+            .ok_or("truncated XBF shape section")?;
+        if !prefix.starts_with(b"SHAPE_SECTION") {
+            return Err("XBF document lacks a native shape section".into());
+        }
+        cursor.take(13)?;
+        while cursor
+            .bytes
+            .get(cursor.pos)
+            .is_some_and(u8::is_ascii_whitespace)
+        {
+            cursor.pos += 1;
+        }
+        let start = cursor.pos;
+        while cursor.bytes.get(cursor.pos).is_some_and(|b| *b != b'\n') {
+            cursor.pos += 1;
+        }
+        let version = std::str::from_utf8(
+            cursor
+                .bytes
+                .get(start..cursor.pos)
+                .ok_or("truncated XBF shape version")?,
+        )?;
+        let version = match version.trim() {
+            "Open CASCADE Topology V1 (c)" => 1,
+            "Open CASCADE Topology V2 (c)" => 2,
+            "Open CASCADE Topology V3 (c)" => 3,
+            "Open CASCADE Topology V4, (c) Open Cascade" => 4,
+            _ => return Err("unsupported XBF BinTools topology version".into()),
+        };
+        cursor.take(1)?;
+        let count = cursor.table_header("Locations")?;
+        for _ in 0..count {
+            let transform = match cursor.byte()? {
+                1 => read_transform(cursor)?,
+                2 => {
+                    let mut result = Transform::IDENTITY;
+                    loop {
+                        let id = cursor.count(self.locations.len())?;
+                        if id == 0 {
+                            break;
+                        }
+                        result = result.then(power(self.locations[id - 1], cursor.i32()?)?);
+                    }
+                    result
+                }
+                _ => return Err("unsupported XBF table location".into()),
+            };
+            self.locations.push(transform);
+        }
+        let count = cursor.table_header("Curve2ds")?;
+        for _ in 0..count {
+            self.pcurves.push(curve(cursor, 2, 0)?);
+        }
+        let count = cursor.table_header("Curves")?;
+        for _ in 0..count {
+            self.curves.push(curve(cursor, 3, 0)?);
+        }
+        if cursor.table_header("Polygon3D")? != 0
+            || cursor.table_header("PolygonOnTriangulations")? != 0
+        {
+            return Err("XBF table polygon representations are unsupported".into());
+        }
+        let count = cursor.table_header("Surfaces")?;
+        for _ in 0..count {
+            self.surfaces.push(surface(cursor, 0)?);
+        }
+        if cursor.table_header("Triangulations")? != 0 {
+            return Err("XBF stored triangulations are unsupported".into());
+        }
+        let total = cursor.table_header("TShapes")?;
+        for _ in 0..total {
+            let kind = cursor.byte()?;
+            let geometry = self.old_shape_geometry(cursor, kind, version)?;
+            let mut flags = 0;
+            for bit in 0..7 {
+                flags |= cursor.boolean()? << bit;
+            }
+            let mut children = Vec::new();
+            loop {
+                let orientation = cursor.byte()?;
+                if orientation == b'*' {
+                    break;
+                }
+                if orientation > 3 {
+                    return Err("invalid XBF table orientation".into());
+                }
+                let reverse_id = cursor.count(total)?;
+                if reverse_id == 0 {
+                    return Err("zero XBF topology reference".into());
+                }
+                let node = total - reverse_id;
+                if node >= self.shapes.len() {
+                    return Err("forward/cyclic XBF topology reference".into());
+                }
+                let location = cursor.count(self.locations.len())?;
+                if children.len() >= MAX_RECORDS {
+                    return Err("XBF shape has too many children".into());
+                }
+                children.push(ShapeRef {
+                    node,
+                    location,
+                    orientation,
+                });
+            }
+            self.shapes.push(Shape {
+                kind,
+                geometry,
+                flags,
+                children,
+            });
+        }
+        Ok(())
+    }
+    fn old_shape_geometry(
+        &self,
+        cursor: &mut Cursor<'_>,
+        kind: u8,
+        version: u32,
+    ) -> Result<String> {
+        let mut out = String::new();
+        match kind {
+            7 => {
+                real_text(cursor, &mut out, 4)?;
+                loop {
+                    let rep = cursor.byte()?;
+                    if rep == 0 {
+                        break;
+                    }
+                    cursor.real()?;
+                    match rep {
+                        1 => {
+                            cursor.count(self.curves.len())?;
+                        }
+                        2 => {
+                            cursor.count(self.pcurves.len())?;
+                            cursor.count(self.surfaces.len())?;
+                        }
+                        3 => {
+                            cursor.real()?;
+                            cursor.count(self.surfaces.len())?;
+                        }
+                        _ => return Err("unsupported XBF table vertex representation".into()),
+                    }
+                    cursor.count(self.locations.len())?;
+                }
+                out.push_str("0 0\n");
+            }
+            6 => {
+                real_text(cursor, &mut out, 1)?;
+                writeln!(
+                    out,
+                    "{} {} {}",
+                    cursor.boolean()?,
+                    cursor.boolean()?,
+                    cursor.boolean()?
+                )?;
+                loop {
+                    let rep = cursor.byte()?;
+                    if rep == 0 {
+                        break;
+                    }
+                    write!(out, "{rep} ")?;
+                    match rep {
+                        1 => {
+                            let curve = cursor.index(self.curves.len())?;
+                            let location = cursor.count(self.locations.len())?;
+                            self.check_representation_location(location)?;
+                            write!(out, "{} {} ", curve, location)?;
+                            real_text(cursor, &mut out, 2)?;
+                        }
+                        2 | 3 => {
+                            write!(out, "{} ", cursor.index(self.pcurves.len())?)?;
+                            if rep == 3 {
+                                write!(
+                                    out,
+                                    "{} {} ",
+                                    cursor.index(self.pcurves.len())?,
+                                    continuity_text(cursor.byte()?)?
+                                )?;
+                            }
+                            let surface = cursor.index(self.surfaces.len())?;
+                            let location = cursor.count(self.locations.len())?;
+                            self.check_representation_location(location)?;
+                            write!(out, "{} {} ", surface, location)?;
+                            real_text(cursor, &mut out, 2)?;
+                            if matches!(version, 2 | 3) {
+                                for _ in 0..4 {
+                                    cursor.real()?;
+                                }
+                            }
+                        }
+                        4 => {
+                            write!(out, "{} ", continuity_text(cursor.byte()?)?)?;
+                            for _ in 0..2 {
+                                write!(
+                                    out,
+                                    "{} {} ",
+                                    cursor.count(self.surfaces.len())?,
+                                    cursor.count(self.locations.len())?
+                                )?;
+                            }
+                        }
+                        _ => return Err("unsupported XBF table edge representation".into()),
+                    }
+                    out.push('\n');
+                }
+                out.push_str("0\n");
+            }
+            4 => {
+                write!(out, "{} ", cursor.boolean()?)?;
+                real_text(cursor, &mut out, 1)?;
+                let surface = cursor.index(self.surfaces.len())?;
+                let location = cursor.count(self.locations.len())?;
+                self.check_representation_location(location)?;
+                if surface == 0 {
+                    return Err("XBF face has no analytic surface".into());
+                }
+                writeln!(out, "{surface} {location}")?;
+                match cursor.byte()? {
+                    0 | 1 => {}
+                    _ => return Err("XBF face triangulation references are unsupported".into()),
+                }
+            }
+            0..=3 | 5 => {}
+            _ => return Err("unsupported XBF table topology type".into()),
+        }
+        Ok(out)
+    }
+    fn stored_reference(&self, cursor: &mut Cursor<'_>) -> Result<ShapeRef> {
+        cursor.align()?;
+        let index = cursor.count(self.shapes.len())?;
+        if index == 0 {
+            return Err("XBF named shape has a null shape reference".into());
+        }
+        let location = cursor.count(self.locations.len())?;
+        let orientation = match cursor.byte()? {
+            b'F' => 0,
+            b'R' => 1,
+            b'I' => 2,
+            b'E' => 3,
+            _ => return Err("invalid XBF named shape orientation".into()),
+        };
+        Ok(ShapeRef {
+            node: index - 1,
+            location,
+            orientation,
+        })
+    }
+    fn location_transform(&self, index: usize) -> Result<Transform> {
+        if index == 0 {
+            Ok(Transform::IDENTITY)
+        } else {
+            self.locations
+                .get(index - 1)
+                .copied()
+                .ok_or_else(|| "invalid XBF location index".into())
+        }
+    }
+    fn check_representation_location(&self, index: usize) -> Result<()> {
+        self.location_transform(index)?;
+        Ok(())
+    }
+}
+
+impl Document {
+    fn label(
+        &mut self,
+        cursor: &mut Cursor<'_>,
+        tables: &mut Tables,
+        path: Vec<i32>,
+        depth: usize,
+    ) -> Result<()> {
+        if depth > MAX_DEPTH || self.labels.len() >= MAX_RECORDS {
+            return Err("XBF document hierarchy exceeds preview limits".into());
+        }
+        let label_end = if self.version == 12 {
+            let position = cursor.pos;
+            let size = usize::try_from(cursor.u64()?)?;
+            let end = position
+                .checked_add(size)
+                .ok_or("XBF label size overflow")?;
+            if size < 16 || end > cursor.bytes.len() {
+                return Err("invalid XBF label size".into());
+            }
+            Some(end)
+        } else {
+            None
+        };
+        let index = self.labels.len();
+        self.labels.push(Label {
+            path,
+            ..Default::default()
+        });
+        loop {
+            let kind = cursor.i32()?;
+            if kind == -1 {
+                break;
+            }
+            let kind = usize::try_from(kind).map_err(|_| "invalid XBF attribute type")?;
+            let name = self
+                .types
+                .get(kind.checked_sub(1).ok_or("zero XBF attribute type")?)
+                .ok_or("unknown XBF attribute type")?
+                .clone();
+            let id = cursor.i32()?;
+            if id == 0 || id == i32::MIN || self.attribute_labels.insert(id.abs(), index).is_some()
+            {
+                return Err("invalid or duplicate XBF attribute ID".into());
+            }
+            let size = cursor.count(MAX_BYTES)?;
+            let data = cursor.take(size)?;
+            let mut value = Cursor::new(data);
+            let mut direct_end = None;
+            if id < 0 {
+                if self.version != 12 {
+                    return Err("inline XBF attributes require document version 12".into());
+                }
+                let start = cursor.pos;
+                let size = usize::try_from(cursor.u64()?)?;
+                let end = start
+                    .checked_add(size)
+                    .ok_or("XBF inline attribute overflow")?;
+                if size < 8 || end > cursor.bytes.len() {
+                    return Err("invalid XBF inline attribute length".into());
+                }
+                direct_end = Some(end);
+            }
+            match name.as_str() {
+                "XCAFDoc_ShapeTool" => self.labels[index].shape_tool = true,
+                "TNaming_NamedShape" => {
+                    let count = value.count(MAX_RECORDS)?;
+                    value.i32()?;
+                    let evolution = value.byte()?;
+                    if !b"PGMDSR".contains(&evolution) {
+                        return Err("unsupported XBF shape evolution".into());
+                    }
+                    for _ in 0..count {
+                        if evolution != b'P' {
+                            if direct_end.is_some() {
+                                tables.shape(cursor, 0)?;
+                            } else {
+                                tables.stored_reference(&mut value)?;
+                            }
+                        }
+                        if evolution != b'D' {
+                            let shape = if direct_end.is_some() {
+                                tables.shape(cursor, 0)?.ok_or("null XBF named shape")?
+                            } else {
+                                tables.stored_reference(&mut value)?
+                            };
+                            self.labels[index].shapes.push(shape);
+                        }
+                    }
+                    if value.pos != data.len() {
+                        return Err("XBF named-shape payload has trailing data".into());
+                    }
+                }
+                "XCAFDoc_Location" => {
+                    let location = if direct_end.is_some() {
+                        tables.location(cursor, 0)?
+                    } else {
+                        let first = value.count(tables.locations.len())?;
+                        // The v6+ attribute repeats the remaining location
+                        // chain for legacy compatibility. The first table
+                        // entry already stores the exact complete transform.
+                        while value.pos < data.len() {
+                            value.count(tables.locations.len())?;
+                        }
+                        first
+                    };
+                    self.labels[index].location = Some(location);
+                }
+                "TDataStd_TreeNode" => {
+                    let father = value.i32()?;
+                    value.i32()?;
+                    value.i32()?;
+                    let first = value.i32()?;
+                    let guid = value.take(16)?;
+                    let prefix = u32::from_le_bytes(guid[..4].try_into()?);
+                    if value.pos != data.len() {
+                        return Err("invalid XBF tree attribute length".into());
+                    }
+                    self.labels[index].trees.insert(
+                        prefix,
+                        Tree {
+                            id: id.abs(),
+                            father,
+                            first,
+                        },
+                    );
+                }
+                "XCAFDoc_Color" => {
+                    let mut color = [0u8; 3];
+                    for component in &mut color {
+                        let value = value.real()?;
+                        if !(0.0..=1.0).contains(&value) {
+                            return Err("XBF color is outside 0..1".into());
+                        }
+                        *component = linear_color(value);
+                    }
+                    if value.pos < data.len() {
+                        let alpha = f32::from_le_bytes(value.take(4)?.try_into()?);
+                        if !alpha.is_finite() || !(0.0..=1.0).contains(&alpha) {
+                            return Err("invalid XBF color alpha".into());
+                        }
+                    }
+                    if value.pos != data.len() {
+                        return Err("invalid XBF color payload length".into());
+                    }
+                    self.labels[index].color = Some(color);
+                }
+                "TDataStd_UAttribute"
+                    if data.len() == 16
+                        && u32::from_le_bytes(data[..4].try_into()?) == 0x6b896b01 =>
+                {
+                    self.labels[index].external = true;
+                }
+                _ if direct_end.is_some() => {
+                    return Err(format!("unsupported direct XBF attribute {name}").into());
+                }
+                _ => {}
+            }
+            if let Some(end) = direct_end
+                && cursor.pos != end
+            {
+                return Err("XBF inline geometry size mismatch".into());
+            }
+        }
+        let mut tags = HashSet::new();
+        loop {
+            let tag = cursor.i32()?;
+            if tag == -2 {
+                break;
+            }
+            if tag <= 0 || !tags.insert(tag) {
+                return Err("invalid or duplicate XBF child label tag".into());
+            }
+            let mut path = self.labels[index].path.clone();
+            path.push(tag);
+            self.label(cursor, tables, path, depth + 1)?;
+        }
+        if label_end.is_some_and(|end| cursor.pos != end) {
+            return Err("XBF label size disagrees with its hierarchy".into());
+        }
+        Ok(())
+    }
+
+    fn resolve(&self, index: usize, tables: &mut Tables, depth: usize) -> Result<Vec<ShapeRef>> {
+        if depth > MAX_DEPTH {
+            return Err("cyclic or overly deep XBF assembly reference".into());
+        }
+        let label = &self.labels[index];
+        if label.external {
+            return Err("XBF external shape references are unsupported".into());
+        }
+        if let Some(tree) = label.trees.get(&0x5b896afe).filter(|tree| tree.father > 0) {
+            let parent = *self
+                .attribute_labels
+                .get(&tree.father)
+                .ok_or("XBF assembly reference target does not exist")?;
+            let target_tree = self.labels[parent]
+                .trees
+                .get(&0x5b896afe)
+                .ok_or("XBF assembly reference does not target a shape tree")?;
+            if target_tree.id != tree.father {
+                return Err("XBF assembly link has the wrong attribute type".into());
+            }
+            let location = label
+                .location
+                .ok_or("XBF assembly reference has no placement")?;
+            let transform = tables.location_transform(location)?;
+            let mut shapes = self.resolve(parent, tables, depth + 1)?;
+            for shape in &mut shapes {
+                let transform = transform.then(tables.location_transform(shape.location)?);
+                tables.locations.push(transform);
+                shape.location = tables.locations.len();
+            }
+            Ok(shapes)
+        } else {
+            Ok(label.shapes.clone())
+        }
+    }
+
+    fn diffuse(&self, index: usize) -> Result<Option<[u8; 3]>> {
+        let label = &self.labels[index];
+        for kind in [0xefd212e5, 0xefd212e4, 0xefd212e6] {
+            if let Some(tree) = label.trees.get(&kind).filter(|tree| tree.father > 0) {
+                let parent = *self
+                    .attribute_labels
+                    .get(&tree.father)
+                    .ok_or("XBF color reference target does not exist")?;
+                let target_tree = self.labels[parent]
+                    .trees
+                    .get(&kind)
+                    .ok_or("XBF color reference has the wrong tree type")?;
+                if target_tree.id != tree.father {
+                    return Err("invalid XBF color reference attribute".into());
+                }
+                return self.labels[parent]
+                    .color
+                    .ok_or_else(|| "XBF color target has no RGB value".into())
+                    .map(Some);
+            }
+        }
+        Ok(None)
+    }
+
+    fn render(&self, tables: &mut Tables) -> Result<Scene> {
+        let tools: Vec<_> = self
+            .labels
+            .iter()
+            .filter(|label| label.shape_tool)
+            .collect();
+        if tools.len() != 1 {
+            return Err("XBF document must have exactly one shape tool".into());
+        }
+        let base = &tools[0].path;
+        let mut colors = HashMap::new();
+        for (index, label) in self.labels.iter().enumerate() {
+            if let Some(color) = self.diffuse(index)? {
+                for shape in &label.shapes {
+                    colors.insert(shape.node, color);
+                }
+            }
+        }
+        let mut faces = Vec::with_capacity(tables.shapes.len());
+        for (index, shape) in tables.shapes.iter().enumerate() {
+            let mut contains = shape.kind == 4;
+            for child in &shape.children {
+                if child.node >= index {
+                    return Err("forward or cyclic XBF shape topology".into());
+                }
+                contains |= faces[child.node];
+            }
+            faces.push(contains);
+        }
+        let mut primitives = Vec::new();
+        let mut occurrences = 0;
+        for (index, label) in self.labels.iter().enumerate() {
+            if label.path.len() != base.len() + 1 || !label.path.starts_with(base) {
+                continue;
+            }
+            if label
+                .trees
+                .get(&0x5b896afe)
+                .is_some_and(|tree| tree.first > 0)
+            {
+                continue;
+            }
+            let color = self.diffuse(index)?;
+            for shape in self.resolve(index, tables, 0)? {
+                collect_primitives(
+                    tables,
+                    shape,
+                    Transform::IDENTITY,
+                    color,
+                    &colors,
+                    &faces,
+                    &mut primitives,
+                    &mut occurrences,
+                    0,
+                )?;
+            }
+        }
+        if primitives.is_empty() {
+            return Err("XBF document has no free renderable shapes".into());
+        }
+        let text = tables.brep(&primitives)?;
+        let (mut model, root) = ogeom_io::brep::read(&text, ogeom_core::Tolerances::millimetres())?;
+        let children = model.children_of(&root)?;
+        if children.len() != primitives.len() + tables.shapes.len() {
+            return Err("XBF topology conversion omitted a primitive".into());
+        }
+        tables.restore_representation_locations(&mut model, &children[..tables.shapes.len()])?;
+        let mut scene = Scene::default();
+        for (shape, (_, _, color)) in children
+            .into_iter()
+            .skip(tables.shapes.len())
+            .zip(primitives)
+        {
+            let first_triangle = scene.triangles.len();
+            let first_point = scene.points.len();
+            let first_line = scene.lines.len();
+            super::cad::append_shape(&mut scene, &model, &shape)?;
+            for triangle in &mut scene.triangles[first_triangle..] {
+                triangle.color = color;
+            }
+            for point in &mut scene.points[first_point..] {
+                point.color = color;
+            }
+            for line in &mut scene.lines[first_line..] {
+                line.color = color;
+            }
+        }
+        scene.validate()?;
+        Ok(scene)
+    }
+}
+
+fn linear_color(value: f64) -> u8 {
+    let value = if value <= 0.0031308 {
+        value * 12.92
+    } else {
+        1.055 * value.powf(1.0 / 2.4) - 0.055
+    };
+    (value * 255.0).round().clamp(0.0, 255.0) as u8
+}
+
+type Primitive = (ShapeRef, Transform, Option<[u8; 3]>);
+
+#[allow(clippy::too_many_arguments)]
+fn collect_primitives(
+    tables: &Tables,
+    reference: ShapeRef,
+    parent: Transform,
+    color: Option<[u8; 3]>,
+    colors: &HashMap<usize, [u8; 3]>,
+    faces: &[bool],
+    output: &mut Vec<Primitive>,
+    occurrences: &mut usize,
+    depth: usize,
+) -> Result<()> {
+    *occurrences += 1;
+    if *occurrences > MAX_RECORDS || depth > MAX_DEPTH {
+        return Err("XBF instances exceed 100000 occurrences or 64 levels".into());
+    }
+    let shape = tables
+        .shapes
+        .get(reference.node)
+        .ok_or("XBF shape index is out of range")?;
+    let world = parent.then(tables.location_transform(reference.location)?);
+    let color = colors.get(&reference.node).copied().or(color);
+    if shape.kind == 4 || (shape.kind == 6 && !faces[reference.node]) || shape.kind == 7 {
+        if output.len() >= 4096 {
+            return Err("XBF exceeds 4096 preview primitives".into());
+        }
+        output.push((
+            ShapeRef {
+                location: 0,
+                ..reference
+            },
+            world,
+            color,
+        ));
+        return Ok(());
+    }
+    // Face boundaries and solid wire edges are already represented by their
+    // faces. Wire-only documents retain their actual edge curves.
+    let contains_faces = faces[reference.node];
+    for child in &shape.children {
+        if contains_faces && !faces[child.node] {
+            continue;
+        }
+        collect_primitives(
+            tables,
+            *child,
+            world,
+            color,
+            colors,
+            faces,
+            output,
+            occurrences,
+            depth + 1,
+        )?;
+    }
+    Ok(())
+}
+
+impl Tables {
+    /// The ASCII kernel reader preserves topology placements but resets
+    /// edge/surface representation placements. Restore those exact native
+    /// records through the public typed geometry API before tessellation.
+    fn restore_representation_locations(
+        &self,
+        model: &mut ogeom_topo::Model,
+        nodes: &[ogeom_topo::Shape],
+    ) -> Result<()> {
+        use ogeom_geom::Transformable;
+        let tolerance = ogeom_core::Tolerances::millimetres();
+        let mut transforms = vec![ogeom_math::Transform::IDENTITY];
+        for transform in &self.locations {
+            let rows =
+                std::array::from_fn(|row| std::array::from_fn(|column| transform.0[column][row]));
+            let scale = ogeom_math::Matrix3::new(rows).determinant().cbrt();
+            if !scale.is_finite() || scale == 0.0 {
+                return Err("singular XBF geometry location".into());
+            }
+            let normalized =
+                std::array::from_fn(|row| std::array::from_fn(|column| rows[row][column] / scale));
+            transforms.push(ogeom_math::Transform::from_parts(
+                ogeom_math::Matrix3::new(normalized),
+                scale,
+                ogeom_math::Vector::new(transform.0[3][0], transform.0[3][1], transform.0[3][2]),
+                1e-9,
+            )?);
+        }
+        // The tessellator evaluates carrier geometry in its stored coordinate
+        // frame. Materialize each actual rigid carrier placement once and
+        // share that transformed geometry between its face and pcurves.
+        let mut surfaces = HashMap::new();
+        let mut curves = HashMap::new();
+        let placed_surface = |model: &mut ogeom_topo::Model,
+                              surfaces: &mut HashMap<
+            (ogeom_topo::SurfaceId, usize),
+            ogeom_topo::SurfaceId,
+        >,
+                              id: ogeom_topo::SurfaceId,
+                              index: usize|
+         -> Result<ogeom_topo::SurfaceId> {
+            let transform = transforms
+                .get(index)
+                .ok_or("invalid XBF surface location")?;
+            if (transform.scale_factor().abs() - 1.0).abs() > 1e-9 {
+                return Err("scaled XBF surface representation locations are unsupported".into());
+            }
+            if transform.kind() == ogeom_math::TransformKind::Identity {
+                return Ok(id);
+            }
+            if let Some(placed) = surfaces.get(&(id, index)) {
+                return Ok(*placed);
+            }
+            let surface = model
+                .geometry()
+                .surface(id)
+                .ok_or("XBF carrier surface is missing")?
+                .transformed(transform, tolerance)?;
+            let placed = model.geometry_mut().add_surface(surface);
+            surfaces.insert((id, index), placed);
+            Ok(placed)
+        };
+        for (shape, node) in self.shapes.iter().zip(nodes) {
+            let mut tokens = shape.geometry.split_whitespace();
+            let mut data = model
+                .node(node)
+                .ok_or("converted XBF node is missing")?
+                .data()
+                .clone();
+            match &mut data {
+                ogeom_topo::NodeData::Face(face) => {
+                    let index = tokens
+                        .nth(3)
+                        .ok_or("XBF face has no carrier placement")?
+                        .parse::<usize>()?;
+                    face.surface = placed_surface(model, &mut surfaces, face.surface, index)?;
+                    face.location = ogeom_topo::Location::identity();
+                }
+                ogeom_topo::NodeData::Edge(edge) => {
+                    for _ in 0..4 {
+                        tokens.next().ok_or("truncated XBF edge geometry")?;
+                    }
+                    let mut index = 0;
+                    loop {
+                        let kind = tokens
+                            .next()
+                            .ok_or("truncated XBF edge representations")?
+                            .parse::<u8>()?;
+                        if kind == 0 {
+                            break;
+                        }
+                        let (before, after) = match kind {
+                            1 => (1, 2),
+                            2 => (2, 2),
+                            3 => (4, 2),
+                            4 => {
+                                for _ in 0..5 {
+                                    tokens.next().ok_or("truncated XBF continuity")?;
+                                }
+                                continue;
+                            }
+                            _ => return Err("unsupported converted XBF edge representation".into()),
+                        };
+                        for _ in 0..before {
+                            tokens.next().ok_or("truncated XBF edge placement")?;
+                        }
+                        let native_location = tokens
+                            .next()
+                            .ok_or("missing XBF edge placement")?
+                            .parse::<usize>()?;
+                        let transform = transforms
+                            .get(native_location)
+                            .ok_or("invalid XBF edge placement")?;
+                        if (transform.scale_factor().abs() - 1.0).abs() > 1e-9 {
+                            return Err(
+                                "scaled XBF curve representation locations are unsupported".into(),
+                            );
+                        }
+                        let representation = edge
+                            .representations
+                            .get_mut(index)
+                            .ok_or("XBF conversion lost an edge representation")?;
+                        match representation {
+                            ogeom_topo::EdgeRepr::Curve3d {
+                                curve, location, ..
+                            } => {
+                                if transform.kind() != ogeom_math::TransformKind::Identity {
+                                    let key = (*curve, native_location);
+                                    let placed = if let Some(id) = curves.get(&key) {
+                                        *id
+                                    } else {
+                                        let geometry = model
+                                            .geometry()
+                                            .curve(*curve)
+                                            .ok_or("XBF edge curve is missing")?
+                                            .transformed(transform, tolerance)?;
+                                        let id = model.geometry_mut().add_curve(geometry);
+                                        curves.insert(key, id);
+                                        id
+                                    };
+                                    *curve = placed;
+                                }
+                                *location = ogeom_topo::Location::identity();
+                            }
+                            ogeom_topo::EdgeRepr::PCurve {
+                                surface, location, ..
+                            }
+                            | ogeom_topo::EdgeRepr::Seam {
+                                surface, location, ..
+                            } => {
+                                *surface = placed_surface(
+                                    model,
+                                    &mut surfaces,
+                                    *surface,
+                                    native_location,
+                                )?;
+                                *location = ogeom_topo::Location::identity();
+                            }
+                            _ => return Err("XBF conversion changed an edge representation".into()),
+                        }
+                        index += 1;
+                        for _ in 0..after {
+                            tokens.next().ok_or("truncated XBF edge range")?;
+                        }
+                    }
+                    if index != edge.representations.len() {
+                        return Err("XBF conversion lost edge representations".into());
+                    }
+                    edge.assert_same_parameter(false);
+                }
+                _ => {}
+            }
+            *model
+                .node_mut(node)
+                .ok_or("converted XBF node is missing")?
+                .data_mut() = data;
+        }
+        Ok(())
+    }
+    fn brep(&mut self, primitives: &[Primitive]) -> Result<String> {
+        let mut locations = self.locations.clone();
+        let mut root_children = Vec::new();
+        for (shape, world, _) in primitives {
+            locations.push(*world);
+            root_children.push(ShapeRef {
+                location: locations.len(),
+                ..*shape
+            });
+        }
+        let mut out =
+            String::from("DBRep_DrawableShape\n\nCASCADE Topology V1, (c) Matra-Datavision\n");
+        writeln!(out, "Locations {}", locations.len())?;
+        for location in locations {
+            out.push_str("1\n");
+            for row in 0..3 {
+                for column in &location.0 {
+                    write!(out, "{} ", column[row])?;
+                }
+                out.push('\n');
+            }
+        }
+        writeln!(out, "Curve2ds {}", self.pcurves.len())?;
+        for curve in &self.pcurves {
+            writeln!(out, "{curve}")?;
+        }
+        writeln!(out, "Curves {}", self.curves.len())?;
+        for curve in &self.curves {
+            writeln!(out, "{curve}")?;
+        }
+        out.push_str("Polygon3D 0\nPolygonOnTriangulations 0\n");
+        writeln!(out, "Surfaces {}", self.surfaces.len())?;
+        for surface in &self.surfaces {
+            writeln!(out, "{surface}")?;
+        }
+        out.push_str("Triangulations 0\n");
+        let total = self.shapes.len() + 1;
+        writeln!(out, "TShapes {total}")?;
+        for shape in &self.shapes {
+            writeln!(out, "{}\n{}", shape_name(shape.kind)?, shape.geometry)?;
+            for bit in 0..7 {
+                write!(out, "{}", (shape.flags >> bit) & 1)?;
+            }
+            out.push('\n');
+            for child in &shape.children {
+                write_reference(&mut out, *child, total)?;
+            }
+            out.push_str("*\n");
+            if out.len() > MAX_BYTES {
+                return Err("converted XBF topology exceeds 16 MiB".into());
+            }
+        }
+        out.push_str("Co\n0001000\n");
+        // Native-node references make the BREP conversion's identities
+        // explicit, allowing representation placements to be restored
+        // without relying on kernel arena allocation or iteration order.
+        for node in 0..self.shapes.len() {
+            write_reference(
+                &mut out,
+                ShapeRef {
+                    node,
+                    location: 0,
+                    orientation: 0,
+                },
+                total,
+            )?;
+        }
+        for child in root_children {
+            write_reference(&mut out, child, total)?;
+        }
+        out.push_str("*\n+1 0\n");
+        if out.len() > MAX_BYTES {
+            return Err("converted XBF topology exceeds 16 MiB".into());
+        }
+        Ok(out)
+    }
+}
+fn shape_name(kind: u8) -> Result<&'static str> {
+    ["Co", "CS", "So", "Sh", "Fa", "Wi", "Ed", "Ve"]
+        .get(usize::from(kind))
+        .copied()
+        .ok_or_else(|| "unsupported XBF shape type".into())
+}
+fn write_reference(out: &mut String, shape: ShapeRef, total: usize) -> Result<()> {
+    let orientation = ["+", "-", "i", "e"]
+        .get(usize::from(shape.orientation))
+        .ok_or("invalid XBF shape orientation")?;
+    let number = total
+        .checked_sub(shape.node)
+        .ok_or("invalid XBF shape index")?;
+    write!(out, "{orientation}{number} {} ", shape.location)?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn integer(out: &mut Vec<u8>, value: i32) {
+        out.extend(value.to_le_bytes());
+    }
+    fn real(out: &mut Vec<u8>, value: f64) {
+        out.extend(value.to_le_bytes());
+    }
+    fn reals(out: &mut Vec<u8>, values: &[f64]) {
+        for value in values {
+            real(out, *value);
+        }
+    }
+    fn string(out: &mut Vec<u8>, value: &str) {
+        integer(out, value.len() as i32);
+        out.extend(value.as_bytes());
+    }
+    fn transform(out: &mut Vec<u8>, value: Transform) {
+        out.push(6);
+        for row in 0..3 {
+            for column in &value.0 {
+                real(out, column[row]);
+            }
+        }
+    }
+    fn reference(out: &mut Vec<u8>, offset: usize) {
+        let delta = out.len() - offset;
+        out.push(3);
+        out.extend((delta as u32).to_le_bytes());
+    }
+    fn vertex(out: &mut Vec<u8>, point: Vec3, orientation: u8) {
+        out.extend([228 + orientation, 7]);
+        reals(out, &[1e-7, point.x, point.y, point.z]);
+        out.extend([0, 8, 199]);
+    }
+    fn triangle(carrier: Transform, root: Transform) -> Vec<u8> {
+        let mut out = vec![200];
+        transform(&mut out, root);
+        out.push(8);
+        out.extend([216, 7, 0]);
+        real(&mut out, 1e-7);
+        let surface = out.len();
+        out.extend([13, 1]);
+        reals(&mut out, &[0., 0., 0., 0., 0., 1., 1., 0., 0., 0., 1., 0.]);
+        let placement = out.len();
+        transform(&mut out, carrier);
+        out.extend([0, 8, 220, 7, 8]);
+        let points = [
+            Vec3::new(0., 0., 0.),
+            Vec3::new(2., 0., 0.),
+            Vec3::new(0., 1., 0.),
+        ];
+        for edge in 0..3 {
+            let start = points[edge];
+            let end = points[(edge + 1) % 3];
+            let delta = end - start;
+            let length = delta.length();
+            let direction = delta / length;
+            out.extend([224, 7]);
+            real(&mut out, 1e-7);
+            out.extend([3, 1, 9, 1]);
+            reals(
+                &mut out,
+                &[start.x, start.y, 0., direction.x, direction.y, 0.],
+            );
+            reference(&mut out, placement);
+            reals(&mut out, &[0., length]);
+            out.extend([2, 11, 1]);
+            reals(&mut out, &[start.x, start.y, direction.x, direction.y]);
+            reference(&mut out, surface);
+            reference(&mut out, placement);
+            reals(&mut out, &[0., length]);
+            out.extend([0, 8]);
+            vertex(&mut out, carrier.apply(start), 0);
+            vertex(&mut out, carrier.apply(end), 1);
+            out.push(199);
+        }
+        out.extend([199, 199, 199]);
+        out
+    }
+    fn attribute(kind: i32, id: i32, data: Vec<u8>, direct: Option<Vec<u8>>) -> Vec<u8> {
+        let mut out = Vec::new();
+        integer(&mut out, kind);
+        integer(&mut out, id);
+        integer(&mut out, data.len() as i32);
+        out.extend(data);
+        if let Some(data) = direct {
+            out.extend(((data.len() + 8) as u64).to_le_bytes());
+            out.extend(data);
+        }
+        out
+    }
+    fn tree(id: i32, father: i32, first: i32) -> Vec<u8> {
+        let mut data = Vec::new();
+        for value in [father, -1, -1, first] {
+            integer(&mut data, value);
+        }
+        data.extend(0xefd212e4u32.to_le_bytes());
+        data.extend([
+            0xfd, 0x6d, 0xd4, 0x11, 0xb9, 0xc8, 0, 0x60, 0xb0, 0xee, 0x28, 0x1b,
+        ]);
+        attribute(3, id, data, None)
+    }
+    fn label(attributes: Vec<Vec<u8>>, children: Vec<(i32, Vec<u8>)>, quick: bool) -> Vec<u8> {
+        let mut out = if quick { vec![0; 8] } else { Vec::new() };
+        for attr in attributes {
+            out.extend(attr);
+        }
+        integer(&mut out, -1);
+        for (tag, child) in children {
+            integer(&mut out, tag);
+            out.extend(child);
+        }
+        integer(&mut out, -2);
+        if quick {
+            let size = out.len() as u64;
+            out[..8].copy_from_slice(&size.to_le_bytes());
+        }
+        out
+    }
+    fn document(geometry: Vec<u8>, version: u32) -> Vec<u8> {
+        let quick = version == 12;
+        let mut named = Vec::new();
+        integer(&mut named, 1);
+        integer(&mut named, 1);
+        named.push(b'P');
+        let direct = if quick {
+            Some(geometry.clone())
+        } else {
+            named.extend([0, 0, 0]);
+            integer(&mut named, 3);
+            integer(&mut named, 0);
+            named.push(b'F');
+            None
+        };
+        let shape = label(
+            vec![
+                attribute(1, if quick { -2 } else { 2 }, named, direct),
+                tree(3, 4, -1),
+            ],
+            vec![],
+            quick,
+        );
+        let mut color = Vec::new();
+        reals(&mut color, &[0.25, 0.5, 1.0]);
+        let color = label(
+            vec![tree(4, -1, 3), attribute(4, 5, color, None)],
+            vec![],
+            quick,
+        );
+        let body = label(
+            vec![],
+            vec![(
+                1,
+                label(
+                    vec![],
+                    vec![
+                        (
+                            1,
+                            label(vec![attribute(2, 1, vec![], None)], vec![(1, shape)], quick),
+                        ),
+                        (2, label(vec![], vec![(1, color)], quick)),
+                    ],
+                    quick,
+                ),
+            )],
+            quick,
+        );
+        let mut out = b"BINFILE".to_vec();
+        out.resize(59, 0);
+        integer(&mut out, 1);
+        string(&mut out, &version.to_string());
+        for _ in 0..3 {
+            string(&mut out, "");
+        }
+        integer(&mut out, 0);
+        string(&mut out, "");
+        integer(&mut out, 0);
+        let info = [
+            "FILE_FORMAT: BinXCAF",
+            "START_TYPES",
+            "TNaming_NamedShape",
+            "XCAFDoc_ShapeTool",
+            "TDataStd_TreeNode",
+            "XCAFDoc_Color",
+            "END_TYPES",
+        ];
+        integer(&mut out, info.len() as i32);
+        for item in info {
+            string(&mut out, item);
+        }
+        let end_info = out.len() as i32;
+        integer(&mut out, 0);
+        let start_doc = out.len() as i32;
+        let header = [
+            0x04030201, 7, end_info, end_info, start_doc, -1, -1, -1, -1, -1, -1, start_doc,
+            start_doc,
+        ];
+        for (index, value) in header.iter().enumerate() {
+            out[7 + index * 4..11 + index * 4].copy_from_slice(&value.to_le_bytes());
+        }
+        if quick {
+            integer(&mut out, 4);
+            out.extend(b":\0\0\0");
+            out.extend([0; 24]);
+        } else {
+            integer(&mut out, 20);
+            out.extend(b"SHAPE_SECTION_POS:\0\0");
+            let offset = out.len() + 24 + 4 + body.len();
+            out.extend((offset as u64).to_le_bytes());
+            out.extend((geometry.len() as u64).to_le_bytes());
+            out.extend(0u64.to_le_bytes());
+        }
+        integer(&mut out, 0);
+        out.extend(body);
+        if !quick {
+            out.extend(geometry);
+        }
+        out
+    }
+    fn bounds(scene: &Scene) -> (Vec3, Vec3) {
+        let mut low = Vec3::new(f64::INFINITY, f64::INFINITY, f64::INFINITY);
+        let mut high = -low;
+        for p in scene
+            .triangles
+            .iter()
+            .flat_map(|t| t.vertices)
+            .chain(scene.points.iter().map(|p| p.position))
+            .chain(scene.lines.iter().flat_map(|l| l.vertices))
+        {
+            low = Vec3::new(low.x.min(p.x), low.y.min(p.y), low.z.min(p.z));
+            high = Vec3::new(high.x.max(p.x), high.y.max(p.y), high.z.max(p.z));
+        }
+        (low, high)
+    }
+    fn close(actual: Vec3, expected: Vec3) {
+        assert!(
+            (actual - expected).length() < 1e-6,
+            "{actual:?} differs from {expected:?}"
+        );
+    }
+    #[test]
+    fn modern_native_topology_has_actual_area_placement_color_and_thumbnail() {
+        let root = Transform([
+            [0., 1., 0., 0.],
+            [-1., 0., 0., 0.],
+            [0., 0., 1., 0.],
+            [10., -2., 3., 1.],
+        ]);
+        let scene = parse(&document(triangle(Transform::IDENTITY, root), 12)).unwrap();
+        let (low, high) = bounds(&scene);
+        close(low, Vec3::new(9., -2., 3.));
+        close(high, Vec3::new(10., 0., 3.));
+        let area: f64 = scene
+            .triangles
+            .iter()
+            .map(|t| {
+                (t.vertices[1] - t.vertices[0])
+                    .cross(t.vertices[2] - t.vertices[0])
+                    .length()
+                    * 0.5
+            })
+            .sum();
+        assert!((area - 1.).abs() < 1e-6);
+        assert!(
+            scene
+                .triangles
+                .iter()
+                .all(|t| t.color == Some([137, 188, 255]))
+        );
+        let options = crate::render::RenderOptions {
+            width: 96,
+            height: 64,
+            transparent: true,
+            ..Default::default()
+        };
+        let image = crate::render::render(&scene, &options).unwrap();
+        assert!(image.pixels().filter(|p| p[3] > 0).count() > 100);
+    }
+    #[test]
+    fn carrier_locations_are_applied_to_surfaces_and_edge_representations() {
+        let carrier = Transform([
+            [1., 0., 0., 0.],
+            [0., 1., 0., 0.],
+            [0., 0., 1., 0.],
+            [7., 5., 2., 1.],
+        ]);
+        let scene = parse(&document(triangle(carrier, Transform::IDENTITY), 12)).unwrap();
+        let (low, high) = bounds(&scene);
+        close(low, Vec3::new(7., 5., 2.));
+        close(high, Vec3::new(9., 6., 2.));
+        assert!(!scene.triangles.is_empty());
+    }
+    #[test]
+    fn mirrored_carriers_and_scaled_instances_keep_geometry() {
+        let mirrored = Transform([
+            [-1., 0., 0., 0.],
+            [0., 1., 0., 0.],
+            [0., 0., 1., 0.],
+            [7., 5., 2., 1.],
+        ]);
+        let scene = parse(&document(triangle(mirrored, Transform::IDENTITY), 12)).unwrap();
+        let (low, high) = bounds(&scene);
+        close(low, Vec3::new(5., 5., 2.));
+        close(high, Vec3::new(7., 6., 2.));
+        let scale = Transform([
+            [2., 0., 0., 0.],
+            [0., 2., 0., 0.],
+            [0., 0., 2., 0.],
+            [0., 0., 0., 1.],
+        ]);
+        let scene = parse(&document(triangle(Transform::IDENTITY, scale), 12)).unwrap();
+        let (low, high) = bounds(&scene);
+        close(low, Vec3::default());
+        close(high, Vec3::new(4., 2., 0.));
+        let area: f64 = scene
+            .triangles
+            .iter()
+            .map(|t| {
+                (t.vertices[1] - t.vertices[0])
+                    .cross(t.vertices[2] - t.vertices[0])
+                    .length()
+                    * 0.5
+            })
+            .sum();
+        assert!((area - 4.).abs() < 1e-6);
+        let error = parse(&document(triangle(scale, Transform::IDENTITY), 12))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("scaled XBF"));
+    }
+    #[test]
+    fn legacy_table_archive_uses_document_roots_and_real_vertex_geometry() {
+        let mut archive=b"SHAPE_SECTION\nOpen CASCADE Topology V3 (c)\nLocations 0\nCurve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 3\n".to_vec();
+        for point in [[1., 2., 3.], [4., 5., 6.]] {
+            archive.push(7);
+            real(&mut archive, 1e-7);
+            reals(&mut archive, &point);
+            archive.extend([0, 0, 0, 0, 1, 0, 0, 0, b'*']);
+        }
+        archive.push(0);
+        archive.extend([0, 0, 0, 1, 0, 0, 0]);
+        for index in [3, 2] {
+            archive.push(0);
+            integer(&mut archive, index);
+            integer(&mut archive, 0);
+        }
+        archive.push(b'*');
+        let scene = parse(&document(archive, 10)).unwrap();
+        assert_eq!(scene.points.len(), 2);
+        let (low, high) = bounds(&scene);
+        close(low, Vec3::new(1., 2., 3.));
+        close(high, Vec3::new(4., 5., 6.));
+        assert!(
+            scene
+                .points
+                .iter()
+                .all(|p| p.color == Some([137, 188, 255]))
+        );
+    }
+    #[test]
+    fn composed_locations_preserve_order_negative_powers_and_mirroring() {
+        let translation = Transform([
+            [1., 0., 0., 0.],
+            [0., 1., 0., 0.],
+            [0., 0., 1., 0.],
+            [4., -2., 3., 1.],
+        ]);
+        let mirror = Transform([
+            [-1., 0., 0., 0.],
+            [0., 1., 0., 0.],
+            [0., 0., 1., 0.],
+            [0., 0., 0., 1.],
+        ]);
+        close(
+            power(translation, -1)
+                .unwrap()
+                .apply(Vec3::new(4., -2., 3.)),
+            Vec3::default(),
+        );
+        let mut bytes = vec![5];
+        transform(&mut bytes, translation);
+        integer(&mut bytes, 1);
+        transform(&mut bytes, mirror);
+        integer(&mut bytes, 1);
+        bytes.push(8);
+        let mut tables = Tables::default();
+        let location = tables.location(&mut Cursor::new(&bytes), 0).unwrap();
+        close(
+            tables
+                .location_transform(location)
+                .unwrap()
+                .apply(Vec3::new(1., 2., 3.)),
+            Vec3::new(-5., 0., 6.),
+        );
+        assert!(power(translation, i32::MIN).is_err());
+    }
+    #[test]
+    fn malformed_binary_documents_and_geometry_fail_without_panics() {
+        let valid = document(triangle(Transform::IDENTITY, Transform::IDENTITY), 12);
+        for size in [0, 7, 12, 58, 100, valid.len() / 2, valid.len() - 1] {
+            assert!(parse(&valid[..size]).is_err());
+        }
+        let mut bad = valid.clone();
+        bad[7] = 4;
+        assert!(parse(&bad).is_err());
+        let mut bad = valid;
+        bad[55..59].copy_from_slice(&i32::MAX.to_le_bytes());
+        assert!(parse(&bad).is_err());
+        let mut tables = Tables::default();
+        assert!(tables.shape(&mut Cursor::new(&[1, 1, 7, 0]), 0).is_err());
+        assert!(tables.geometry(&mut Cursor::new(&[10]), 9).is_err());
+        let mut values = vec![1];
+        real(&mut values, f64::NAN);
+        assert!(curve(&mut Cursor::new(&values), 3, 0).is_err());
+        let mut values = vec![7, 0, 0];
+        values.extend(65u16.to_le_bytes());
+        assert!(curve(&mut Cursor::new(&values), 3, 0).is_err());
+    }
+}

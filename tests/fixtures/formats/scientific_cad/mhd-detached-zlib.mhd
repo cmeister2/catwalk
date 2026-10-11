@@ -1,0 +1,10 @@
+ObjectType = Image
+NDims = 3
+DimSize = 5 5 5
+ElementType = MET_USHORT
+ElementSpacing = 1 1.5 2
+TransformMatrix = 0 1 0 -1 0 0 0 0 -1
+Offset = 10 20 30
+BinaryDataByteOrderMSB = True
+CompressedData = True
+ElementDataFile = mhd-density.zraw

@@ -1,0 +1,11 @@
+# vtk DataFile Version 3.0
+Two tetrahedra sharing a face
+ASCII
+DATASET UNSTRUCTURED_GRID
+POINTS 5 float
+0 0 0 2 0 0 0 3 0 0 0 4 0 0 -2
+CELLS 2 10
+4 0 1 2 3
+4 0 2 1 4
+CELL_TYPES 2
+10 10

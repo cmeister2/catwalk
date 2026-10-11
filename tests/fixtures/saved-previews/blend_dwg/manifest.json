@@ -1,0 +1,134 @@
+[
+  {
+    "file": "authored-dib.dwg",
+    "bytes": 3399,
+    "sha256": "35fa74118a93745f33b866ffd1ad8471f61de6b7780ef6677cdfad7835897e36",
+    "provenance": "authored carrier-only fixture (MIT)"
+  },
+  {
+    "file": "authored-dib.png",
+    "bytes": 391,
+    "sha256": "b529583628c44591035b71cee0f7bbf852df888abd9dd6c6bacb97b89aae3d71",
+    "provenance": "authored carrier-only fixture (MIT)"
+  },
+  {
+    "file": "authored-format1.blend",
+    "bytes": 12521,
+    "sha256": "17e4e72d4932d2db548359911a57dfb468cefafadbee5b7a6c93a6796497d3a1",
+    "provenance": "authored carrier-only fixture (MIT)"
+  },
+  {
+    "file": "authored-format1.png",
+    "bytes": 399,
+    "sha256": "b866c83b040c763571251409e53c3914decb0bbdec9ee0055630d4d86ce5017f",
+    "provenance": "authored carrier-only fixture (MIT)"
+  },
+  {
+    "file": "authored-legacy-32.blend",
+    "bytes": 12468,
+    "sha256": "df0b8ba3ab7592f237010c1785e5a9eb1b9303ad14c647be582d8e52e6170f3f",
+    "provenance": "authored carrier-only fixture (MIT)"
+  },
+  {
+    "file": "authored-legacy-32.png",
+    "bytes": 399,
+    "sha256": "b866c83b040c763571251409e53c3914decb0bbdec9ee0055630d4d86ce5017f",
+    "provenance": "authored carrier-only fixture (MIT)"
+  },
+  {
+    "file": "authored-legacy-64.blend",
+    "bytes": 12484,
+    "sha256": "8d8c1f29bbd5b5fb936bcb44e3d97dc594827904dd82c3e2375e1a4e6eb1603d",
+    "provenance": "authored carrier-only fixture (MIT)"
+  },
+  {
+    "file": "authored-legacy-64.png",
+    "bytes": 399,
+    "sha256": "b866c83b040c763571251409e53c3914decb0bbdec9ee0055630d4d86ce5017f",
+    "provenance": "authored carrier-only fixture (MIT)"
+  },
+  {
+    "file": "authored-metadata-only.dwg",
+    "bytes": 254,
+    "sha256": "7519bdbc8a0aee84c8076f85c392a7e2678fb431336b61be6b7759ccd9f95d2e",
+    "provenance": "authored carrier-only fixture (MIT)"
+  },
+  {
+    "file": "authored-no-preview.blend",
+    "bytes": 164,
+    "sha256": "e5deb4972283c9f489da9847d54a84cec5e04e58756323af07d8e0c1702088be",
+    "provenance": "authored carrier-only fixture (MIT)"
+  },
+  {
+    "file": "authored-no-preview.dwg",
+    "bytes": 32,
+    "sha256": "25c162f72b12b29300bb683a517f668a4672dbc9d14b028c9064788cb8f13a52",
+    "provenance": "authored carrier-only fixture (MIT)"
+  },
+  {
+    "file": "authored-png.dwg",
+    "bytes": 662,
+    "sha256": "fb6461e0b6d80748f6b8a27fd054fbda8ab3af4198c2eab3ca05e1cdd0e36aa7",
+    "provenance": "authored carrier-only fixture (MIT)"
+  },
+  {
+    "file": "authored-png.png",
+    "bytes": 399,
+    "sha256": "b866c83b040c763571251409e53c3914decb0bbdec9ee0055630d4d86ce5017f",
+    "provenance": "authored carrier-only fixture (MIT)"
+  },
+  {
+    "file": "blend-280.blend",
+    "bytes": 623276,
+    "sha256": "6dd69f4ef1d9f6e7110702a458990d6e43b7a287c5a66f35ebadc1257c1f1c62",
+    "provenance": "https://raw.githubusercontent.com/KhronosGroup/glTF-Blender-IO/ccc2cc6ea93f7618df42b56f6001538a8366f41c/tests/scenes/01_principled_material_280.blend"
+  },
+  {
+    "file": "blend-280.png",
+    "bytes": 11208,
+    "sha256": "6524c48a9b200dfaba8b153f260576bf951d366ecf89dd3060a67bbc7de104f0",
+    "provenance": "https://raw.githubusercontent.com/KhronosGroup/glTF-Blender-IO/ccc2cc6ea93f7618df42b56f6001538a8366f41c/tests/scenes/01_principled_material_280.blend"
+  },
+  {
+    "file": "blend-cube.blend",
+    "bytes": 511232,
+    "sha256": "48a98d64c41deb8cc2f9464d5bfaf89e36416f8c90bbc626c7e09cd79a3e1de4",
+    "provenance": "https://raw.githubusercontent.com/KhronosGroup/glTF-Blender-IO/ccc2cc6ea93f7618df42b56f6001538a8366f41c/tests/scenes/01_cube.blend"
+  },
+  {
+    "file": "blend-cube.png",
+    "bytes": 2258,
+    "sha256": "d4d7e48e4b5d8c2f57f7e8793ef1374e2d4c1fc69d400776a161d780df329f76",
+    "provenance": "https://raw.githubusercontent.com/KhronosGroup/glTF-Blender-IO/ccc2cc6ea93f7618df42b56f6001538a8366f41c/tests/scenes/01_cube.blend"
+  },
+  {
+    "file": "blend-extras.blend",
+    "bytes": 105609,
+    "sha256": "6fa3ecffe79f232b38357a272921f7a0107d052379b8d79c1b878c0e38e99f1a",
+    "provenance": "https://raw.githubusercontent.com/KhronosGroup/glTF-Blender-IO/ccc2cc6ea93f7618df42b56f6001538a8366f41c/tests/scenes/00_extras.blend"
+  },
+  {
+    "file": "blend-extras.png",
+    "bytes": 4298,
+    "sha256": "8477a595b09fd65f95a53373cd0c9402bda291a7c3439a14677bde8978b7e3a6",
+    "provenance": "https://raw.githubusercontent.com/KhronosGroup/glTF-Blender-IO/ccc2cc6ea93f7618df42b56f6001538a8366f41c/tests/scenes/00_extras.blend"
+  },
+  {
+    "file": "blend-gzip-252.blend",
+    "bytes": 89085,
+    "sha256": "2ab572ea568ff3b5e0b37702f3aaef6163b489b9385977efd7f2cefd84c5ebc3",
+    "provenance": "https://raw.githubusercontent.com/assimp/assimp/master/test/models/BLEND/MirroredCube_252.blend"
+  },
+  {
+    "file": "blend-gzip-252.png",
+    "bytes": 5258,
+    "sha256": "f49c46d0045ad614975b3cc6630cb418223a06503a98e05edc989bf6fcca7eb7",
+    "provenance": "https://raw.githubusercontent.com/assimp/assimp/master/test/models/BLEND/MirroredCube_252.blend"
+  },
+  {
+    "file": "blend-gzip-no-preview.blend",
+    "bytes": 63805,
+    "sha256": "4bd9193f41757c3fdba8de86507f66c5557daf37061fdfdc777c261512158db0",
+    "provenance": "https://raw.githubusercontent.com/assimp/assimp/master/test/models/BLEND/BlenderDefault_250_Compressed.blend"
+  }
+]

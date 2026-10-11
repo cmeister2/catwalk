@@ -1,0 +1,13 @@
+; FBX 7.4 authored fixture
+FBXHeaderExtension: { FBXHeaderVersion: 1003 FBXVersion: 7400 Creator: "Catwalk authored Rust fixture" }
+GlobalSettings: { Properties70: { P: "UpAxis","int","Integer","",2 P: "FrontAxis","int","Integer","",1 P: "CoordAxis","int","Integer","",0 P: "UpAxisSign","int","Integer","",1 P: "FrontAxisSign","int","Integer","",1 P: "CoordAxisSign","int","Integer","",1 P: "UnitScaleFactor","double","Number","",100 } }
+Objects: { Geometry: 100,"Geometry::Tetra","Mesh" {
+    Vertices: *12 { a: 0,0,0,2,0,0,0,1.6,0,0.35,0.45,2.3 } PolygonVertexIndex: *12 { a: 0,2,-2,0,1,-4,1,2,-4,2,0,-4 }
+    LayerElementMaterial: 0 { MappingInformationType: "AllSame" ReferenceInformationType: "IndexToDirect" Materials: *1 { a: 0 } }
+}
+Model: 1,"Model::Mesh","Mesh" { Properties70: { P: "Lcl Translation","Vector3D","Vector","",0.2,0.1,0 } }
+Material: 200,"Material::Blue","" { Properties70: { P: "DiffuseColor","ColorRGB","Color","",0.15,0.55,0.9 } }
+ }
+Connections: { C: "OO",100,1
+C: "OO",200,1
+ }

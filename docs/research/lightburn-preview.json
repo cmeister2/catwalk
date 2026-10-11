@@ -1,0 +1,1728 @@
+{
+  "schema_version": 1,
+  "qualification_date": "2026-10-11",
+  "family": "LightBurn",
+  "extensions": [
+    "lbrn",
+    "lbrn2"
+  ],
+  "status": "qualified saved-preview extraction in the Catwalk Rust library",
+  "conclusion": "Pure Rust extraction of a direct root Thumbnail Source base64 PNG is proven for inspected FormatVersion 0 and 1 files. This is saved-image extraction, not fresh geometry rendering.",
+  "primary_sources": [
+    {
+      "url": "https://docs.lightburnsoftware.com/2.0/Reference/FileManagement/",
+      "kind": "manufacturer documentation",
+      "supports": "legacy .lbrn and current .lbrn2 are separate project save formats"
+    },
+    {
+      "url": "https://lightburnsoftware.com/blogs/news/lightburn-0-9-21-image-adjustment-window-image-compositing-measure-tool-new-file-format-memory-savings-and-much-more",
+      "kind": "manufacturer release announcement",
+      "supports": "LBRN2 introduced with 0.9.21, same content in a more efficient representation"
+    },
+    {
+      "url": "https://lightburnsoftware.com/blogs/news/lightburn-0-9-22-released-a-critical-bugfix-and-a-few-small-tweaks",
+      "kind": "manufacturer release announcement",
+      "supports": "legacy LBRN bypasses newer sharing logic, LBRN2 retains sharing"
+    },
+    {
+      "url": "https://forum.lightburnsoftware.com/t/icon-previews-not-working/9467",
+      "kind": "manufacturer developer comments",
+      "supports": "LightBurn installs a project thumbnail extension; implementation details here are still observational"
+    },
+    {
+      "url": "https://lightburnsoftware.com/blogs/news/lightburn-2-2-00-early-access-true-nesting-center-line-trace-multi-page-projects",
+      "kind": "manufacturer release announcement",
+      "supports": "2.2 introduces multi-page projects; these are not qualified by this corpus"
+    }
+  ],
+  "corpus": {
+    "downloaded_project_paths": 45,
+    "unique_project_byte_streams": 43,
+    "duplicate_paths": 2,
+    "unique_extracted": 21,
+    "unique_absent": 22,
+    "unique_errors": 0,
+    "retained_ci_source_fixtures": 2,
+    "retained_expected_pngs": 2,
+    "limitations": "This is a convenience corpus of public parser/generator assets, not a statistically representative customer file corpus. Many no-preview cases are intentionally minimal parser fixtures."
+  },
+  "qualified_preview_versions": [
+    {
+      "AppVersion": "0.9.16",
+      "FormatVersion": "0",
+      "unique_files": 2
+    },
+    {
+      "AppVersion": "0.9.20",
+      "FormatVersion": "0",
+      "unique_files": 1
+    },
+    {
+      "AppVersion": "0.9.24",
+      "FormatVersion": "1",
+      "unique_files": 4
+    },
+    {
+      "AppVersion": "1.3.01",
+      "FormatVersion": "1",
+      "unique_files": 1
+    },
+    {
+      "AppVersion": "1.4.01",
+      "FormatVersion": "1",
+      "unique_files": 1
+    },
+    {
+      "AppVersion": "1.4.03",
+      "FormatVersion": "1",
+      "unique_files": 4
+    },
+    {
+      "AppVersion": "1.4.05",
+      "FormatVersion": "1",
+      "unique_files": 2
+    },
+    {
+      "AppVersion": "2.0.02",
+      "FormatVersion": "1",
+      "unique_files": 5
+    },
+    {
+      "AppVersion": "2.0.05",
+      "FormatVersion": "1",
+      "unique_files": 1
+    }
+  ],
+  "observed_image_carrier": {
+    "location": "LightBurnProject/Thumbnail/@Source, direct child of document root",
+    "encoding": "standard base64 of a complete PNG",
+    "width": 256,
+    "height": 256,
+    "bit_depth": 8,
+    "png_color_type": 6,
+    "rgba_alpha_range": [
+      255,
+      255
+    ],
+    "all_21_independent_pixel_comparisons_exact": true
+  },
+  "prototype": {
+    "helper": "src/saved_preview/lightburn.rs",
+    "runner": "examples/lightburn_preview_probe.rs",
+    "api": "pub fn extract(path: &Path) -> catwalk::Result<Option<image::RgbaImage>>",
+    "runtime": "pure Rust; existing base64, roxmltree and image dependencies; no native authoring software, process invocation or network",
+    "test_command": "cargo test --locked --lib saved_preview::lightburn",
+    "meaningful_tests": 5,
+    "compatibility_reexport": "examples/saved_previews/lightburn.rs",
+    "fixture_generator": "examples/fixtures/saved_previews.rs::generate_lightburn"
+  },
+  "outcomes": {
+    "absent": "no direct root Thumbnail, or explicitly empty Source; old unversioned files without a Thumbnail are absent",
+    "malformed": "invalid XML, missing Source on a Thumbnail, invalid base64, non-PNG data, corrupt/truncated PNG",
+    "unsupported": "wrong/namespaced root, unqualified FormatVersion when a carrier is present, namespaced or duplicate carrier",
+    "resource_limit": "source >64 MiB, XML nodes >500000, encoded Source >12 MiB, decoded PNG >8 MiB, width/height >8192, output >16000000 pixels, decoder allocations >128 MiB"
+  },
+  "robustness_checks": [
+    "real .lbrn and .lbrn2 pixel snapshots",
+    "missing and empty preview",
+    "malformed XML",
+    "missing Source",
+    "invalid base64",
+    "unsupported PNG carrier",
+    "nested shape thumbnail is not selected",
+    "unknown format version rejected",
+    "duplicate and namespaced carrier rejected",
+    "DTD entity declarations and external entities rejected",
+    "oversized PNG IHDR rejected before decoding",
+    "truncated PNG rejected",
+    "oversized base64 rejected",
+    "non-square transparent RGBA image pixels preserved",
+    "base64 XML whitespace accepted"
+  ],
+  "freshness": "Saved thumbnails can be stale. Extraction proves the saved image is usable, not that it matches current project geometry. No geometry regeneration is attempted.",
+  "unqualified": [
+    "LightBurn 2.1 template files",
+    "LightBurn 2.2 multi-page projects",
+    "compressed or non-UTF-8 XML containers",
+    "alternative thumbnail encodings or locations",
+    "geometry regeneration when no saved preview exists"
+  ],
+  "independent_verification": "Read-only Python/Pillow decoded both original saved PNG and Rust-normalized PNG for every successful candidate; dimensions and all RGBA bytes were equal. Every source SHA256 remained unchanged. Python is research tooling only, not a runtime dependency.",
+  "candidates": [
+    {
+      "repo": "ranaur/lightburn-cli",
+      "path": "docs/Layers Example.lbrn2",
+      "url": "https://raw.githubusercontent.com/ranaur/lightburn-cli/5c39911de13d2a49f1fb043724d3fa8784b7c5a0/docs/Layers%20Example.lbrn2",
+      "sha256": "d532e3ea8bf5e2c549f03a1b9695b5d86b12fdc00602ba7162db1aab087ce506",
+      "size": 10164,
+      "local_path": "/tmp/catwalk-saved-preview-research/lightburn/ranaur-lightburn-cli/docs/Layers Example.lbrn2",
+      "root_tag": "LightBurnProject",
+      "root_attributes": {
+        "AppVersion": "2.0.05",
+        "DeviceName": "Ruida",
+        "FormatVersion": "1",
+        "MaterialHeight": "0",
+        "MirrorX": "True",
+        "MirrorY": "False"
+      },
+      "preview_png": {
+        "local_path": "/tmp/catwalk-saved-preview-research/lightburn/decoded-carriers/ranaur-lightburn-cli-Layers Example.png",
+        "sha256": "a494be4cd0d099aa2cf3999bf878909d97de4c2a7311a01c9b7e15280ab3c354",
+        "bytes": 2266,
+        "width": 256,
+        "height": 256,
+        "bit_depth": 8,
+        "color_type": 6
+      },
+      "rust_qualification": {
+        "elapsed_us": 24075,
+        "height": 256,
+        "input": "/tmp/catwalk-saved-preview-research/lightburn/ranaur-lightburn-cli/docs/Layers Example.lbrn2",
+        "outcome": "extracted",
+        "output": "/tmp/catwalk-saved-preview-research/lightburn/ranaur-lightburn-cli/docs/Layers Example.preview.png",
+        "width": 256
+      },
+      "pixel_comparison": {
+        "decoder": "Pillow independent read-only verification",
+        "byte_exact_rgba": true,
+        "rgba_sha256": "c21d72cc3a0e18421083d7a5d0b5c04d14350b33b706ebeb15065c640132074e",
+        "alpha_range": [
+          255,
+          255
+        ]
+      },
+      "license": "GPL-3.0",
+      "source_sha256_unchanged_after_extraction": true,
+      "fixture_class": "third-party parser or generator artifact; original application provenance varies",
+      "container": "UTF-8 XML, unnamespaced LightBurnProject",
+      "carrier": "direct root Thumbnail Source attribute; standard base64; complete PNG byte stream",
+      "retained_in_repository": false
+    },
+    {
+      "repo": "ranaur/lightburn-cli",
+      "path": "examples/Cable Box - Chapa 80x60.lbrn2",
+      "url": "https://raw.githubusercontent.com/ranaur/lightburn-cli/5c39911de13d2a49f1fb043724d3fa8784b7c5a0/examples/Cable%20Box%20-%20Chapa%2080x60.lbrn2",
+      "sha256": "a9f3d9cd3c570dc32c6f642f063dfdbbf931ef8067b3ea321d9a20073606c6bd",
+      "size": 272898,
+      "local_path": "/tmp/catwalk-saved-preview-research/lightburn/ranaur-lightburn-cli/examples/Cable Box - Chapa 80x60.lbrn2",
+      "root_tag": "LightBurnProject",
+      "root_attributes": {
+        "AppVersion": "2.0.02",
+        "DeviceName": "Ruida",
+        "FormatVersion": "1",
+        "MaterialHeight": "0",
+        "MirrorX": "True",
+        "MirrorY": "True"
+      },
+      "preview_png": {
+        "local_path": "/tmp/catwalk-saved-preview-research/lightburn/decoded-carriers/ranaur-lightburn-cli-Cable Box - Chapa 80x60.png",
+        "sha256": "a2d8563a9f81cd17824765ffedcd00af61aec11187617086e9ed22d2ac06f741",
+        "bytes": 27823,
+        "width": 256,
+        "height": 256,
+        "bit_depth": 8,
+        "color_type": 6
+      },
+      "rust_qualification": {
+        "elapsed_us": 53311,
+        "height": 256,
+        "input": "/tmp/catwalk-saved-preview-research/lightburn/ranaur-lightburn-cli/examples/Cable Box - Chapa 80x60.lbrn2",
+        "outcome": "extracted",
+        "output": "/tmp/catwalk-saved-preview-research/lightburn/ranaur-lightburn-cli/examples/Cable Box - Chapa 80x60.preview.png",
+        "width": 256
+      },
+      "pixel_comparison": {
+        "decoder": "Pillow independent read-only verification",
+        "byte_exact_rgba": true,
+        "rgba_sha256": "79e89d4179abb3a7135c002a8ac50c4a0b59ee485ac9ec04fbbbcf44cfa0b776",
+        "alpha_range": [
+          255,
+          255
+        ]
+      },
+      "license": "GPL-3.0",
+      "source_sha256_unchanged_after_extraction": true,
+      "fixture_class": "third-party parser or generator artifact; original application provenance varies",
+      "container": "UTF-8 XML, unnamespaced LightBurnProject",
+      "carrier": "direct root Thumbnail Source attribute; standard base64; complete PNG byte stream",
+      "retained_in_repository": false
+    },
+    {
+      "repo": "ranaur/lightburn-cli",
+      "path": "examples/Magnetic Counter - Clockwise.lbrn2",
+      "url": "https://raw.githubusercontent.com/ranaur/lightburn-cli/5c39911de13d2a49f1fb043724d3fa8784b7c5a0/examples/Magnetic%20Counter%20-%20Clockwise.lbrn2",
+      "sha256": "2769be9f553a901c11ae1e3fb8f8af6d70bb4bef77e17e6624aa140ff26f3658",
+      "size": 92621,
+      "local_path": "/tmp/catwalk-saved-preview-research/lightburn/ranaur-lightburn-cli/examples/Magnetic Counter - Clockwise.lbrn2",
+      "root_tag": "LightBurnProject",
+      "root_attributes": {
+        "AppVersion": "2.0.02",
+        "DeviceName": "Ruida",
+        "FormatVersion": "1",
+        "MaterialHeight": "0",
+        "MirrorX": "True",
+        "MirrorY": "True"
+      },
+      "preview_png": {
+        "local_path": "/tmp/catwalk-saved-preview-research/lightburn/decoded-carriers/ranaur-lightburn-cli-Magnetic Counter - Clockwise.png",
+        "sha256": "c30bd747fc4604fe79ef044e3d6c208e528c005e954b44dc3a928cb0e107f70a",
+        "bytes": 15752,
+        "width": 256,
+        "height": 256,
+        "bit_depth": 8,
+        "color_type": 6
+      },
+      "rust_qualification": {
+        "elapsed_us": 28576,
+        "height": 256,
+        "input": "/tmp/catwalk-saved-preview-research/lightburn/ranaur-lightburn-cli/examples/Magnetic Counter - Clockwise.lbrn2",
+        "outcome": "extracted",
+        "output": "/tmp/catwalk-saved-preview-research/lightburn/ranaur-lightburn-cli/examples/Magnetic Counter - Clockwise.preview.png",
+        "width": 256
+      },
+      "pixel_comparison": {
+        "decoder": "Pillow independent read-only verification",
+        "byte_exact_rgba": true,
+        "rgba_sha256": "5635225290fb951acb6000f5963095ca55f7f2308de4a55e037dfb0886e63ded",
+        "alpha_range": [
+          255,
+          255
+        ]
+      },
+      "license": "GPL-3.0",
+      "source_sha256_unchanged_after_extraction": true,
+      "fixture_class": "third-party parser or generator artifact; original application provenance varies",
+      "container": "UTF-8 XML, unnamespaced LightBurnProject",
+      "carrier": "direct root Thumbnail Source attribute; standard base64; complete PNG byte stream",
+      "retained_in_repository": false
+    },
+    {
+      "repo": "ranaur/lightburn-cli",
+      "path": "examples/Magnetic Counter - Clockwise_v2.lbrn2",
+      "url": "https://raw.githubusercontent.com/ranaur/lightburn-cli/5c39911de13d2a49f1fb043724d3fa8784b7c5a0/examples/Magnetic%20Counter%20-%20Clockwise_v2.lbrn2",
+      "sha256": "9f953177dc5f7d05b91cf446f537fdd4af70dd6e062a4e053e420d8701e2a86e",
+      "size": 91217,
+      "local_path": "/tmp/catwalk-saved-preview-research/lightburn/ranaur-lightburn-cli/examples/Magnetic Counter - Clockwise_v2.lbrn2",
+      "root_tag": "LightBurnProject",
+      "root_attributes": {
+        "AppVersion": "2.0.02",
+        "DeviceName": "Ruida",
+        "FormatVersion": "1",
+        "MaterialHeight": "0",
+        "MirrorX": "True",
+        "MirrorY": "True"
+      },
+      "preview_png": {
+        "local_path": "/tmp/catwalk-saved-preview-research/lightburn/decoded-carriers/ranaur-lightburn-cli-Magnetic Counter - Clockwise_v2.png",
+        "sha256": "65ebddb8b6873ea898e877cffa9c1664f330be87a042fa2ad2b30bfe1b042805",
+        "bytes": 15538,
+        "width": 256,
+        "height": 256,
+        "bit_depth": 8,
+        "color_type": 6
+      },
+      "rust_qualification": {
+        "elapsed_us": 30688,
+        "height": 256,
+        "input": "/tmp/catwalk-saved-preview-research/lightburn/ranaur-lightburn-cli/examples/Magnetic Counter - Clockwise_v2.lbrn2",
+        "outcome": "extracted",
+        "output": "/tmp/catwalk-saved-preview-research/lightburn/ranaur-lightburn-cli/examples/Magnetic Counter - Clockwise_v2.preview.png",
+        "width": 256
+      },
+      "pixel_comparison": {
+        "decoder": "Pillow independent read-only verification",
+        "byte_exact_rgba": true,
+        "rgba_sha256": "1d42e8ac9a43aac232a955e35972f6f77e3f431823a4469bfcbf4f5528637c5f",
+        "alpha_range": [
+          255,
+          255
+        ]
+      },
+      "license": "GPL-3.0",
+      "source_sha256_unchanged_after_extraction": true,
+      "fixture_class": "third-party parser or generator artifact; original application provenance varies",
+      "container": "UTF-8 XML, unnamespaced LightBurnProject",
+      "carrier": "direct root Thumbnail Source attribute; standard base64; complete PNG byte stream",
+      "retained_in_repository": false
+    },
+    {
+      "repo": "ranaur/lightburn-cli",
+      "path": "examples/example-template.lbrn2",
+      "url": "https://raw.githubusercontent.com/ranaur/lightburn-cli/5c39911de13d2a49f1fb043724d3fa8784b7c5a0/examples/example-template.lbrn2",
+      "sha256": "ba0f40bc365c6021d9b89e4483138dee55585e57056d7f834b13f0d642df88ef",
+      "size": 273027,
+      "local_path": "/tmp/catwalk-saved-preview-research/lightburn/ranaur-lightburn-cli/examples/example-template.lbrn2",
+      "root_tag": "LightBurnProject",
+      "root_attributes": {
+        "AppVersion": "2.0.02",
+        "DeviceName": "Ruida",
+        "FormatVersion": "1",
+        "MaterialHeight": "0",
+        "MirrorX": "True",
+        "MirrorY": "True"
+      },
+      "preview_png": {
+        "local_path": "/tmp/catwalk-saved-preview-research/lightburn/decoded-carriers/ranaur-lightburn-cli-example-template.png",
+        "sha256": "a2d8563a9f81cd17824765ffedcd00af61aec11187617086e9ed22d2ac06f741",
+        "bytes": 27823,
+        "width": 256,
+        "height": 256,
+        "bit_depth": 8,
+        "color_type": 6
+      },
+      "rust_qualification": {
+        "elapsed_us": 51625,
+        "height": 256,
+        "input": "/tmp/catwalk-saved-preview-research/lightburn/ranaur-lightburn-cli/examples/example-template.lbrn2",
+        "outcome": "extracted",
+        "output": "/tmp/catwalk-saved-preview-research/lightburn/ranaur-lightburn-cli/examples/example-template.preview.png",
+        "width": 256
+      },
+      "pixel_comparison": {
+        "decoder": "Pillow independent read-only verification",
+        "byte_exact_rgba": true,
+        "rgba_sha256": "79e89d4179abb3a7135c002a8ac50c4a0b59ee485ac9ec04fbbbcf44cfa0b776",
+        "alpha_range": [
+          255,
+          255
+        ]
+      },
+      "license": "GPL-3.0",
+      "source_sha256_unchanged_after_extraction": true,
+      "fixture_class": "third-party parser or generator artifact; original application provenance varies",
+      "container": "UTF-8 XML, unnamespaced LightBurnProject",
+      "carrier": "direct root Thumbnail Source attribute; standard base64; complete PNG byte stream",
+      "retained_in_repository": false
+    },
+    {
+      "repo": "ranaur/lightburn-cli",
+      "path": "examples/example.lbrn2",
+      "url": "https://raw.githubusercontent.com/ranaur/lightburn-cli/5c39911de13d2a49f1fb043724d3fa8784b7c5a0/examples/example.lbrn2",
+      "sha256": "0ee53a6084ca73b3b25e1f65f343d1cc980ad4905293405330dd8571ca3d5758",
+      "size": 272971,
+      "local_path": "/tmp/catwalk-saved-preview-research/lightburn/ranaur-lightburn-cli/examples/example.lbrn2",
+      "root_tag": "LightBurnProject",
+      "root_attributes": {
+        "AppVersion": "2.0.02",
+        "DeviceName": "Ruida",
+        "FormatVersion": "1",
+        "MaterialHeight": "0",
+        "MirrorX": "True",
+        "MirrorY": "True"
+      },
+      "preview_png": {
+        "local_path": "/tmp/catwalk-saved-preview-research/lightburn/decoded-carriers/ranaur-lightburn-cli-example.png",
+        "sha256": "a2d8563a9f81cd17824765ffedcd00af61aec11187617086e9ed22d2ac06f741",
+        "bytes": 27823,
+        "width": 256,
+        "height": 256,
+        "bit_depth": 8,
+        "color_type": 6
+      },
+      "rust_qualification": {
+        "elapsed_us": 52224,
+        "height": 256,
+        "input": "/tmp/catwalk-saved-preview-research/lightburn/ranaur-lightburn-cli/examples/example.lbrn2",
+        "outcome": "extracted",
+        "output": "/tmp/catwalk-saved-preview-research/lightburn/ranaur-lightburn-cli/examples/example.preview.png",
+        "width": 256
+      },
+      "pixel_comparison": {
+        "decoder": "Pillow independent read-only verification",
+        "byte_exact_rgba": true,
+        "rgba_sha256": "79e89d4179abb3a7135c002a8ac50c4a0b59ee485ac9ec04fbbbcf44cfa0b776",
+        "alpha_range": [
+          255,
+          255
+        ]
+      },
+      "license": "GPL-3.0",
+      "source_sha256_unchanged_after_extraction": true,
+      "fixture_class": "third-party parser or generator artifact; original application provenance varies",
+      "container": "UTF-8 XML, unnamespaced LightBurnProject",
+      "carrier": "direct root Thumbnail Source attribute; standard base64; complete PNG byte stream",
+      "retained_in_repository": false
+    },
+    {
+      "repo": "tscircuit/lbrnts",
+      "path": "tests/assets/example1.lbrn",
+      "url": "https://raw.githubusercontent.com/tscircuit/lbrnts/d21a7b29354cd782cabf533b1b8f0ade6a11c7dd/tests/assets/example1.lbrn",
+      "size": 56024,
+      "sha256": "181072c4c881dbca5af7c510b63bf6d7dceb9c05bc8f1d2f4364d26eaa077552",
+      "local_path": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/example1.lbrn",
+      "root_tag": "LightBurnProject",
+      "root_attributes": {
+        "AppVersion": "0.9.16",
+        "FormatVersion": "0",
+        "MaterialHeight": "0",
+        "MirrorX": "True",
+        "MirrorY": "True"
+      },
+      "preview_png": {
+        "local_path": "/tmp/catwalk-saved-preview-research/lightburn/decoded-carriers/tscircuit-lbrnts-example1.png",
+        "sha256": "b01e37b542519aa34a432d947179391fd95cc9655bb74ab2e04730a2dd3a39ab",
+        "bytes": 5098,
+        "width": 256,
+        "height": 256,
+        "bit_depth": 8,
+        "color_type": 6
+      },
+      "rust_qualification": {
+        "elapsed_us": 21583,
+        "height": 256,
+        "input": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/example1.lbrn",
+        "outcome": "extracted",
+        "output": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/example1.preview.png",
+        "width": 256
+      },
+      "pixel_comparison": {
+        "decoder": "Pillow independent read-only verification",
+        "byte_exact_rgba": true,
+        "rgba_sha256": "187b9cbd4e78e91778a5644a42b4971b5f1b183c95444fae06447adf179a04f5",
+        "alpha_range": [
+          255,
+          255
+        ]
+      },
+      "license": "MIT",
+      "source_sha256_unchanged_after_extraction": true,
+      "fixture_class": "third-party parser or generator artifact; original application provenance varies",
+      "container": "UTF-8 XML, unnamespaced LightBurnProject",
+      "carrier": "direct root Thumbnail Source attribute; standard base64; complete PNG byte stream",
+      "retained_in_repository": true
+    },
+    {
+      "repo": "tscircuit/lbrnts",
+      "path": "tests/assets/example2.lbrn",
+      "url": "https://raw.githubusercontent.com/tscircuit/lbrnts/d21a7b29354cd782cabf533b1b8f0ade6a11c7dd/tests/assets/example2.lbrn",
+      "size": 54836,
+      "sha256": "63e434bef0eda39b4e2ab4620375fda850df3cf6407a79f3810c122082bc9d4f",
+      "local_path": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/example2.lbrn",
+      "root_tag": "LightBurnProject",
+      "root_attributes": {
+        "AppVersion": "0.9.16",
+        "FormatVersion": "0",
+        "MaterialHeight": "0",
+        "MirrorX": "True",
+        "MirrorY": "True"
+      },
+      "preview_png": {
+        "local_path": "/tmp/catwalk-saved-preview-research/lightburn/decoded-carriers/tscircuit-lbrnts-example2.png",
+        "sha256": "b01e37b542519aa34a432d947179391fd95cc9655bb74ab2e04730a2dd3a39ab",
+        "bytes": 5098,
+        "width": 256,
+        "height": 256,
+        "bit_depth": 8,
+        "color_type": 6
+      },
+      "rust_qualification": {
+        "elapsed_us": 20049,
+        "height": 256,
+        "input": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/example2.lbrn",
+        "outcome": "extracted",
+        "output": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/example2.preview.png",
+        "width": 256
+      },
+      "pixel_comparison": {
+        "decoder": "Pillow independent read-only verification",
+        "byte_exact_rgba": true,
+        "rgba_sha256": "187b9cbd4e78e91778a5644a42b4971b5f1b183c95444fae06447adf179a04f5",
+        "alpha_range": [
+          255,
+          255
+        ]
+      },
+      "license": "MIT",
+      "source_sha256_unchanged_after_extraction": true,
+      "fixture_class": "third-party parser or generator artifact; original application provenance varies",
+      "container": "UTF-8 XML, unnamespaced LightBurnProject",
+      "carrier": "direct root Thumbnail Source attribute; standard base64; complete PNG byte stream",
+      "retained_in_repository": false
+    },
+    {
+      "repo": "jlucaso1/lbrn2-to-svg",
+      "path": "tests/artifacts/bezier_missing_cp.lbrn2",
+      "url": "https://raw.githubusercontent.com/jlucaso1/lbrn2-to-svg/7cea0bf68b7caf4ad8d9b16ea03bd8a90c2c9c49/tests/artifacts/bezier_missing_cp.lbrn2",
+      "sha256": "30822c7667c12064ad45e1e5e3876aaf886a40fbb021529a10a2d92005cd2417",
+      "size": 352,
+      "local_path": "/tmp/catwalk-saved-preview-research/lightburn/jlucaso1-lbrn2-to-svg/tests/artifacts/bezier_missing_cp.lbrn2",
+      "root_tag": "LightBurnProject",
+      "root_attributes": {
+        "AppVersion": "1.7.08",
+        "DeviceName": "JCZFiber (LMC4)",
+        "FormatVersion": "1",
+        "MaterialHeight": "0",
+        "MirrorX": "False",
+        "MirrorY": "False"
+      },
+      "rust_qualification": {
+        "elapsed_us": 145,
+        "input": "/tmp/catwalk-saved-preview-research/lightburn/jlucaso1-lbrn2-to-svg/tests/artifacts/bezier_missing_cp.lbrn2",
+        "outcome": "absent"
+      },
+      "license": "MIT",
+      "source_sha256_unchanged_after_extraction": true,
+      "fixture_class": "third-party parser or generator artifact; original application provenance varies",
+      "container": "UTF-8 XML, unnamespaced LightBurnProject",
+      "retained_in_repository": false
+    },
+    {
+      "repo": "jlucaso1/lbrn2-to-svg",
+      "path": "tests/artifacts/butterfly_vectorized.lbrn2",
+      "url": "https://raw.githubusercontent.com/jlucaso1/lbrn2-to-svg/7cea0bf68b7caf4ad8d9b16ea03bd8a90c2c9c49/tests/artifacts/butterfly_vectorized.lbrn2",
+      "sha256": "0e861ccb65a6e1803a33d8acabc4848f160dbdcff11a4ac9d78d7263c85e6bef",
+      "size": 3018,
+      "local_path": "/tmp/catwalk-saved-preview-research/lightburn/jlucaso1-lbrn2-to-svg/tests/artifacts/butterfly_vectorized.lbrn2",
+      "root_tag": "LightBurnProject",
+      "root_attributes": {
+        "FormatVersion": "1"
+      },
+      "rust_qualification": {
+        "elapsed_us": 122,
+        "input": "/tmp/catwalk-saved-preview-research/lightburn/jlucaso1-lbrn2-to-svg/tests/artifacts/butterfly_vectorized.lbrn2",
+        "outcome": "absent"
+      },
+      "license": "MIT",
+      "source_sha256_unchanged_after_extraction": true,
+      "fixture_class": "third-party parser or generator artifact; original application provenance varies",
+      "container": "UTF-8 XML, unnamespaced LightBurnProject",
+      "retained_in_repository": false
+    },
+    {
+      "repo": "jlucaso1/lbrn2-to-svg",
+      "path": "tests/artifacts/circle.lbrn2",
+      "url": "https://raw.githubusercontent.com/jlucaso1/lbrn2-to-svg/7cea0bf68b7caf4ad8d9b16ea03bd8a90c2c9c49/tests/artifacts/circle.lbrn2",
+      "sha256": "8d2eca519015f1f9d419c750c9522b032eaa3bb23e3c2b66a6b02f52c4a6d175",
+      "size": 292,
+      "local_path": "/tmp/catwalk-saved-preview-research/lightburn/jlucaso1-lbrn2-to-svg/tests/artifacts/circle.lbrn2",
+      "root_tag": "LightBurnProject",
+      "root_attributes": {
+        "AppVersion": "1.7.08",
+        "DeviceName": "JCZFiber (LMC4)",
+        "FormatVersion": "1",
+        "MaterialHeight": "0",
+        "MirrorX": "False",
+        "MirrorY": "False"
+      },
+      "rust_qualification": {
+        "elapsed_us": 69,
+        "input": "/tmp/catwalk-saved-preview-research/lightburn/jlucaso1-lbrn2-to-svg/tests/artifacts/circle.lbrn2",
+        "outcome": "absent"
+      },
+      "license": "MIT",
+      "source_sha256_unchanged_after_extraction": true,
+      "fixture_class": "third-party parser or generator artifact; original application provenance varies",
+      "container": "UTF-8 XML, unnamespaced LightBurnProject",
+      "retained_in_repository": false
+    },
+    {
+      "repo": "jlucaso1/lbrn2-to-svg",
+      "path": "tests/artifacts/crucifix.lbrn2",
+      "url": "https://raw.githubusercontent.com/jlucaso1/lbrn2-to-svg/7cea0bf68b7caf4ad8d9b16ea03bd8a90c2c9c49/tests/artifacts/crucifix.lbrn2",
+      "sha256": "82a6e90682313c0956683687e16b4a536e425e4598ee5622f8efc80c4e744278",
+      "size": 3664,
+      "local_path": "/tmp/catwalk-saved-preview-research/lightburn/jlucaso1-lbrn2-to-svg/tests/artifacts/crucifix.lbrn2",
+      "root_tag": "LightBurnProject",
+      "root_attributes": {
+        "AppVersion": "1.7.08",
+        "DeviceName": "JCZFiber (LMC4)",
+        "FormatVersion": "1",
+        "MaterialHeight": "0",
+        "MirrorX": "False",
+        "MirrorY": "False"
+      },
+      "rust_qualification": {
+        "elapsed_us": 131,
+        "input": "/tmp/catwalk-saved-preview-research/lightburn/jlucaso1-lbrn2-to-svg/tests/artifacts/crucifix.lbrn2",
+        "outcome": "absent"
+      },
+      "license": "MIT",
+      "source_sha256_unchanged_after_extraction": true,
+      "fixture_class": "third-party parser or generator artifact; original application provenance varies",
+      "container": "UTF-8 XML, unnamespaced LightBurnProject",
+      "retained_in_repository": false
+    },
+    {
+      "repo": "jlucaso1/lbrn2-to-svg",
+      "path": "tests/artifacts/ellipse_stretched.lbrn2",
+      "url": "https://raw.githubusercontent.com/jlucaso1/lbrn2-to-svg/7cea0bf68b7caf4ad8d9b16ea03bd8a90c2c9c49/tests/artifacts/ellipse_stretched.lbrn2",
+      "sha256": "0994fe498af5270a218de89461bc3e7cb5a46ff9a02107ea566b1033a393fa3a",
+      "size": 293,
+      "local_path": "/tmp/catwalk-saved-preview-research/lightburn/jlucaso1-lbrn2-to-svg/tests/artifacts/ellipse_stretched.lbrn2",
+      "root_tag": "LightBurnProject",
+      "root_attributes": {
+        "AppVersion": "1.7.08",
+        "DeviceName": "JCZFiber (LMC4)",
+        "FormatVersion": "1",
+        "MaterialHeight": "0",
+        "MirrorX": "False",
+        "MirrorY": "False"
+      },
+      "rust_qualification": {
+        "elapsed_us": 52,
+        "input": "/tmp/catwalk-saved-preview-research/lightburn/jlucaso1-lbrn2-to-svg/tests/artifacts/ellipse_stretched.lbrn2",
+        "outcome": "absent"
+      },
+      "license": "MIT",
+      "source_sha256_unchanged_after_extraction": true,
+      "fixture_class": "third-party parser or generator artifact; original application provenance varies",
+      "container": "UTF-8 XML, unnamespaced LightBurnProject",
+      "retained_in_repository": false
+    },
+    {
+      "repo": "jlucaso1/lbrn2-to-svg",
+      "path": "tests/artifacts/group_empty.lbrn2",
+      "url": "https://raw.githubusercontent.com/jlucaso1/lbrn2-to-svg/7cea0bf68b7caf4ad8d9b16ea03bd8a90c2c9c49/tests/artifacts/group_empty.lbrn2",
+      "sha256": "55e804f0111eb0ce058b20bf9b1b5927a1d40ca5f36faa698caee1888e531de3",
+      "size": 177,
+      "local_path": "/tmp/catwalk-saved-preview-research/lightburn/jlucaso1-lbrn2-to-svg/tests/artifacts/group_empty.lbrn2",
+      "root_tag": "LightBurnProject",
+      "root_attributes": {
+        "AppVersion": "1.7.08",
+        "DeviceName": "JCZFiber (LMC4)",
+        "FormatVersion": "1",
+        "MaterialHeight": "0",
+        "MirrorX": "False",
+        "MirrorY": "False"
+      },
+      "rust_qualification": {
+        "elapsed_us": 47,
+        "input": "/tmp/catwalk-saved-preview-research/lightburn/jlucaso1-lbrn2-to-svg/tests/artifacts/group_empty.lbrn2",
+        "outcome": "absent"
+      },
+      "license": "MIT",
+      "source_sha256_unchanged_after_extraction": true,
+      "fixture_class": "third-party parser or generator artifact; original application provenance varies",
+      "container": "UTF-8 XML, unnamespaced LightBurnProject",
+      "retained_in_repository": false
+    },
+    {
+      "repo": "jlucaso1/lbrn2-to-svg",
+      "path": "tests/artifacts/group_single_child.lbrn2",
+      "url": "https://raw.githubusercontent.com/jlucaso1/lbrn2-to-svg/7cea0bf68b7caf4ad8d9b16ea03bd8a90c2c9c49/tests/artifacts/group_single_child.lbrn2",
+      "sha256": "7743d424325a2cdef8cee1ba80a6e1b2685774c3d8a9b5671a6785c48f639f40",
+      "size": 330,
+      "local_path": "/tmp/catwalk-saved-preview-research/lightburn/jlucaso1-lbrn2-to-svg/tests/artifacts/group_single_child.lbrn2",
+      "root_tag": "LightBurnProject",
+      "root_attributes": {
+        "AppVersion": "1.7.08",
+        "FormatVersion": "1"
+      },
+      "rust_qualification": {
+        "elapsed_us": 42,
+        "input": "/tmp/catwalk-saved-preview-research/lightburn/jlucaso1-lbrn2-to-svg/tests/artifacts/group_single_child.lbrn2",
+        "outcome": "absent"
+      },
+      "license": "MIT",
+      "source_sha256_unchanged_after_extraction": true,
+      "fixture_class": "third-party parser or generator artifact; original application provenance varies",
+      "container": "UTF-8 XML, unnamespaced LightBurnProject",
+      "retained_in_repository": false
+    },
+    {
+      "repo": "jlucaso1/lbrn2-to-svg",
+      "path": "tests/artifacts/image.lbrn2",
+      "url": "https://raw.githubusercontent.com/jlucaso1/lbrn2-to-svg/7cea0bf68b7caf4ad8d9b16ea03bd8a90c2c9c49/tests/artifacts/image.lbrn2",
+      "sha256": "4fb85fd5c301d599295ac04d700946e8388d9ecf69e3e3e6a85332a4ff4d664b",
+      "size": 913,
+      "local_path": "/tmp/catwalk-saved-preview-research/lightburn/jlucaso1-lbrn2-to-svg/tests/artifacts/image.lbrn2",
+      "root_tag": "LightBurnProject",
+      "root_attributes": {
+        "AppVersion": "1.7.08",
+        "DeviceName": "JCZFiber (LMC4)",
+        "FormatVersion": "1",
+        "MaterialHeight": "0",
+        "MirrorX": "False",
+        "MirrorY": "False"
+      },
+      "rust_qualification": {
+        "elapsed_us": 71,
+        "input": "/tmp/catwalk-saved-preview-research/lightburn/jlucaso1-lbrn2-to-svg/tests/artifacts/image.lbrn2",
+        "outcome": "absent"
+      },
+      "license": "MIT",
+      "source_sha256_unchanged_after_extraction": true,
+      "fixture_class": "third-party parser or generator artifact; original application provenance varies",
+      "container": "UTF-8 XML, unnamespaced LightBurnProject",
+      "retained_in_repository": false
+    },
+    {
+      "repo": "jlucaso1/lbrn2-to-svg",
+      "path": "tests/artifacts/k.lbrn2",
+      "url": "https://raw.githubusercontent.com/jlucaso1/lbrn2-to-svg/7cea0bf68b7caf4ad8d9b16ea03bd8a90c2c9c49/tests/artifacts/k.lbrn2",
+      "sha256": "1c25a7f61c4fcd2e947ad721a9c9c355a45ae20e353edf08e09db4194ef66ff5",
+      "size": 1755,
+      "local_path": "/tmp/catwalk-saved-preview-research/lightburn/jlucaso1-lbrn2-to-svg/tests/artifacts/k.lbrn2",
+      "root_tag": "LightBurnProject",
+      "root_attributes": {
+        "AppVersion": "1.7.08",
+        "DeviceName": "JCZFiber (LMC4)",
+        "FormatVersion": "1",
+        "MaterialHeight": "0",
+        "MirrorX": "False",
+        "MirrorY": "False"
+      },
+      "rust_qualification": {
+        "elapsed_us": 118,
+        "input": "/tmp/catwalk-saved-preview-research/lightburn/jlucaso1-lbrn2-to-svg/tests/artifacts/k.lbrn2",
+        "outcome": "absent"
+      },
+      "license": "MIT",
+      "source_sha256_unchanged_after_extraction": true,
+      "fixture_class": "third-party parser or generator artifact; original application provenance varies",
+      "container": "UTF-8 XML, unnamespaced LightBurnProject",
+      "retained_in_repository": false
+    },
+    {
+      "repo": "jlucaso1/lbrn2-to-svg",
+      "path": "tests/artifacts/line.lbrn2",
+      "url": "https://raw.githubusercontent.com/jlucaso1/lbrn2-to-svg/7cea0bf68b7caf4ad8d9b16ea03bd8a90c2c9c49/tests/artifacts/line.lbrn2",
+      "sha256": "a5e4e7f7af83ca67c5ef3c0299d27eeaf7e7b6e850ff49e58d6ddcb8387f1c1c",
+      "size": 402,
+      "local_path": "/tmp/catwalk-saved-preview-research/lightburn/jlucaso1-lbrn2-to-svg/tests/artifacts/line.lbrn2",
+      "root_tag": "LightBurnProject",
+      "root_attributes": {
+        "AppVersion": "1.7.08",
+        "DeviceName": "JCZFiber (LMC4)",
+        "FormatVersion": "1",
+        "MaterialHeight": "0",
+        "MirrorX": "False",
+        "MirrorY": "False"
+      },
+      "rust_qualification": {
+        "elapsed_us": 55,
+        "input": "/tmp/catwalk-saved-preview-research/lightburn/jlucaso1-lbrn2-to-svg/tests/artifacts/line.lbrn2",
+        "outcome": "absent"
+      },
+      "license": "MIT",
+      "source_sha256_unchanged_after_extraction": true,
+      "fixture_class": "third-party parser or generator artifact; original application provenance varies",
+      "container": "UTF-8 XML, unnamespaced LightBurnProject",
+      "retained_in_repository": false
+    },
+    {
+      "repo": "jlucaso1/lbrn2-to-svg",
+      "path": "tests/artifacts/rings.lbrn2",
+      "url": "https://raw.githubusercontent.com/jlucaso1/lbrn2-to-svg/7cea0bf68b7caf4ad8d9b16ea03bd8a90c2c9c49/tests/artifacts/rings.lbrn2",
+      "sha256": "e075412aacb6ae61238a25c97693ba852caabf11c22777a7dcb59812952c0880",
+      "size": 4939,
+      "local_path": "/tmp/catwalk-saved-preview-research/lightburn/jlucaso1-lbrn2-to-svg/tests/artifacts/rings.lbrn2",
+      "root_tag": "LightBurnProject",
+      "root_attributes": {
+        "AppVersion": "1.7.08",
+        "DeviceName": "JCZFiber (LMC4)",
+        "FormatVersion": "1",
+        "MaterialHeight": "0",
+        "MirrorX": "False",
+        "MirrorY": "False"
+      },
+      "rust_qualification": {
+        "elapsed_us": 237,
+        "input": "/tmp/catwalk-saved-preview-research/lightburn/jlucaso1-lbrn2-to-svg/tests/artifacts/rings.lbrn2",
+        "outcome": "absent"
+      },
+      "license": "MIT",
+      "source_sha256_unchanged_after_extraction": true,
+      "fixture_class": "third-party parser or generator artifact; original application provenance varies",
+      "container": "UTF-8 XML, unnamespaced LightBurnProject",
+      "retained_in_repository": false
+    },
+    {
+      "repo": "jlucaso1/lbrn2-to-svg",
+      "path": "tests/artifacts/square.lbrn2",
+      "url": "https://raw.githubusercontent.com/jlucaso1/lbrn2-to-svg/7cea0bf68b7caf4ad8d9b16ea03bd8a90c2c9c49/tests/artifacts/square.lbrn2",
+      "sha256": "75e15f922a48e2401a5d0c0be8967e542eba17170344d8230f6959d92caeee49",
+      "size": 296,
+      "local_path": "/tmp/catwalk-saved-preview-research/lightburn/jlucaso1-lbrn2-to-svg/tests/artifacts/square.lbrn2",
+      "root_tag": "LightBurnProject",
+      "root_attributes": {
+        "AppVersion": "1.7.08",
+        "DeviceName": "JCZFiber (LMC4)",
+        "FormatVersion": "1",
+        "MaterialHeight": "0",
+        "MirrorX": "False",
+        "MirrorY": "False"
+      },
+      "rust_qualification": {
+        "elapsed_us": 52,
+        "input": "/tmp/catwalk-saved-preview-research/lightburn/jlucaso1-lbrn2-to-svg/tests/artifacts/square.lbrn2",
+        "outcome": "absent"
+      },
+      "license": "MIT",
+      "source_sha256_unchanged_after_extraction": true,
+      "fixture_class": "third-party parser or generator artifact; original application provenance varies",
+      "container": "UTF-8 XML, unnamespaced LightBurnProject",
+      "retained_in_repository": false
+    },
+    {
+      "repo": "jlucaso1/lbrn2-to-svg",
+      "path": "tests/artifacts/word.lbrn2",
+      "url": "https://raw.githubusercontent.com/jlucaso1/lbrn2-to-svg/7cea0bf68b7caf4ad8d9b16ea03bd8a90c2c9c49/tests/artifacts/word.lbrn2",
+      "sha256": "1b327b11950c13fd1e5573fd012c8cc53425f593b5f1233e58792992ed9ff6af",
+      "size": 8206,
+      "local_path": "/tmp/catwalk-saved-preview-research/lightburn/jlucaso1-lbrn2-to-svg/tests/artifacts/word.lbrn2",
+      "root_tag": "LightBurnProject",
+      "root_attributes": {
+        "AppVersion": "1.7.08",
+        "DeviceName": "JCZFiber (LMC4)",
+        "FormatVersion": "1",
+        "MaterialHeight": "0",
+        "MirrorX": "False",
+        "MirrorY": "False"
+      },
+      "rust_qualification": {
+        "elapsed_us": 273,
+        "input": "/tmp/catwalk-saved-preview-research/lightburn/jlucaso1-lbrn2-to-svg/tests/artifacts/word.lbrn2",
+        "outcome": "absent"
+      },
+      "license": "MIT",
+      "source_sha256_unchanged_after_extraction": true,
+      "fixture_class": "third-party parser or generator artifact; original application provenance varies",
+      "container": "UTF-8 XML, unnamespaced LightBurnProject",
+      "retained_in_repository": false
+    },
+    {
+      "repo": "tscircuit/lbrnts",
+      "path": "site/public/example.lbrn2",
+      "url": "https://raw.githubusercontent.com/tscircuit/lbrnts/d21a7b29354cd782cabf533b1b8f0ade6a11c7dd/site/public/example.lbrn2",
+      "size": 161004,
+      "sha256": "7bff98b665ad64e9b8e8af9e2a508e9a3567703f03abf79aac710d22750e8739",
+      "local_path": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/site/public/example.lbrn2",
+      "root_tag": "LightBurnProject",
+      "root_attributes": {
+        "AppVersion": "1.7.03",
+        "FormatVersion": "1"
+      },
+      "rust_qualification": {
+        "elapsed_us": 4714,
+        "input": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/site/public/example.lbrn2",
+        "outcome": "absent"
+      },
+      "license": "MIT",
+      "source_sha256_unchanged_after_extraction": true,
+      "fixture_class": "third-party parser or generator artifact; original application provenance varies",
+      "container": "UTF-8 XML, unnamespaced LightBurnProject",
+      "retained_in_repository": false
+    },
+    {
+      "repo": "tscircuit/lbrnts",
+      "path": "tests/assets/Absolute_Coordinate_Grid.lbrn2",
+      "url": "https://raw.githubusercontent.com/tscircuit/lbrnts/d21a7b29354cd782cabf533b1b8f0ade6a11c7dd/tests/assets/Absolute_Coordinate_Grid.lbrn2",
+      "size": 165387,
+      "sha256": "ca2030b16865d4eff63d4bb761d2f712ce695855be8799e4715fcd013f9272f0",
+      "local_path": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/Absolute_Coordinate_Grid.lbrn2",
+      "root_tag": "LightBurnProject",
+      "root_attributes": {
+        "AppVersion": "1.4.03",
+        "FormatVersion": "1",
+        "MaterialHeight": "0",
+        "MirrorX": "False",
+        "MirrorY": "False"
+      },
+      "preview_png": {
+        "local_path": "/tmp/catwalk-saved-preview-research/lightburn/decoded-carriers/tscircuit-lbrnts-Absolute_Coordinate_Grid.png",
+        "sha256": "4011c1fcae348dda706cbf2f3ede999b03676dff6b04beb463df4b47bc7b5f33",
+        "bytes": 12592,
+        "width": 256,
+        "height": 256,
+        "bit_depth": 8,
+        "color_type": 6
+      },
+      "rust_qualification": {
+        "elapsed_us": 40363,
+        "height": 256,
+        "input": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/Absolute_Coordinate_Grid.lbrn2",
+        "outcome": "extracted",
+        "output": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/Absolute_Coordinate_Grid.preview.png",
+        "width": 256
+      },
+      "pixel_comparison": {
+        "decoder": "Pillow independent read-only verification",
+        "byte_exact_rgba": true,
+        "rgba_sha256": "736ecc071b0f993daf82b00c97e974d41e4c04175ef39c286d30207d6a90206c",
+        "alpha_range": [
+          255,
+          255
+        ]
+      },
+      "license": "MIT",
+      "source_sha256_unchanged_after_extraction": true,
+      "fixture_class": "third-party parser or generator artifact; original application provenance varies",
+      "container": "UTF-8 XML, unnamespaced LightBurnProject",
+      "carrier": "direct root Thumbnail Source attribute; standard base64; complete PNG byte stream",
+      "retained_in_repository": false
+    },
+    {
+      "repo": "tscircuit/lbrnts",
+      "path": "tests/assets/Grid.lbrn2",
+      "url": "https://raw.githubusercontent.com/tscircuit/lbrnts/d21a7b29354cd782cabf533b1b8f0ade6a11c7dd/tests/assets/Grid.lbrn2",
+      "size": 73268,
+      "sha256": "33da98f5d7c6da46a4979edf6c405ef83794128fda2032ec114624c2639a2917",
+      "local_path": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/Grid.lbrn2",
+      "root_tag": "LightBurnProject",
+      "root_attributes": {
+        "AppVersion": "0.9.24",
+        "FormatVersion": "1",
+        "MaterialHeight": "0",
+        "MirrorX": "False",
+        "MirrorY": "False"
+      },
+      "preview_png": {
+        "local_path": "/tmp/catwalk-saved-preview-research/lightburn/decoded-carriers/tscircuit-lbrnts-Grid.png",
+        "sha256": "036125f0483e7f0b778f66150052876a9bf8e2838a15b98e78959e388327f625",
+        "bytes": 27333,
+        "width": 256,
+        "height": 256,
+        "bit_depth": 8,
+        "color_type": 6
+      },
+      "rust_qualification": {
+        "elapsed_us": 44365,
+        "height": 256,
+        "input": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/Grid.lbrn2",
+        "outcome": "extracted",
+        "output": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/Grid.preview.png",
+        "width": 256
+      },
+      "pixel_comparison": {
+        "decoder": "Pillow independent read-only verification",
+        "byte_exact_rgba": true,
+        "rgba_sha256": "b9851d6427c96d0376bf1843c86f49df84ca5c88088e80743c136f8ace65057f",
+        "alpha_range": [
+          255,
+          255
+        ]
+      },
+      "license": "MIT",
+      "source_sha256_unchanged_after_extraction": true,
+      "fixture_class": "third-party parser or generator artifact; original application provenance varies",
+      "container": "UTF-8 XML, unnamespaced LightBurnProject",
+      "carrier": "direct root Thumbnail Source attribute; standard base64; complete PNG byte stream",
+      "retained_in_repository": false
+    },
+    {
+      "repo": "tscircuit/lbrnts",
+      "path": "tests/assets/Lightburn_Test_Pattern.lbrn",
+      "url": "https://raw.githubusercontent.com/tscircuit/lbrnts/d21a7b29354cd782cabf533b1b8f0ade6a11c7dd/tests/assets/Lightburn_Test_Pattern.lbrn",
+      "size": 62537,
+      "sha256": "4c97cfee52d50861aa1fbc1339b57ae889bc8780281257fc06e453dbf75ad3cc",
+      "local_path": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/Lightburn_Test_Pattern.lbrn",
+      "root_tag": "LightBurnProject",
+      "root_attributes": {
+        "AppVersion": "0.9.20",
+        "FormatVersion": "0",
+        "MaterialHeight": "0",
+        "MirrorX": "False",
+        "MirrorY": "False"
+      },
+      "preview_png": {
+        "local_path": "/tmp/catwalk-saved-preview-research/lightburn/decoded-carriers/tscircuit-lbrnts-Lightburn_Test_Pattern.png",
+        "sha256": "f5d3c20c060b94d4c0d5f1df6c7393673c2ce0481ab9cb4717e0a225d1d82512",
+        "bytes": 5961,
+        "width": 256,
+        "height": 256,
+        "bit_depth": 8,
+        "color_type": 6
+      },
+      "rust_qualification": {
+        "elapsed_us": 25596,
+        "height": 256,
+        "input": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/Lightburn_Test_Pattern.lbrn",
+        "outcome": "extracted",
+        "output": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/Lightburn_Test_Pattern.preview.png",
+        "width": 256
+      },
+      "pixel_comparison": {
+        "decoder": "Pillow independent read-only verification",
+        "byte_exact_rgba": true,
+        "rgba_sha256": "f01c8b2934368e70b2979c3e555a0c33e2758095d181b56afe1cffe0e049eeaa",
+        "alpha_range": [
+          255,
+          255
+        ]
+      },
+      "license": "MIT",
+      "source_sha256_unchanged_after_extraction": true,
+      "fixture_class": "third-party parser or generator artifact; original application provenance varies",
+      "container": "UTF-8 XML, unnamespaced LightBurnProject",
+      "carrier": "direct root Thumbnail Source attribute; standard base64; complete PNG byte stream",
+      "retained_in_repository": false
+    },
+    {
+      "repo": "tscircuit/lbrnts",
+      "path": "tests/assets/LockingJig_Fence.lbrn2",
+      "url": "https://raw.githubusercontent.com/tscircuit/lbrnts/d21a7b29354cd782cabf533b1b8f0ade6a11c7dd/tests/assets/LockingJig_Fence.lbrn2",
+      "size": 5107,
+      "sha256": "995c8e75c106661d39bdc0ee43fd85997880a1052e0004248960d490d3b59660",
+      "local_path": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/LockingJig_Fence.lbrn2",
+      "root_tag": "LightBurnProject",
+      "root_attributes": {
+        "AppVersion": "1.4.05",
+        "FormatVersion": "1",
+        "MaterialHeight": "0",
+        "MirrorX": "False",
+        "MirrorY": "False"
+      },
+      "preview_png": {
+        "local_path": "/tmp/catwalk-saved-preview-research/lightburn/decoded-carriers/tscircuit-lbrnts-LockingJig_Fence.png",
+        "sha256": "7b9d7b595080dc36457961a808bfa26d182d35d8ac127f5f466001163e1addf6",
+        "bytes": 2043,
+        "width": 256,
+        "height": 256,
+        "bit_depth": 8,
+        "color_type": 6
+      },
+      "rust_qualification": {
+        "elapsed_us": 12323,
+        "height": 256,
+        "input": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/LockingJig_Fence.lbrn2",
+        "outcome": "extracted",
+        "output": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/LockingJig_Fence.preview.png",
+        "width": 256
+      },
+      "pixel_comparison": {
+        "decoder": "Pillow independent read-only verification",
+        "byte_exact_rgba": true,
+        "rgba_sha256": "fc11b95c0717a6774b35a5fd2ed46ba1fa0fefa895e733f24c75a242421ce0b7",
+        "alpha_range": [
+          255,
+          255
+        ]
+      },
+      "license": "MIT",
+      "source_sha256_unchanged_after_extraction": true,
+      "fixture_class": "third-party parser or generator artifact; original application provenance varies",
+      "container": "UTF-8 XML, unnamespaced LightBurnProject",
+      "carrier": "direct root Thumbnail Source attribute; standard base64; complete PNG byte stream",
+      "retained_in_repository": false
+    },
+    {
+      "repo": "tscircuit/lbrnts",
+      "path": "tests/assets/LockingJig_Teeth.lbrn2",
+      "url": "https://raw.githubusercontent.com/tscircuit/lbrnts/d21a7b29354cd782cabf533b1b8f0ade6a11c7dd/tests/assets/LockingJig_Teeth.lbrn2",
+      "size": 48157,
+      "sha256": "7a0f3cffb8441cee1da1866d5e27446c16b42b1d5a1b6487a754b71ffd715ba2",
+      "local_path": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/LockingJig_Teeth.lbrn2",
+      "root_tag": "LightBurnProject",
+      "root_attributes": {
+        "AppVersion": "1.4.05",
+        "FormatVersion": "1",
+        "MaterialHeight": "0",
+        "MirrorX": "False",
+        "MirrorY": "False"
+      },
+      "preview_png": {
+        "local_path": "/tmp/catwalk-saved-preview-research/lightburn/decoded-carriers/tscircuit-lbrnts-LockingJig_Teeth.png",
+        "sha256": "1c44a38c0ac01465a6d61197aa394ec4d8bca4f2082f8668fb8cf3ad8ff359b1",
+        "bytes": 9848,
+        "width": 256,
+        "height": 256,
+        "bit_depth": 8,
+        "color_type": 6
+      },
+      "rust_qualification": {
+        "elapsed_us": 16220,
+        "height": 256,
+        "input": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/LockingJig_Teeth.lbrn2",
+        "outcome": "extracted",
+        "output": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/LockingJig_Teeth.preview.png",
+        "width": 256
+      },
+      "pixel_comparison": {
+        "decoder": "Pillow independent read-only verification",
+        "byte_exact_rgba": true,
+        "rgba_sha256": "435623ebe805ca87ed3b55611cd04c10dc3a4389ec94b4d71c58056696a215c3",
+        "alpha_range": [
+          255,
+          255
+        ]
+      },
+      "license": "MIT",
+      "source_sha256_unchanged_after_extraction": true,
+      "fixture_class": "third-party parser or generator artifact; original application provenance varies",
+      "container": "UTF-8 XML, unnamespaced LightBurnProject",
+      "carrier": "direct root Thumbnail Source attribute; standard base64; complete PNG byte stream",
+      "retained_in_repository": false
+    },
+    {
+      "repo": "tscircuit/lbrnts",
+      "path": "tests/assets/PowerScale_Test_01_Rico.lbrn",
+      "url": "https://raw.githubusercontent.com/tscircuit/lbrnts/d21a7b29354cd782cabf533b1b8f0ade6a11c7dd/tests/assets/PowerScale_Test_01_Rico.lbrn",
+      "size": 33068,
+      "sha256": "7a2dbb740dc67a88c09ca2a6ce07e12563770a8816057c9bcae3bcf3e67fbe56",
+      "local_path": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/PowerScale_Test_01_Rico.lbrn",
+      "root_tag": "LightBurnProject",
+      "root_attributes": {
+        "AppVersion": "0.9.07",
+        "MaterialHeight": "0"
+      },
+      "rust_qualification": {
+        "elapsed_us": 1950,
+        "input": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/PowerScale_Test_01_Rico.lbrn",
+        "outcome": "absent"
+      },
+      "license": "MIT",
+      "source_sha256_unchanged_after_extraction": true,
+      "fixture_class": "third-party parser or generator artifact; original application provenance varies",
+      "container": "UTF-8 XML, unnamespaced LightBurnProject",
+      "retained_in_repository": false
+    },
+    {
+      "repo": "tscircuit/lbrnts",
+      "path": "tests/assets/ZippoLighter.lbrn2",
+      "url": "https://raw.githubusercontent.com/tscircuit/lbrnts/d21a7b29354cd782cabf533b1b8f0ade6a11c7dd/tests/assets/ZippoLighter.lbrn2",
+      "size": 3216,
+      "sha256": "2e4626f80684873144b9e4b226197014ce447168fac6ab3e8b430a25ef5c0169",
+      "local_path": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/ZippoLighter.lbrn2",
+      "root_tag": "LightBurnProject",
+      "root_attributes": {
+        "AppVersion": "1.4.03",
+        "FormatVersion": "1",
+        "MaterialHeight": "0",
+        "MirrorX": "False",
+        "MirrorY": "False"
+      },
+      "preview_png": {
+        "local_path": "/tmp/catwalk-saved-preview-research/lightburn/decoded-carriers/tscircuit-lbrnts-ZippoLighter.png",
+        "sha256": "c3be629fa2cc681d6a8e56e178f77f7d5f85c9ab8c8eb7bd815aaa38d3868873",
+        "bytes": 1106,
+        "width": 256,
+        "height": 256,
+        "bit_depth": 8,
+        "color_type": 6
+      },
+      "rust_qualification": {
+        "elapsed_us": 12937,
+        "height": 256,
+        "input": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/ZippoLighter.lbrn2",
+        "outcome": "extracted",
+        "output": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/ZippoLighter.preview.png",
+        "width": 256
+      },
+      "pixel_comparison": {
+        "decoder": "Pillow independent read-only verification",
+        "byte_exact_rgba": true,
+        "rgba_sha256": "69f1496d69ffb9e304a3ffa278db303b7c1f3dbb8e2e0e443280d449c6992e34",
+        "alpha_range": [
+          255,
+          255
+        ]
+      },
+      "license": "MIT",
+      "source_sha256_unchanged_after_extraction": true,
+      "fixture_class": "third-party parser or generator artifact; original application provenance varies",
+      "container": "UTF-8 XML, unnamespaced LightBurnProject",
+      "carrier": "direct root Thumbnail Source attribute; standard base64; complete PNG byte stream",
+      "retained_in_repository": false
+    },
+    {
+      "repo": "tscircuit/lbrnts",
+      "path": "tests/assets/black_acrilic_sample_burn.lbrn2",
+      "url": "https://raw.githubusercontent.com/tscircuit/lbrnts/d21a7b29354cd782cabf533b1b8f0ade6a11c7dd/tests/assets/black_acrilic_sample_burn.lbrn2",
+      "size": 75498,
+      "sha256": "b899f919ca51fca96254a95582d2f40432a81dae34922443df8391d333d33220",
+      "local_path": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/black_acrilic_sample_burn.lbrn2",
+      "root_tag": "LightBurnProject",
+      "root_attributes": {
+        "AppVersion": "1.4.03",
+        "FormatVersion": "1",
+        "MaterialHeight": "0",
+        "MirrorX": "False",
+        "MirrorY": "False"
+      },
+      "preview_png": {
+        "local_path": "/tmp/catwalk-saved-preview-research/lightburn/decoded-carriers/tscircuit-lbrnts-black_acrilic_sample_burn.png",
+        "sha256": "d72e5db3d85c103cea5b147c18f69de14fa7c1a9bb1b34ee408c00423112f46d",
+        "bytes": 3713,
+        "width": 256,
+        "height": 256,
+        "bit_depth": 8,
+        "color_type": 6
+      },
+      "rust_qualification": {
+        "elapsed_us": 18474,
+        "height": 256,
+        "input": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/black_acrilic_sample_burn.lbrn2",
+        "outcome": "extracted",
+        "output": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/black_acrilic_sample_burn.preview.png",
+        "width": 256
+      },
+      "pixel_comparison": {
+        "decoder": "Pillow independent read-only verification",
+        "byte_exact_rgba": true,
+        "rgba_sha256": "20ff1576ee95e64b417be1b0008c1db200d217b37d74a5b1d6827626edf960cc",
+        "alpha_range": [
+          255,
+          255
+        ]
+      },
+      "license": "MIT",
+      "source_sha256_unchanged_after_extraction": true,
+      "fixture_class": "third-party parser or generator artifact; original application provenance varies",
+      "container": "UTF-8 XML, unnamespaced LightBurnProject",
+      "carrier": "direct root Thumbnail Source attribute; standard base64; complete PNG byte stream",
+      "retained_in_repository": false
+    },
+    {
+      "repo": "tscircuit/lbrnts",
+      "path": "tests/assets/board-with-soldermask-only.lbrn2",
+      "url": "https://raw.githubusercontent.com/tscircuit/lbrnts/d21a7b29354cd782cabf533b1b8f0ade6a11c7dd/tests/assets/board-with-soldermask-only.lbrn2",
+      "size": 4060,
+      "sha256": "bfc1a7d2865d0a524dac756f89fea220a2bdb337bb2edf4575828caebd950779",
+      "local_path": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/board-with-soldermask-only.lbrn2",
+      "root_tag": "LightBurnProject",
+      "root_attributes": {
+        "AppVersion": "1.7.03",
+        "FormatVersion": "1"
+      },
+      "rust_qualification": {
+        "elapsed_us": 309,
+        "input": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/board-with-soldermask-only.lbrn2",
+        "outcome": "absent"
+      },
+      "license": "MIT",
+      "source_sha256_unchanged_after_extraction": true,
+      "fixture_class": "third-party parser or generator artifact; original application provenance varies",
+      "container": "UTF-8 XML, unnamespaced LightBurnProject",
+      "retained_in_repository": false
+    },
+    {
+      "repo": "tscircuit/lbrnts",
+      "path": "tests/assets/face_avant_lightburn.lbrn2",
+      "url": "https://raw.githubusercontent.com/tscircuit/lbrnts/d21a7b29354cd782cabf533b1b8f0ade6a11c7dd/tests/assets/face_avant_lightburn.lbrn2",
+      "size": 78340,
+      "sha256": "65428253949eb9cbdb3917e00d70ac9c0a61608cf28c44a3b678898596b776d7",
+      "local_path": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/face_avant_lightburn.lbrn2",
+      "root_tag": "LightBurnProject",
+      "root_attributes": {
+        "AppVersion": "1.3.01",
+        "FormatVersion": "1",
+        "MaterialHeight": "0",
+        "MirrorX": "False",
+        "MirrorY": "False"
+      },
+      "preview_png": {
+        "local_path": "/tmp/catwalk-saved-preview-research/lightburn/decoded-carriers/tscircuit-lbrnts-face_avant_lightburn.png",
+        "sha256": "e392740844110dd52bf54f70d33501956cff1996f9376f24244d39d411dbd0c2",
+        "bytes": 8437,
+        "width": 256,
+        "height": 256,
+        "bit_depth": 8,
+        "color_type": 6
+      },
+      "rust_qualification": {
+        "elapsed_us": 30421,
+        "height": 256,
+        "input": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/face_avant_lightburn.lbrn2",
+        "outcome": "extracted",
+        "output": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/face_avant_lightburn.preview.png",
+        "width": 256
+      },
+      "pixel_comparison": {
+        "decoder": "Pillow independent read-only verification",
+        "byte_exact_rgba": true,
+        "rgba_sha256": "c4b0c2b5ccdcc010ff06686e4baec57c0fa369d9df79f7a420993d3c1d6a85bf",
+        "alpha_range": [
+          255,
+          255
+        ]
+      },
+      "license": "MIT",
+      "source_sha256_unchanged_after_extraction": true,
+      "fixture_class": "third-party parser or generator artifact; original application provenance varies",
+      "container": "UTF-8 XML, unnamespaced LightBurnProject",
+      "carrier": "direct root Thumbnail Source attribute; standard base64; complete PNG byte stream",
+      "retained_in_repository": false
+    },
+    {
+      "repo": "tscircuit/lbrnts",
+      "path": "tests/assets/images.lbrn2",
+      "url": "https://raw.githubusercontent.com/tscircuit/lbrnts/d21a7b29354cd782cabf533b1b8f0ade6a11c7dd/tests/assets/images.lbrn2",
+      "size": 11003,
+      "sha256": "f2926be84e5004476c1ae775b948849c01370dc11f7d11d011b7ca8d97b13d42",
+      "local_path": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/images.lbrn2",
+      "root_tag": "LightBurnProject",
+      "root_attributes": {
+        "AppVersion": "0.9.24",
+        "FormatVersion": "1",
+        "MaterialHeight": "0",
+        "MirrorX": "False",
+        "MirrorY": "False"
+      },
+      "preview_png": {
+        "local_path": "/tmp/catwalk-saved-preview-research/lightburn/decoded-carriers/tscircuit-lbrnts-images.png",
+        "sha256": "9f65bddda8094ef06131dce41669fc78e835e4936b666a35d77b9fa0c097ded2",
+        "bytes": 2055,
+        "width": 256,
+        "height": 256,
+        "bit_depth": 8,
+        "color_type": 6
+      },
+      "rust_qualification": {
+        "elapsed_us": 17367,
+        "height": 256,
+        "input": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/images.lbrn2",
+        "outcome": "extracted",
+        "output": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/images.preview.png",
+        "width": 256
+      },
+      "pixel_comparison": {
+        "decoder": "Pillow independent read-only verification",
+        "byte_exact_rgba": true,
+        "rgba_sha256": "2a42ceb466cfca2814a7200f641278a15b85989c9c35057bbf2058d0b7711f83",
+        "alpha_range": [
+          255,
+          255
+        ]
+      },
+      "license": "MIT",
+      "source_sha256_unchanged_after_extraction": true,
+      "fixture_class": "third-party parser or generator artifact; original application provenance varies",
+      "container": "UTF-8 XML, unnamespaced LightBurnProject",
+      "carrier": "direct root Thumbnail Source attribute; standard base64; complete PNG byte stream",
+      "retained_in_repository": false
+    },
+    {
+      "repo": "tscircuit/lbrnts",
+      "path": "tests/assets/iso_keyboard.lbrn2",
+      "url": "https://raw.githubusercontent.com/tscircuit/lbrnts/d21a7b29354cd782cabf533b1b8f0ade6a11c7dd/tests/assets/iso_keyboard.lbrn2",
+      "size": 147648,
+      "sha256": "4a7da12d2da39e1c0a7b55ef25c39c1abde447437328a8b037b6a3f9fbb66523",
+      "local_path": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/iso_keyboard.lbrn2",
+      "root_tag": "LightBurnProject",
+      "root_attributes": {
+        "AppVersion": "0.9.24",
+        "FormatVersion": "1",
+        "MaterialHeight": "0",
+        "MirrorX": "False",
+        "MirrorY": "False"
+      },
+      "preview_png": {
+        "local_path": "/tmp/catwalk-saved-preview-research/lightburn/decoded-carriers/tscircuit-lbrnts-iso_keyboard.png",
+        "sha256": "d9009893db899671b85e14313bb67372577c0e3e67e3d66daf60635d6e393cb3",
+        "bytes": 18651,
+        "width": 256,
+        "height": 256,
+        "bit_depth": 8,
+        "color_type": 6
+      },
+      "rust_qualification": {
+        "elapsed_us": 35642,
+        "height": 256,
+        "input": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/iso_keyboard.lbrn2",
+        "outcome": "extracted",
+        "output": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/iso_keyboard.preview.png",
+        "width": 256
+      },
+      "pixel_comparison": {
+        "decoder": "Pillow independent read-only verification",
+        "byte_exact_rgba": true,
+        "rgba_sha256": "b9b5098dfb5e0dd2afbb5c8887860a5d0b33e5d689268cbc8e2164459d46f265",
+        "alpha_range": [
+          255,
+          255
+        ]
+      },
+      "license": "MIT",
+      "source_sha256_unchanged_after_extraction": true,
+      "fixture_class": "third-party parser or generator artifact; original application provenance varies",
+      "container": "UTF-8 XML, unnamespaced LightBurnProject",
+      "carrier": "direct root Thumbnail Source attribute; standard base64; complete PNG byte stream",
+      "retained_in_repository": false
+    },
+    {
+      "repo": "tscircuit/lbrnts",
+      "path": "tests/assets/lightburn_front_panels.lbrn2",
+      "url": "https://raw.githubusercontent.com/tscircuit/lbrnts/d21a7b29354cd782cabf533b1b8f0ade6a11c7dd/tests/assets/lightburn_front_panels.lbrn2",
+      "size": 460148,
+      "sha256": "2ea88841867ab3ff3e433737631343d7c946968f683c76aba95d61cd184caff0",
+      "local_path": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/lightburn_front_panels.lbrn2",
+      "root_tag": "LightBurnProject",
+      "root_attributes": {
+        "AppVersion": "1.4.01",
+        "FormatVersion": "1",
+        "MaterialHeight": "0",
+        "MirrorX": "False",
+        "MirrorY": "False"
+      },
+      "preview_png": {
+        "local_path": "/tmp/catwalk-saved-preview-research/lightburn/decoded-carriers/tscircuit-lbrnts-lightburn_front_panels.png",
+        "sha256": "94080489cba7b1058a6a6e5d5f0a5b63adb72069ffe6146b61bc0664a2eed929",
+        "bytes": 4129,
+        "width": 256,
+        "height": 256,
+        "bit_depth": 8,
+        "color_type": 6
+      },
+      "rust_qualification": {
+        "elapsed_us": 33057,
+        "height": 256,
+        "input": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/lightburn_front_panels.lbrn2",
+        "outcome": "extracted",
+        "output": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/lightburn_front_panels.preview.png",
+        "width": 256
+      },
+      "pixel_comparison": {
+        "decoder": "Pillow independent read-only verification",
+        "byte_exact_rgba": true,
+        "rgba_sha256": "b0b833b951eca03a9e9c17299222e91cade03a51b51d45fd8302f71a338d1e4a",
+        "alpha_range": [
+          255,
+          255
+        ]
+      },
+      "license": "MIT",
+      "source_sha256_unchanged_after_extraction": true,
+      "fixture_class": "third-party parser or generator artifact; original application provenance varies",
+      "container": "UTF-8 XML, unnamespaced LightBurnProject",
+      "carrier": "direct root Thumbnail Source attribute; standard base64; complete PNG byte stream",
+      "retained_in_repository": false
+    },
+    {
+      "repo": "tscircuit/lbrnts",
+      "path": "tests/assets/printable_area_jig.lbrn2",
+      "url": "https://raw.githubusercontent.com/tscircuit/lbrnts/d21a7b29354cd782cabf533b1b8f0ade6a11c7dd/tests/assets/printable_area_jig.lbrn2",
+      "size": 2696,
+      "sha256": "a13336c9c1af59c1e229cb4d9f2387e45a4ac84c06a067d079f14f1fad30f784",
+      "local_path": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/printable_area_jig.lbrn2",
+      "root_tag": "LightBurnProject",
+      "root_attributes": {
+        "AppVersion": "1.4.03",
+        "FormatVersion": "1",
+        "MaterialHeight": "0",
+        "MirrorX": "False",
+        "MirrorY": "False"
+      },
+      "preview_png": {
+        "local_path": "/tmp/catwalk-saved-preview-research/lightburn/decoded-carriers/tscircuit-lbrnts-printable_area_jig.png",
+        "sha256": "61b41e71b380140a0decb980823611f5b98aa80d775cb1d35ddecfe9c3042a1e",
+        "bytes": 1002,
+        "width": 256,
+        "height": 256,
+        "bit_depth": 8,
+        "color_type": 6
+      },
+      "rust_qualification": {
+        "elapsed_us": 12423,
+        "height": 256,
+        "input": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/printable_area_jig.lbrn2",
+        "outcome": "extracted",
+        "output": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/printable_area_jig.preview.png",
+        "width": 256
+      },
+      "pixel_comparison": {
+        "decoder": "Pillow independent read-only verification",
+        "byte_exact_rgba": true,
+        "rgba_sha256": "f31094fbaae4def158434a1daaa4dce62a61179ee3c19f9f2f20739c35b5dcb0",
+        "alpha_range": [
+          255,
+          255
+        ]
+      },
+      "license": "MIT",
+      "source_sha256_unchanged_after_extraction": true,
+      "fixture_class": "third-party parser or generator artifact; original application provenance varies",
+      "container": "UTF-8 XML, unnamespaced LightBurnProject",
+      "carrier": "direct root Thumbnail Source attribute; standard base64; complete PNG byte stream",
+      "retained_in_repository": true
+    },
+    {
+      "repo": "tscircuit/lbrnts",
+      "path": "tests/assets/repro04-motor-controller.lbrn2",
+      "url": "https://raw.githubusercontent.com/tscircuit/lbrnts/d21a7b29354cd782cabf533b1b8f0ade6a11c7dd/tests/assets/repro04-motor-controller.lbrn2",
+      "size": 1402190,
+      "sha256": "7d86b5f8bc9848d44a47d625376336ca938ad5eecf8894cfa056b7b729c24db2",
+      "local_path": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/repro04-motor-controller.lbrn2",
+      "root_tag": "LightBurnProject",
+      "root_attributes": {
+        "AppVersion": "1.7.03",
+        "FormatVersion": "1"
+      },
+      "rust_qualification": {
+        "elapsed_us": 46047,
+        "input": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/repro04-motor-controller.lbrn2",
+        "outcome": "absent"
+      },
+      "license": "MIT",
+      "source_sha256_unchanged_after_extraction": true,
+      "fixture_class": "third-party parser or generator artifact; original application provenance varies",
+      "container": "UTF-8 XML, unnamespaced LightBurnProject",
+      "retained_in_repository": false
+    },
+    {
+      "repo": "tscircuit/lbrnts",
+      "path": "tests/assets/switch_plate.lbrn2",
+      "url": "https://raw.githubusercontent.com/tscircuit/lbrnts/d21a7b29354cd782cabf533b1b8f0ade6a11c7dd/tests/assets/switch_plate.lbrn2",
+      "size": 14194,
+      "sha256": "7af0b940489a5af934d9d39bafc1f4376a516d468d66b9e4445a2c49f8ab624b",
+      "local_path": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/switch_plate.lbrn2",
+      "root_tag": "LightBurnProject",
+      "root_attributes": {
+        "AppVersion": "0.9.24",
+        "FormatVersion": "1",
+        "MaterialHeight": "0",
+        "MirrorX": "False",
+        "MirrorY": "False"
+      },
+      "preview_png": {
+        "local_path": "/tmp/catwalk-saved-preview-research/lightburn/decoded-carriers/tscircuit-lbrnts-switch_plate.png",
+        "sha256": "ebe946da150362e577d2dfa49d844f81850dbec4524e6a9b8923daebfee3dac3",
+        "bytes": 4208,
+        "width": 256,
+        "height": 256,
+        "bit_depth": 8,
+        "color_type": 6
+      },
+      "rust_qualification": {
+        "elapsed_us": 18936,
+        "height": 256,
+        "input": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/switch_plate.lbrn2",
+        "outcome": "extracted",
+        "output": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/assets/switch_plate.preview.png",
+        "width": 256
+      },
+      "pixel_comparison": {
+        "decoder": "Pillow independent read-only verification",
+        "byte_exact_rgba": true,
+        "rgba_sha256": "b029a8d81b0365e08e352815c17843c061658d69ea5fd2dc866bfbe056bdbe0d",
+        "alpha_range": [
+          255,
+          255
+        ]
+      },
+      "license": "MIT",
+      "source_sha256_unchanged_after_extraction": true,
+      "fixture_class": "third-party parser or generator artifact; original application provenance varies",
+      "container": "UTF-8 XML, unnamespaced LightBurnProject",
+      "carrier": "direct root Thumbnail Source attribute; standard base64; complete PNG byte stream",
+      "retained_in_repository": false
+    },
+    {
+      "repo": "tscircuit/lbrnts",
+      "path": "tests/fixtures/path-fill-test.lbrn2",
+      "url": "https://raw.githubusercontent.com/tscircuit/lbrnts/d21a7b29354cd782cabf533b1b8f0ade6a11c7dd/tests/fixtures/path-fill-test.lbrn2",
+      "size": 924,
+      "sha256": "b1bea23a389cccc5bbdb027add5ca3f3f1e53c8349f214854c534ed85b62053f",
+      "local_path": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/fixtures/path-fill-test.lbrn2",
+      "root_tag": "LightBurnProject",
+      "root_attributes": {
+        "AppVersion": "1.0.0",
+        "FormatVersion": "1",
+        "MaterialHeight": "0"
+      },
+      "rust_qualification": {
+        "elapsed_us": 184,
+        "input": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/fixtures/path-fill-test.lbrn2",
+        "outcome": "absent"
+      },
+      "license": "MIT",
+      "source_sha256_unchanged_after_extraction": true,
+      "fixture_class": "third-party parser or generator artifact; original application provenance varies",
+      "container": "UTF-8 XML, unnamespaced LightBurnProject",
+      "retained_in_repository": false
+    },
+    {
+      "repo": "tscircuit/lbrnts",
+      "path": "tests/fixtures/scan-vs-cut.lbrn2",
+      "url": "https://raw.githubusercontent.com/tscircuit/lbrnts/d21a7b29354cd782cabf533b1b8f0ade6a11c7dd/tests/fixtures/scan-vs-cut.lbrn2",
+      "size": 1371,
+      "sha256": "1aad6e44128e74c62167d684a3765e238e0cfba0d8e95530d4d13341de51605c",
+      "local_path": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/fixtures/scan-vs-cut.lbrn2",
+      "root_tag": "LightBurnProject",
+      "root_attributes": {
+        "AppVersion": "1.0.0",
+        "FormatVersion": "1",
+        "MaterialHeight": "0"
+      },
+      "rust_qualification": {
+        "elapsed_us": 120,
+        "input": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/fixtures/scan-vs-cut.lbrn2",
+        "outcome": "absent"
+      },
+      "license": "MIT",
+      "source_sha256_unchanged_after_extraction": true,
+      "fixture_class": "third-party parser or generator artifact; original application provenance varies",
+      "container": "UTF-8 XML, unnamespaced LightBurnProject",
+      "retained_in_repository": false
+    },
+    {
+      "repo": "tscircuit/lbrnts",
+      "path": "tests/fixtures/simple-ellipse.lbrn2",
+      "url": "https://raw.githubusercontent.com/tscircuit/lbrnts/d21a7b29354cd782cabf533b1b8f0ade6a11c7dd/tests/fixtures/simple-ellipse.lbrn2",
+      "size": 242,
+      "sha256": "b5cc5f09810f1bae57f093e6a4245224aefcd35be7b888eb4b973245f089be54",
+      "local_path": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/fixtures/simple-ellipse.lbrn2",
+      "root_tag": "LightBurnProject",
+      "root_attributes": {
+        "AppVersion": "1.6.00",
+        "FormatVersion": "1",
+        "MaterialHeight": "0"
+      },
+      "rust_qualification": {
+        "elapsed_us": 95,
+        "input": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/fixtures/simple-ellipse.lbrn2",
+        "outcome": "absent"
+      },
+      "license": "MIT",
+      "source_sha256_unchanged_after_extraction": true,
+      "fixture_class": "third-party parser or generator artifact; original application provenance varies",
+      "container": "UTF-8 XML, unnamespaced LightBurnProject",
+      "retained_in_repository": false
+    },
+    {
+      "repo": "tscircuit/lbrnts",
+      "path": "tests/fixtures/simple-path.lbrn2",
+      "url": "https://raw.githubusercontent.com/tscircuit/lbrnts/d21a7b29354cd782cabf533b1b8f0ade6a11c7dd/tests/fixtures/simple-path.lbrn2",
+      "size": 551,
+      "sha256": "65011e987e6e3321d1771f9567539835c3c1b31c23a81190847816a1f2929562",
+      "local_path": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/fixtures/simple-path.lbrn2",
+      "root_tag": "LightBurnProject",
+      "root_attributes": {
+        "AppVersion": "1.6.00",
+        "FormatVersion": "1"
+      },
+      "rust_qualification": {
+        "elapsed_us": 72,
+        "input": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/fixtures/simple-path.lbrn2",
+        "outcome": "absent"
+      },
+      "license": "MIT",
+      "source_sha256_unchanged_after_extraction": true,
+      "fixture_class": "third-party parser or generator artifact; original application provenance varies",
+      "container": "UTF-8 XML, unnamespaced LightBurnProject",
+      "retained_in_repository": false
+    },
+    {
+      "repo": "tscircuit/lbrnts",
+      "path": "tests/fixtures/simple-rect.lbrn2",
+      "url": "https://raw.githubusercontent.com/tscircuit/lbrnts/d21a7b29354cd782cabf533b1b8f0ade6a11c7dd/tests/fixtures/simple-rect.lbrn2",
+      "size": 276,
+      "sha256": "13b1e5f40d4e2565b02f32ef625ce6f8a0d315791878d968a2db898da19bc9da",
+      "local_path": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/fixtures/simple-rect.lbrn2",
+      "root_tag": "LightBurnProject",
+      "root_attributes": {
+        "AppVersion": "1.6.00",
+        "FormatVersion": "1",
+        "MaterialHeight": "0",
+        "MirrorX": "False",
+        "MirrorY": "False"
+      },
+      "rust_qualification": {
+        "elapsed_us": 64,
+        "input": "/tmp/catwalk-saved-preview-research/lightburn/tscircuit-lbrnts/tests/fixtures/simple-rect.lbrn2",
+        "outcome": "absent"
+      },
+      "license": "MIT",
+      "source_sha256_unchanged_after_extraction": true,
+      "fixture_class": "third-party parser or generator artifact; original application provenance varies",
+      "container": "UTF-8 XML, unnamespaced LightBurnProject",
+      "retained_in_repository": false
+    }
+  ],
+  "limits_note": "These are byte, node, image and decoder allocation bounds, not a hard wall-clock deadline. Whole-document XML parsing is intentional for structural validation; this prototype is not yet a streaming service.",
+  "regeneration_feasibility": {
+    "saved_preview": "A proven local pure Rust path for inspected root-carrier versions. No authoring software required. Reads only, never updates the file.",
+    "without_preview": "A fresh preview would require implementing 2D project geometry and visual semantics: shared vertex/image resources, nested groups and transforms, paths and Bezier curves, stroke/fill layer modes, text/font shaping, and embedded bitmap composition. .lbrn and .lbrn2 geometry differ even though their saved thumbnail carrier matches. Existing parser/generator projects prove some geometry can be interpreted; full visual fidelity was not qualified here.",
+    "optional_authoring_worker": "Installed LightBurn could open or import project files and expose application capabilities; it is proprietary and current licensing/deployment/headless preview export need separate qualification. No external worker is included, invoked or required by this research extractor."
+  }
+}

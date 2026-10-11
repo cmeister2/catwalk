@@ -1,0 +1,10 @@
+NRRD0005
+type: ushort
+dimension: 3
+sizes: 5 5 5
+encoding: raw
+endian: big
+space directions: (0,1,0) (-1.5,0,0) (0,0,-2)
+space origin: (10,20,30)
+data file: nhdr-density.raw
+

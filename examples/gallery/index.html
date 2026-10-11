@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <meta name="description" content="Catwalk’s Rust thumbnails for models, images and saved document previews, with visual snapshot comparisons for every supported extension.">
+    <title>Catwalk · Thumbnail gallery</title>
+    <link rel="stylesheet" href="./style.css">
+    <script src="./app.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#gallery">Skip to thumbnails</a>
+    <header class="site-header">
+      <div class="header-inner">
+        <a class="brand" href="./" aria-label="Catwalk gallery home">
+          <span class="brand-icon" aria-hidden="true">C</span>
+          <span>Catwalk</span>
+        </a>
+        <a class="repository-link" href="https://github.com/cmeister2/catwalk" target="_blank" rel="noopener noreferrer">View on GitHub <span aria-hidden="true">↗</span></a>
+      </div>
+    </header>
+
+    <main class="page-shell">
+      <section class="introduction" aria-labelledby="page-title">
+        <p class="eyebrow">Pure Rust · PNG thumbnails</p>
+        <h1 id="page-title">A preview for every format.</h1>
+        <p class="intro-copy">Explore model thumbnails, images and saved document previews from the format test corpus. Open a thumbnail to compare its current output with the approved snapshot.</p>
+        <div class="coverage-strip" aria-label="Gallery coverage">
+          <p><strong id="extension-count">—</strong><span>extensions</span></p>
+          <p><strong id="case-count">—</strong><span>examples</span></p>
+          <p><strong id="matching-count">—</strong><span>matching snapshots</span></p>
+        </div>
+        <p class="scope-note">These examples exercise documented format subsets. A matching snapshot checks this fixture’s output; broader file compatibility remains unfinished.</p>
+      </section>
+
+      <section class="collection" aria-label="Thumbnail examples">
+        <div class="collection-toolbar">
+          <div class="search-field">
+            <label for="search">Find a format or example</label>
+            <input id="search" type="search" placeholder="Search STL, CAD, volume…" autocomplete="off" disabled>
+          </div>
+          <div class="filter-group" role="group" aria-label="Example type">
+            <button type="button" data-filter="all" aria-pressed="true" disabled>All</button>
+            <button type="button" data-filter="model" aria-pressed="false" disabled>Models</button>
+            <button type="button" data-filter="image" aria-pressed="false" disabled>Images</button>
+            <button type="button" data-filter="saved-preview" aria-pressed="false" disabled>Saved previews</button>
+          </div>
+        </div>
+        <div class="collection-summary">
+          <p id="results-count" aria-live="polite">Loading examples…</p>
+          <p id="render-settings"></p>
+        </div>
+        <p id="notice" class="notice" role="status" hidden></p>
+        <div id="gallery" class="gallery-grid" tabindex="-1"></div>
+        <noscript><p class="notice">Enable JavaScript to load the thumbnail gallery and snapshot comparisons.</p></noscript>
+      </section>
+    </main>
+
+    <footer class="site-footer page-shell">
+      <p>Thumbnails produced in Rust. No GPU or native format converters. <a href="./licenses.txt">Licenses</a></p>
+      <p id="build-details"></p>
+    </footer>
+
+    <dialog id="comparison-dialog" aria-labelledby="comparison-title" aria-describedby="comparison-description">
+      <div class="dialog-shell">
+        <header class="dialog-header">
+          <div>
+            <p id="comparison-extension" class="eyebrow"></p>
+            <h2 id="comparison-title"></h2>
+            <p id="comparison-description" class="dialog-description"></p>
+            <p id="comparison-carrier-note" class="dialog-description" hidden>This preview was saved in the original document and may be stale. Some files contain no saved preview.</p>
+          </div>
+          <button id="close-dialog" class="icon-button" type="button" aria-label="Close comparison" autofocus>×</button>
+        </header>
+        <div class="comparison-toolbar">
+          <div class="comparison-mode">
+            <span id="comparison-status" class="status-badge"></span>
+            <button id="diff-toggle" type="button" aria-pressed="false">Show diff</button>
+          </div>
+          <div class="case-navigation" role="group" aria-label="Browse examples">
+            <button id="previous-case" class="icon-button" type="button" aria-label="Previous example">←</button>
+            <span id="comparison-position"></span>
+            <button id="next-case" class="icon-button" type="button" aria-label="Next example">→</button>
+          </div>
+        </div>
+        <div id="comparison-stage" class="comparison-stage checkerboard">
+          <div id="baseline-layer" class="image-layer">
+            <img id="baseline-image" alt="">
+            <p class="image-placeholder" hidden></p>
+          </div>
+          <div id="current-layer" class="image-layer current-layer">
+            <img id="current-image" alt="">
+            <p class="image-placeholder" hidden></p>
+          </div>
+          <div id="diff-layer" class="image-layer" hidden>
+            <img id="diff-image" alt="">
+            <p class="image-placeholder" hidden></p>
+          </div>
+          <div id="wipe-divider" class="wipe-divider" aria-hidden="true"><span>↔</span></div>
+          <div id="comparison-labels" class="comparison-labels" aria-hidden="true"><span>Current</span><span>Baseline</span></div>
+        </div>
+        <div id="wipe-controls" class="wipe-controls">
+          <label for="wipe-slider">Compare current with baseline</label>
+          <input id="wipe-slider" type="range" min="0" max="100" value="50" aria-valuetext="50 percent current output">
+        </div>
+        <div class="comparison-details">
+          <dl class="metrics" aria-label="Snapshot comparison metrics">
+            <div><dt>Maximum channel delta</dt><dd id="max-delta">—</dd></div>
+            <div><dt>Changed pixels</dt><dd id="changed-pixels">—</dd></div>
+            <div><dt>Mean channel delta</dt><dd id="mean-delta">—</dd></div>
+          </dl>
+          <p id="comparison-provenance" class="provenance"></p>
+          <div class="download-links">
+            <a id="current-download">Current PNG ↓</a>
+            <a id="baseline-download">Baseline PNG ↓</a>
+            <a id="diff-download">Diff PNG ↓</a>
+            <a id="comparison-source">Source file ↗</a>
+          </div>
+        </div>
+        <p class="keyboard-hint">Use ← and → to browse examples. Press Escape to close.</p>
+      </div>
+    </dialog>
+  </body>
+</html>

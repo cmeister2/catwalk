@@ -1,0 +1,102 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Check warnings
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+  tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: catwalk-tests
+      - name: Test without a display server
+        if: runner.os == 'Linux'
+        run: env -u DISPLAY -u WAYLAND_DISPLAY -u XDG_RUNTIME_DIR cargo test --all-targets --locked
+      - name: Test
+        if: runner.os != 'Linux'
+        run: cargo test --all-targets --locked
+      - name: Retain snapshot comparisons
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: format-snapshots-${{ runner.os }}
+          path: target/format-snapshots
+          if-no-files-found: warn
+          retention-days: 14
+
+  gallery:
+    needs: [checks, tests]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: read
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: catwalk-tests
+      - name: Download tested Linux images
+        uses: actions/download-artifact@v4
+        with:
+          name: format-snapshots-Linux
+          path: target/format-snapshots
+      - name: Build example gallery
+        run: cargo run --locked --example gallery -- --report target/format-snapshots --output target/gallery
+      - name: Retain gallery preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: thumbnail-gallery
+          path: target/gallery
+          retention-days: 14
+      - name: Configure GitHub Pages
+        if: github.event.repository.private == false && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: actions/configure-pages@v5
+      - name: Upload GitHub Pages artifact
+        if: github.event.repository.private == false && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: target/gallery
+
+  pages:
+    if: github.event.repository.private == false && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: gallery
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    concurrency:
+      group: github-pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy verified gallery
+        id: deployment
+        uses: actions/deploy-pages@v4

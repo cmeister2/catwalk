@@ -1,0 +1,1019 @@
+{
+  "cases": [
+    {
+      "extension": "210",
+      "id": "step-210-translated-box",
+      "input": "scientific_cad/step-210-translated-box.210",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "STEP translated box through .210 alias"
+    },
+    {
+      "extension": "3ds",
+      "id": "3ds-native-material",
+      "input": "mesh_scene/3ds-native-material.3ds",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "3DS native chunks and per-face materials"
+    },
+    {
+      "extension": "3mf",
+      "id": "3mf-component-colors",
+      "input": "mesh_scene/3mf-component-colors.3mf",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "3MF material palette and component placement"
+    },
+    {
+      "extension": "abc",
+      "id": "abc-ogawa-hierarchy",
+      "input": "mesh_scene/abc-ogawa-hierarchy.abc",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "Alembic native Ogawa transform hierarchy"
+    },
+    {
+      "extension": "abc",
+      "id": "abc-ogawa-mesh",
+      "input": "mesh_scene/abc-ogawa-mesh.abc",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "Alembic native Ogawa colored polygon mesh"
+    },
+    {
+      "extension": "bin",
+      "id": "bin-terrascan-20010712",
+      "input": "images_points/bin-terrascan-20010712.bin",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "TerraScan 20010712 colored survey points"
+    },
+    {
+      "extension": "bin",
+      "id": "bin-terrascan-20020715",
+      "input": "images_points/bin-terrascan-20020715.bin",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "TerraScan 20020715 colored survey points"
+    },
+    {
+      "extension": "blend",
+      "id": "blend-252-gzip-saved-thumbnail",
+      "input": "saved_previews/blend-252-gzip-saved-thumbnail.blend",
+      "kind": "saved-preview",
+      "provenance": "Unmodified Assimp test/models/BLEND/MirroredCube_252.blend; BSD-3-Clause, license retained as saved_previews/LICENSE-Assimp.txt. Actual scene with its saved thumbnail.",
+      "title": "Blender 2.52 saved cube thumbnail (gzip)"
+    },
+    {
+      "extension": "blend",
+      "id": "blend-278-saved-thumbnail",
+      "input": "saved_previews/blend-278-saved-thumbnail.blend",
+      "kind": "saved-preview",
+      "provenance": "Unmodified Khronos glTF-Blender-IO tests/scenes/cube.blend, commit ccc2cc6ea93f7618df42b56f6001538a8366f41c; Apache-2.0, license retained as saved_previews/LICENSE-Khronos.txt. Actual scene with its saved thumbnail.",
+      "title": "Blender 2.78 saved cube thumbnail"
+    },
+    {
+      "extension": "blend",
+      "id": "blend-280-saved-thumbnail",
+      "input": "saved_previews/blend-280-saved-thumbnail.blend",
+      "kind": "saved-preview",
+      "provenance": "Unmodified Khronos glTF-Blender-IO fixture, commit ccc2cc6ea93f7618df42b56f6001538a8366f41c; Apache-2.0, license retained as saved_previews/LICENSE-Khronos.txt. Actual scene with its saved thumbnail; provenance in docs/research/blend-dwg-previews.json.",
+      "title": "Blender 2.80 saved scene thumbnail"
+    },
+    {
+      "extension": "blend",
+      "id": "blend-502-zstd-saved-thumbnail",
+      "input": "saved_previews/blend-502-zstd-saved-thumbnail.blend",
+      "kind": "saved-preview",
+      "provenance": "Unmodified Khronos glTF-Blender-IO fixture, commit ccc2cc6ea93f7618df42b56f6001538a8366f41c; Apache-2.0, license retained as saved_previews/LICENSE-Khronos.txt. Actual format-1 scene with saved TEST thumbnail; provenance in docs/research/blend-dwg-previews.json.",
+      "title": "Blender 5.2 saved thumbnail (seekable Zstandard)"
+    },
+    {
+      "extension": "blend",
+      "id": "blend-authored-32-saved-thumbnail",
+      "input": "saved_previews/blend-authored-32-saved-thumbnail.blend",
+      "kind": "saved-preview",
+      "provenance": "Original MIT-licensed carrier fixture. Minimal Blender header and TEST RGBA block, without model geometry; exercises 32-bit block layout, pixel orientation and transparency.",
+      "title": "Blender 32-bit thumbnail carrier"
+    },
+    {
+      "extension": "blend",
+      "id": "blend-authored-64-saved-thumbnail",
+      "input": "saved_previews/blend-authored-64-saved-thumbnail.blend",
+      "kind": "saved-preview",
+      "provenance": "Original MIT-licensed carrier fixture. Minimal Blender header and TEST RGBA block, without model geometry; exercises 64-bit block layout, pixel orientation and transparency.",
+      "title": "Blender 64-bit thumbnail carrier"
+    },
+    {
+      "extension": "blend",
+      "id": "blend-authored-format1-saved-thumbnail",
+      "input": "saved_previews/blend-authored-format1-saved-thumbnail.blend",
+      "kind": "saved-preview",
+      "provenance": "Original MIT-licensed carrier fixture. Minimal 17-byte Blender header and TEST RGBA block, without model geometry; exercises new 32-byte block layout.",
+      "title": "Blender format-1 thumbnail carrier"
+    },
+    {
+      "extension": "bmp",
+      "id": "bmp-pattern",
+      "input": "images_points/bmp-pattern.bmp",
+      "kind": "image",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "BMP patterned color chart"
+    },
+    {
+      "extension": "bpf",
+      "id": "bpf-byte-raw",
+      "input": "images_points/bpf-byte-raw.bpf",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "BPF byte layout with raw RGB points"
+    },
+    {
+      "extension": "bpf",
+      "id": "bpf-byte-zlib",
+      "input": "images_points/bpf-byte-zlib.bpf",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "BPF byte layout with zlib RGB points"
+    },
+    {
+      "extension": "bpf",
+      "id": "bpf-dimension-raw",
+      "input": "images_points/bpf-dimension-raw.bpf",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "BPF dimension layout with raw RGB points"
+    },
+    {
+      "extension": "bpf",
+      "id": "bpf-dimension-zlib",
+      "input": "images_points/bpf-dimension-zlib.bpf",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "BPF dimension layout with zlib RGB points"
+    },
+    {
+      "extension": "bpf",
+      "id": "bpf-interleaved-raw",
+      "input": "images_points/bpf-interleaved-raw.bpf",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "BPF interleaved layout with raw RGB points"
+    },
+    {
+      "extension": "bpf",
+      "id": "bpf-interleaved-zlib",
+      "input": "images_points/bpf-interleaved-zlib.bpf",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "BPF interleaved layout with zlib RGB points"
+    },
+    {
+      "extension": "brep",
+      "id": "brep-analytic-cylinder",
+      "input": "scientific_cad/brep-analytic-cylinder.brep",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "Open CASCADE analytic cylindrical BREP"
+    },
+    {
+      "extension": "brep",
+      "id": "brep-planar-box",
+      "input": "scientific_cad/brep-planar-box.brep",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "Open CASCADE translated planar topology"
+    },
+    {
+      "extension": "cdf",
+      "id": "netcdf-cdf-density",
+      "input": "scientific_cad/netcdf-cdf-density.cdf",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "NetCDF classic nonuniform descending axes"
+    },
+    {
+      "extension": "csd",
+      "id": "csd-survey-echoes",
+      "input": "images_points/csd-survey-echoes.csd",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "Optech CSD range echoes and platform placement"
+    },
+    {
+      "extension": "dae",
+      "id": "dae-nested-material",
+      "input": "mesh_scene/dae-nested-material.dae",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "COLLADA hierarchy, axis and diffuse material"
+    },
+    {
+      "extension": "dcm",
+      "id": "dcm-native-gray16-pattern",
+      "input": "images_points/dcm-native-gray16-pattern.dcm",
+      "kind": "image",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "DICOM native 16-bit grayscale capture"
+    },
+    {
+      "extension": "dcm",
+      "id": "dcm-native-rgb-pattern",
+      "input": "images_points/dcm-native-rgb-pattern.dcm",
+      "kind": "image",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "DICOM native RGB secondary capture"
+    },
+    {
+      "extension": "dcm",
+      "id": "dcm-rle-gray-pattern",
+      "input": "images_points/dcm-rle-gray-pattern.dcm",
+      "kind": "image",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "DICOM RLE 8-bit grayscale capture"
+    },
+    {
+      "extension": "dcm",
+      "id": "dcm-rle-rgb-pattern",
+      "input": "images_points/dcm-rle-rgb-pattern.dcm",
+      "kind": "image",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "DICOM RLE three-plane RGB capture"
+    },
+    {
+      "extension": "drc",
+      "id": "draco-google-cube",
+      "input": "mesh_scene/draco-google-cube.drc",
+      "kind": "model",
+      "provenance": "Google Draco testdata cube_att.obj.edgebreaker.cl4.2.2.drc; Apache-2.0; https://github.com/google/draco/tree/main/testdata; original license retained in mesh_scene/GOOGLE-DRACO-LICENSE",
+      "title": "Draco independent Google compressed cube"
+    },
+    {
+      "extension": "dwg",
+      "id": "dwg-authored-dib-saved-thumbnail",
+      "input": "saved_previews/dwg-authored-dib-saved-thumbnail.dwg",
+      "kind": "saved-preview",
+      "provenance": "Original MIT-licensed carrier fixture. Minimal AC1032 header with addressed, sentinel-delimited preview table and type-2 palette DIB. Contains no drawing geometry; genuine R13–2018 DWG qualification remains recorded separately in docs/research/blend-dwg-previews.json.",
+      "title": "DWG palette DIB saved-thumbnail carrier"
+    },
+    {
+      "extension": "dwg",
+      "id": "dwg-authored-png-saved-thumbnail",
+      "input": "saved_previews/dwg-authored-png-saved-thumbnail.dwg",
+      "kind": "saved-preview",
+      "provenance": "Original MIT-licensed carrier fixture. Minimal AC1032 header with addressed, sentinel-delimited preview table and type-6 RGBA PNG. Contains no drawing geometry; genuine R13–2018 DWG qualification remains recorded separately in docs/research/blend-dwg-previews.json.",
+      "title": "DWG PNG saved-thumbnail carrier"
+    },
+    {
+      "extension": "dxf",
+      "id": "dxf-binary-faces-and-lines",
+      "input": "mesh_scene/dxf-binary-faces-and-lines.dxf",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "DXF native binary group pairs, faces and lines"
+    },
+    {
+      "extension": "dxf",
+      "id": "dxf-faces-and-lines",
+      "input": "mesh_scene/dxf-faces-and-lines.dxf",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "DXF colored 3DFACE mesh and wire edges"
+    },
+    {
+      "extension": "dxf",
+      "id": "dxf-rational-semicircle",
+      "input": "mesh_scene/dxf-rational-semicircle.dxf",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "DXF genuine rational quadratic semicircle spline"
+    },
+    {
+      "extension": "e",
+      "id": "exodus-e-blocks",
+      "input": "scientific_cad/exodus-e-blocks.e",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "Exodus CDF1 two element blocks"
+    },
+    {
+      "extension": "ex2",
+      "id": "exodus-ex2-blocks",
+      "input": "scientific_cad/exodus-ex2-blocks.ex2",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "Exodus CDF2 64-bit offsets"
+    },
+    {
+      "extension": "exo",
+      "id": "exodus-exo-blocks",
+      "input": "scientific_cad/exodus-exo-blocks.exo",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "Exodus CDF5 shared tetrahedral boundary"
+    },
+    {
+      "extension": "exr",
+      "id": "exr-float-alpha-pattern",
+      "input": "images_points/exr-float-alpha-pattern.exr",
+      "kind": "image",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "OpenEXR float RGBA chart"
+    },
+    {
+      "extension": "f3d",
+      "id": "fusion-authored-deflate-preview",
+      "input": "saved_previews/fusion-authored-deflate-preview.f3d",
+      "kind": "saved-preview",
+      "provenance": "Original MIT-licensed carrier fixture. ZIP32, qualified 3-2-0-0 manifest and exact active-design PNG; deliberately different simulation image tests selection. Contains no Fusion geometry. Real design/archive qualification, including ZIP method93 Zstandard, is recorded separately in docs/research/autodesk-previews.json.",
+      "title": "Fusion active-design saved-thumbnail carrier"
+    },
+    {
+      "extension": "f3d",
+      "id": "fusion-authored-stored-preview",
+      "input": "saved_previews/fusion-authored-stored-preview.f3d",
+      "kind": "saved-preview",
+      "provenance": "Original MIT-licensed carrier fixture. ZIP32, qualified 3-2-0-0 manifest and exact active-design PNG; deliberately different simulation image tests selection. Contains no Fusion geometry. Real design/archive qualification, including ZIP method93 Zstandard, is recorded separately in docs/research/autodesk-previews.json.",
+      "title": "Fusion active-design saved-thumbnail carrier"
+    },
+    {
+      "extension": "fbx",
+      "id": "fbx-ascii-material",
+      "input": "mesh_scene/fbx-ascii-material.fbx",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "FBX ASCII mesh, placement and material"
+    },
+    {
+      "extension": "fbx",
+      "id": "fbx-weighted-skin",
+      "input": "mesh_scene/fbx-weighted-skin.fbx",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "FBX real weighted clusters and current bone pose"
+    },
+    {
+      "extension": "g",
+      "id": "exodus-g-blocks",
+      "input": "scientific_cad/exodus-g-blocks.g",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "Exodus NetCDF4/HDF5 geometry"
+    },
+    {
+      "extension": "glb",
+      "id": "glb-draco-google-cube",
+      "input": "mesh_scene/glb-draco-google-cube.glb",
+      "kind": "model",
+      "provenance": "Google Draco testdata cube_att.obj.edgebreaker.cl4.2.2.drc; Apache-2.0; https://github.com/google/draco/tree/main/testdata; original license retained in mesh_scene/GOOGLE-DRACO-LICENSE",
+      "title": "GLB native Draco compressed geometry"
+    },
+    {
+      "extension": "glb",
+      "id": "glb-native-colors",
+      "input": "mesh_scene/glb-native-colors.glb",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "GLB native JSON and binary chunks"
+    },
+    {
+      "extension": "glb",
+      "id": "glb-skin-morph-animation",
+      "input": "mesh_scene/glb-skin-morph-animation.glb",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "GLB skin and morph animation"
+    },
+    {
+      "extension": "gltf",
+      "id": "gltf-draco-google-cube",
+      "input": "mesh_scene/gltf-draco-google-cube.gltf",
+      "kind": "model",
+      "provenance": "Google Draco testdata cube_att.obj.edgebreaker.cl4.2.2.drc; Apache-2.0; https://github.com/google/draco/tree/main/testdata; original license retained in mesh_scene/GOOGLE-DRACO-LICENSE",
+      "title": "glTF native Draco compressed geometry"
+    },
+    {
+      "extension": "gltf",
+      "id": "gltf-embedded-colors",
+      "input": "mesh_scene/gltf-embedded-colors.gltf",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "glTF embedded buffer and normalized colors"
+    },
+    {
+      "extension": "gltf",
+      "id": "gltf-external-tetrahedron",
+      "input": "mesh_scene/gltf-external-tetrahedron.gltf",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "glTF detached buffer and node rotation"
+    },
+    {
+      "extension": "gltf",
+      "id": "gltf-skin-morph-animation",
+      "input": "mesh_scene/gltf-skin-morph-animation.gltf",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "glTF skin, morph, normalized influences and earliest animation"
+    },
+    {
+      "extension": "gml",
+      "id": "gml-polygon-building",
+      "input": "mesh_scene/gml-polygon-building.gml",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "CityGML building polygon surfaces and appearance"
+    },
+    {
+      "extension": "hdr",
+      "id": "hdr-radiance-pattern",
+      "input": "images_points/hdr-radiance-pattern.hdr",
+      "kind": "image",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "Radiance HDR float color chart"
+    },
+    {
+      "extension": "iam",
+      "id": "inventor-v4-assembly-saved-thumbnail",
+      "input": "saved_previews/inventor-v4-assembly-saved-thumbnail.iam",
+      "kind": "saved-preview",
+      "provenance": "Original MIT-licensed CFB/OLEPS thumbnail-carrier fixture. Native Inventor summary FMTID and PID17 VT_CF wrap a saved PNG of Catwalk's authored gear; no Inventor CAD geometry. Supported carriers and resource bounds are documented in docs/research/autodesk-previews.json.",
+      "title": "Inventor CFBv4 assembly thumbnail carrier"
+    },
+    {
+      "extension": "ifc",
+      "id": "ifc-hollow-extrusion",
+      "input": "scientific_cad/ifc-hollow-extrusion.ifc",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "IFC hollow rectangular extrusion"
+    },
+    {
+      "extension": "iges",
+      "id": "iges-iges-box",
+      "input": "scientific_cad/iges-iges-box.iges",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "IGES translated box geometry"
+    },
+    {
+      "extension": "igs",
+      "id": "iges-igs-cylinder",
+      "input": "scientific_cad/iges-igs-cylinder.igs",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "IGES translated cylinder geometry"
+    },
+    {
+      "extension": "ipt",
+      "id": "inventor-v3-part-saved-thumbnail",
+      "input": "saved_previews/inventor-v3-part-saved-thumbnail.ipt",
+      "kind": "saved-preview",
+      "provenance": "Original MIT-licensed CFB/OLEPS thumbnail-carrier fixture. Native Inventor summary FMTID and PID17 VT_CF wrap a saved PNG of Catwalk's authored gear; no Inventor CAD geometry. Supported carriers and resource bounds are documented in docs/research/autodesk-previews.json.",
+      "title": "Inventor CFBv3 part thumbnail carrier"
+    },
+    {
+      "extension": "jpeg",
+      "id": "jpeg-pattern",
+      "input": "images_points/jpeg-pattern.jpeg",
+      "kind": "image",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "JPEG mirrored RGB color chart"
+    },
+    {
+      "extension": "jpg",
+      "id": "jpg-pattern",
+      "input": "images_points/jpg-pattern.jpg",
+      "kind": "image",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "JPG patterned RGB color chart"
+    },
+    {
+      "extension": "las",
+      "id": "las-colored-helix",
+      "input": "images_points/las-colored-helix.las",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "LAS 16-bit RGB points"
+    },
+    {
+      "extension": "laz",
+      "id": "laz-colored-helix",
+      "input": "images_points/laz-colored-helix.laz",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "LAZ compressed 16-bit RGB points"
+    },
+    {
+      "extension": "lbrn",
+      "id": "lightburn-legacy-saved-thumbnail",
+      "input": "saved_previews/lightburn-legacy-saved-thumbnail.lbrn",
+      "kind": "saved-preview",
+      "provenance": "Unmodified MarcinZukowski/lightburn-tester examples/example1.lbrn, commit 3f51e497f0d899209f762c8d507a2a08322a6a54; Apache-2.0; license retained in saved_previews/LIGHTBURN-TESTER-LICENSE.txt. Extracted saved PNG, not regenerated geometry; the saved image can be stale. https://github.com/MarcinZukowski/lightburn-tester/blob/3f51e497f0d899209f762c8d507a2a08322a6a54/examples/example1.lbrn",
+      "title": "LightBurn legacy 0.9.16 saved thumbnail"
+    },
+    {
+      "extension": "lbrn2",
+      "id": "lightburn-current-saved-thumbnail",
+      "input": "saved_previews/lightburn-current-saved-thumbnail.lbrn2",
+      "kind": "saved-preview",
+      "provenance": "Unmodified tscircuit/lbrnts tests/assets/printable_area_jig.lbrn2, commit d21a7b29354cd782cabf533b1b8f0ade6a11c7dd; MIT, Copyright (c) 2025 tscircuit Inc.; license retained in saved_previews/LBRNTS-LICENSE.txt. Extracted saved PNG, not regenerated geometry. https://github.com/tscircuit/lbrnts/blob/d21a7b29354cd782cabf533b1b8f0ade6a11c7dd/tests/assets/printable_area_jig.lbrn2",
+      "title": "LightBurn 1.4.03 saved jig thumbnail"
+    },
+    {
+      "extension": "mdl",
+      "id": "mdl-native-frame",
+      "input": "mesh_scene/mdl-native-frame.mdl",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "Quake MDL native compressed-vertex frame"
+    },
+    {
+      "extension": "mha",
+      "id": "mha-local-zlib",
+      "input": "scientific_cad/mha-local-zlib.mha",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "MetaImage embedded big-endian zlib density"
+    },
+    {
+      "extension": "mhd",
+      "id": "mhd-detached-zlib",
+      "input": "scientific_cad/mhd-detached-zlib.mhd",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "MetaImage detached zlib volume with orientation"
+    },
+    {
+      "extension": "nc",
+      "id": "netcdf-nc-density",
+      "input": "scientific_cad/netcdf-nc-density.nc",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "NetCDF4 packed compressed first-time scalar volume"
+    },
+    {
+      "extension": "ncdf",
+      "id": "netcdf-ncdf-density",
+      "input": "scientific_cad/netcdf-ncdf-density.ncdf",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "NetCDF CDF5 density and missing samples"
+    },
+    {
+      "extension": "nhdr",
+      "id": "nhdr-detached-big-endian",
+      "input": "scientific_cad/nhdr-detached-big-endian.nhdr",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "NRRD detached big-endian unsigned short volume"
+    },
+    {
+      "extension": "nrrd",
+      "id": "nrrd-gzip-density",
+      "input": "scientific_cad/nrrd-gzip-density.nrrd",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "NRRD gzip float density and authored directions"
+    },
+    {
+      "extension": "obj",
+      "id": "obj-material-palette",
+      "input": "mesh_scene/obj-material-palette.obj",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "OBJ closed mesh with detached MTL palette"
+    },
+    {
+      "extension": "off",
+      "id": "off-colored-tetrahedron",
+      "input": "mesh_scene/off-colored-tetrahedron.off",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "OFF vertex-colored closed tetrahedron"
+    },
+    {
+      "extension": "p21",
+      "id": "step-p21-translated-box",
+      "input": "scientific_cad/step-p21-translated-box.p21",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "STEP translated box through .p21 alias"
+    },
+    {
+      "extension": "pcd",
+      "id": "pcd-ascii-helix",
+      "input": "images_points/pcd-ascii-helix.pcd",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "PCD ascii colored double helix"
+    },
+    {
+      "extension": "pcd",
+      "id": "pcd-binary-helix",
+      "input": "images_points/pcd-binary-helix.pcd",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "PCD binary colored double helix"
+    },
+    {
+      "extension": "pcd",
+      "id": "pcd-lzf-helix",
+      "input": "images_points/pcd-lzf-helix.pcd",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "PCD binary_compressed colored double helix"
+    },
+    {
+      "extension": "ply",
+      "id": "ply-ascii-colors",
+      "input": "mesh_scene/ply-ascii-colors.ply",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "PLY ASCII colored vertices"
+    },
+    {
+      "extension": "ply",
+      "id": "ply-binary-big-endian",
+      "input": "mesh_scene/ply-binary-big-endian.ply",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "PLY binary big endian colored mesh"
+    },
+    {
+      "extension": "ply",
+      "id": "ply-binary-little-endian",
+      "input": "mesh_scene/ply-binary-little-endian.ply",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "PLY binary little endian colored mesh"
+    },
+    {
+      "extension": "png",
+      "id": "png-pattern",
+      "input": "images_points/png-pattern.png",
+      "kind": "image",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "PNG color chart with alpha"
+    },
+    {
+      "extension": "pts",
+      "id": "pts-colored-helix",
+      "input": "images_points/pts-colored-helix.pts",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "PTS counted colored double helix"
+    },
+    {
+      "extension": "ptx",
+      "id": "ptx-transformed-helix",
+      "input": "images_points/ptx-transformed-helix.ptx",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "PTX transformed scan and missing return"
+    },
+    {
+      "extension": "qi",
+      "id": "qi-10-little-endian",
+      "input": "images_points/qi-10-little-endian.qi",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "NASA QFIT 10-word little endian survey"
+    },
+    {
+      "extension": "qi",
+      "id": "qi-12-little-endian",
+      "input": "images_points/qi-12-little-endian.qi",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "NASA QFIT 12-word little endian survey"
+    },
+    {
+      "extension": "qi",
+      "id": "qi-14-big-endian",
+      "input": "images_points/qi-14-big-endian.qi",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "NASA QFIT 14-word big endian survey"
+    },
+    {
+      "extension": "sbet",
+      "id": "sbet-survey-trajectory",
+      "input": "images_points/sbet-survey-trajectory.sbet",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "SBET navigation trajectory in radians"
+    },
+    {
+      "extension": "slpk",
+      "id": "slpk-autzen",
+      "input": "images_points/slpk-autzen.slpk",
+      "kind": "model",
+      "provenance": "Unmodified Esri LEPCC testData/SMALL_AUTZEN_LAS_All.slpk; Apache-2.0; https://github.com/Esri/lepcc; original license and notice retained in images_points/ESRI-LICENSE.txt and ESRI-NOTICE.txt",
+      "title": "I3S original LEPCC geographic point cloud"
+    },
+    {
+      "extension": "slpk",
+      "id": "slpk-colored-autzen",
+      "input": "images_points/slpk-colored-autzen.slpk",
+      "kind": "model",
+      "provenance": "Authored I3S 2.0 package and LEPCC RGB bands (MIT), containing unchanged Esri LEPCC SMALL_AUTZEN_LAS_All XYZ geometry (Apache-2.0); https://github.com/Esri/lepcc; license and notice retained in images_points/ESRI-LICENSE.txt and ESRI-NOTICE.txt",
+      "title": "I3S 2.0 LEPCC reference terrain with authored RGB bands"
+    },
+    {
+      "extension": "splat",
+      "id": "splat-colored-helix",
+      "input": "images_points/splat-colored-helix.splat",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "Gaussian SPLAT colored centers"
+    },
+    {
+      "extension": "spz",
+      "id": "spz-v1-helix",
+      "input": "images_points/spz-v1-helix.spz",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "SPZ v1 gzip colored centers"
+    },
+    {
+      "extension": "spz",
+      "id": "spz-v2-helix",
+      "input": "images_points/spz-v2-helix.spz",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "SPZ v2 gzip colored centers"
+    },
+    {
+      "extension": "spz",
+      "id": "spz-v3-helix",
+      "input": "images_points/spz-v3-helix.spz",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "SPZ v3 gzip colored centers"
+    },
+    {
+      "extension": "spz",
+      "id": "spz-v4-helix",
+      "input": "images_points/spz-v4-helix.spz",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "SPZ v4 Zstandard colored centers"
+    },
+    {
+      "extension": "step",
+      "id": "step-step-translated-box",
+      "input": "scientific_cad/step-step-translated-box.step",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "STEP translated box through .step alias"
+    },
+    {
+      "extension": "stl",
+      "id": "stl-ascii-tetrahedron",
+      "input": "mesh_scene/stl-ascii-tetrahedron.stl",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "STL ASCII closed tetrahedron"
+    },
+    {
+      "extension": "stl",
+      "id": "stl-binary-tetrahedron",
+      "input": "mesh_scene/stl-binary-tetrahedron.stl",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "STL binary closed tetrahedron"
+    },
+    {
+      "extension": "stp",
+      "id": "step-stp-cylinder",
+      "input": "scientific_cad/step-stp-cylinder.stp",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "STEP exact cylindrical solid tessellation"
+    },
+    {
+      "extension": "stpnc",
+      "id": "step-stpnc-translated-box",
+      "input": "scientific_cad/step-stpnc-translated-box.stpnc",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "STEP translated box through .stpnc alias"
+    },
+    {
+      "extension": "tga",
+      "id": "tga-pattern",
+      "input": "images_points/tga-pattern.tga",
+      "kind": "image",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "TGA RLE color chart with alpha"
+    },
+    {
+      "extension": "tga",
+      "id": "tga-uncompressed-pattern",
+      "input": "images_points/tga-uncompressed-pattern.tga",
+      "kind": "image",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "TGA uncompressed RGBA chart"
+    },
+    {
+      "extension": "tif",
+      "id": "tif-pattern",
+      "input": "images_points/tif-pattern.tif",
+      "kind": "image",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "TIF RGBA chart with soft edge"
+    },
+    {
+      "extension": "tiff",
+      "id": "tiff-pattern",
+      "input": "images_points/tiff-pattern.tiff",
+      "kind": "image",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "TIFF mirrored RGBA chart"
+    },
+    {
+      "extension": "usd",
+      "id": "usd-native-crate",
+      "input": "mesh_scene/usd-native-crate.usd",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "USD generic extension with genuine binary crate"
+    },
+    {
+      "extension": "usda",
+      "id": "usda-authored-mesh",
+      "input": "mesh_scene/usda-authored-mesh.usda",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "USD ASCII authored mesh, color and placement"
+    },
+    {
+      "extension": "usda",
+      "id": "usda-instanced-primitives",
+      "input": "mesh_scene/usda-instanced-primitives.usda",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "USD point instancing, analytic primitives and Bezier curve"
+    },
+    {
+      "extension": "usdc",
+      "id": "usdc-native-crate",
+      "input": "mesh_scene/usdc-native-crate.usdc",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "USD genuine binary crate encoding"
+    },
+    {
+      "extension": "usdz",
+      "id": "usdz-aligned-binary-package",
+      "input": "mesh_scene/usdz-aligned-binary-package.usdz",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "USDZ 64-byte-aligned stored ZIP with binary USD reference"
+    },
+    {
+      "extension": "vdb",
+      "id": "vdb-hollow-float",
+      "input": "scientific_cad/vdb-hollow-float.vdb",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "OpenVDB compressed sparse hollow shell"
+    },
+    {
+      "extension": "vdb",
+      "id": "vdb-hollow-half",
+      "input": "scientific_cad/vdb-hollow-half.vdb",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "OpenVDB half-float shell with reflected placement"
+    },
+    {
+      "extension": "vrml",
+      "id": "vrml-indexed-colors",
+      "input": "mesh_scene/vrml-indexed-colors.vrml",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "VRML indexed faces and authored vertex colors"
+    },
+    {
+      "extension": "vti",
+      "id": "vti-oriented-density",
+      "input": "scientific_cad/vti-oriented-density.vti",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "VTI sparse trihedral density with reflected directions"
+    },
+    {
+      "extension": "vtk",
+      "id": "vtk-big-endian-binary",
+      "input": "scientific_cad/vtk-big-endian-binary.vtk",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "VTK big-endian binary tetrahedron"
+    },
+    {
+      "extension": "vtk",
+      "id": "vtk-shared-tetrahedra",
+      "input": "scientific_cad/vtk-shared-tetrahedra.vtk",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "VTK legacy ASCII shared tetrahedral surface"
+    },
+    {
+      "extension": "vtkhdf",
+      "id": "vtkhdf-filtered-tetrahedra",
+      "input": "scientific_cad/vtkhdf-filtered-tetrahedra.vtkhdf",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "VTKHDF shuffle/deflate shared-cell boundary"
+    },
+    {
+      "extension": "vtm",
+      "id": "vtm-mixed-blocks",
+      "input": "scientific_cad/vtm-mixed-blocks.vtm",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "Nested multiblock tetrahedron and concave sheet"
+    },
+    {
+      "extension": "vtp",
+      "id": "vtp-concave-polygon",
+      "input": "scientific_cad/vtp-concave-polygon.vtp",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "VTK XML concave polygon and raised points"
+    },
+    {
+      "extension": "vtr",
+      "id": "vtr-nonuniform-grid",
+      "input": "scientific_cad/vtr-nonuniform-grid.vtr",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "Rectilinear grid with nonuniform coordinates"
+    },
+    {
+      "extension": "vts",
+      "id": "vts-sheared-grid",
+      "input": "scientific_cad/vts-sheared-grid.vts",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "Structured grid preserving sheared authored coordinates"
+    },
+    {
+      "extension": "vtu",
+      "id": "vtu-ascii-tetrahedron",
+      "input": "scientific_cad/vtu-ascii-tetrahedron.vtu",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "VTK XML indexed tetrahedron"
+    },
+    {
+      "extension": "vtu",
+      "id": "vtu-zlib-binary",
+      "input": "scientific_cad/vtu-zlib-binary.vtu",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "VTK XML inline compressed binary arrays"
+    },
+    {
+      "extension": "webp",
+      "id": "webp-pattern",
+      "input": "images_points/webp-pattern.webp",
+      "kind": "image",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "WebP lossless chart with alpha"
+    },
+    {
+      "extension": "wrl",
+      "id": "wrl-primitives",
+      "input": "mesh_scene/wrl-primitives.wrl",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "VRML sphere, box and cone hierarchy"
+    },
+    {
+      "extension": "x",
+      "id": "x-frame-material",
+      "input": "mesh_scene/x-frame-material.x",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "DirectX mesh frame and diffuse material"
+    },
+    {
+      "extension": "xbf",
+      "id": "xbf-colored-carrier",
+      "input": "scientific_cad/xbf-colored-carrier.xbf",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "XBF colored face with genuine carrier and instance placement"
+    }
+  ],
+  "render": {
+    "height": 256,
+    "samples": 2,
+    "transparent": true,
+    "width": 256
+  },
+  "schema": 1
+}

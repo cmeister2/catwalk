@@ -1,0 +1,23 @@
+; FBX 7.4 authored fixture
+FBXHeaderExtension: { FBXHeaderVersion: 1003 FBXVersion: 7400 Creator: "Catwalk authored Rust fixture" }
+GlobalSettings: { Properties70: { P: "UpAxis","int","Integer","",2 P: "FrontAxis","int","Integer","",1 P: "CoordAxis","int","Integer","",0 P: "UpAxisSign","int","Integer","",1 P: "FrontAxisSign","int","Integer","",1 P: "CoordAxisSign","int","Integer","",1 P: "UnitScaleFactor","double","Number","",100 } }
+Objects: { Geometry: 100,"Geometry::Tetra","Mesh" {
+    Vertices: *12 { a: 0,0,0,2,0,0,0,1.6,0,0.35,0.45,2.3 } PolygonVertexIndex: *12 { a: 0,2,-2,0,1,-4,1,2,-4,2,0,-4 }
+    LayerElementMaterial: 0 { MappingInformationType: "AllSame" ReferenceInformationType: "IndexToDirect" Materials: *1 { a: 0 } }
+}
+Model: 1,"Model::Mesh","Mesh" { Properties70: { P: "Lcl Translation","Vector3D","Vector","",0.2,0.1,0 } }
+Material: 200,"Material::Blue","" { Properties70: { P: "DiffuseColor","ColorRGB","Color","",0.15,0.55,0.9 } }
+Model: 2,"Model::BoneA","LimbNode" {}
+Model: 3,"Model::BoneB","LimbNode" { Properties70: { P: "Lcl Translation","Vector3D","Vector","",0.7,0.15,0.4 P: "Lcl Rotation","Vector3D","Vector","",0,0,20 } }
+Deformer: 10,"Deformer::Skin","Skin" { SkinningType: "Linear" }
+Deformer: 11,"Deformer::ClusterA","Cluster" { Mode: "Normalize" Indexes: *4 { a: 0,1,2,3 } Weights: *4 { a: 1,0.75,0.5,0.1 } Transform: *16 { a: 1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1 } TransformLink: *16 { a: 1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1 } }
+Deformer: 12,"Deformer::ClusterB","Cluster" { Mode: "Normalize" Indexes: *4 { a: 0,1,2,3 } Weights: *4 { a: 0,0.25,0.5,0.9 } Transform: *16 { a: 1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1 } TransformLink: *16 { a: 1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1 } }
+ }
+Connections: { C: "OO",100,1
+C: "OO",200,1
+C: "OO",10,100
+C: "OO",11,10
+C: "OO",12,10
+C: "OO",2,11
+C: "OO",3,12
+ }
