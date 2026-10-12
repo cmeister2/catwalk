@@ -2,6 +2,7 @@
   "name": "catwalk3d-release",
   "private": true,
   "type": "module",
+  "packageManager": "npm@11.21.0",
   "scripts": {
     "release": "semantic-release",
     "test:release": "node --test tests/release-config.test.js tests/release-plan.test.js tests/release-binaries.test.js tests/release-notices.test.js"
