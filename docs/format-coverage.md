@@ -50,7 +50,7 @@ The seven additional document extensions described below are outside the publish
 | [3DS](#3ds) | `.3ds` | Subset: static triangle meshes, diffuse colors and earliest-key object hierarchy. |
 | [VRMLReader](#vrml) | `.wrl`, `.vrml` | Subset: VRML97 text, static shapes, lines, terrain, extrusions, DEF/USE, transforms and colors. |
 | [FBX](#fbx) | `.fbx` | Subset: ASCII/binary static polygon scenes, weighted linear skins, progressive morphs, hierarchy, pivots, units, first keys and colors. |
-| [COLLADA](#collada) | `.dae` | Subset: static indexed mesh scenes, instancing, TRS/matrices, units and up axes. |
+| [COLLADA](#collada) | `.dae` | Subset: static indexed surfaces and wires, planar polygon holes, instancing, affine transforms, units and up axes. |
 | [OFF](#off) | `.off` | Subset: polygon geometry and colors. |
 | [DXF](#dxf) | `.dxf` | Subset: ASCII/binary drawing faces, points, lines, sampled curves/splines, meshes and nested block instances. |
 | [DirectX](#directx) | `.x` | Subset: text/binary/MSZIP mesh scenes, static frames, bind geometry and colors. |
@@ -478,9 +478,13 @@ FBX accepts ASCII, including supported legacy version-6 inline meshes, and binar
 
 **Extensions:** `.dae`.
 
-**Coverage:** Subset: static indexed mesh scenes, instancing, TRS/matrices, units and up axes.
+**Coverage:** Subset: static indexed surfaces and wires, planar polygon holes, instancing, affine transforms, units and up axes.
 
-COLLADA accepts version 1.4/1.5 static indexed triangles, polygons, polylist, triangle fans and strips; float-array accessors, repeated geometry/node instances, nested affine matrices/TRS, global unit scaling, X/Y/Z up axes and diffuse material colors are evaluated. The importer validates source indices, accessor ranges and instance cycles. Skin/morph controllers, lines, polygon holes, spline/BREP geometry, `lookat`/`skew`, references to other documents and local asset coordinate-system overrides fail explicitly. Textures and animations are not evaluated. Matrix XML is read row by row, as illustrated in the [Khronos COLLADA specification](https://www.khronos.org/files/collada_spec_1_4.pdf).
+COLLADA accepts version 1.4/1.5 static indexed triangles, polygons, polylist, triangle fans and strips, line pairs and line strips. Planar `<polygons><ph>` entries retain their exterior and hole rings; triangulation checks planarity and preserved projected area. Float-array accessors use named component slots in their declared order, skipping unnamed slots; the names themselves do not determine XYZ or RGB order. Repeated geometry/node instances, nested affine matrices/TRS, node-placement `lookat`, angular `skew`, global unit scaling and X/Y/Z up axes are evaluated. Diffuse materials and indexed vertex colors influence flat surface and segment colors; each segment averages its two endpoint colors. Textures, imported normals and animations are not evaluated.
+
+The importer validates source indices, accessor ranges, primitive counts and instance cycles. Skin/morph controllers, spline/BREP geometry, references to other documents and local asset coordinate-system overrides fail explicitly. Zero-area hole rings are unsupported and return an error. Undefined look-at axes, zero/parallel skew axes and singular angular skew intervals also fail. Matrix XML is read row by row; `lookat` places local geometry at the eye position, and `skew` displaces along its second authored axis according to the general angular convention in the [Khronos COLLADA specification](https://www.khronos.org/files/collada_spec_1_4.pdf).
+
+Limits allow at most 64 primitive inputs/tuple offsets, 100,000 polygon corners or line-strip vertices, 1,024 rings per holed polygon and 100,000 index lists in each wire or holed-polygon primitive. Scene traversal permits 100,000 node visits. Each numeric/index list and geometry count is limited to 20 million items; decoded float arrays and mesh/output vector allocations also share a cumulative 256 MiB budget. [Two unchanged Khronos conformance models and four authored controls](../tests/fixtures/formats/collada_primitives/README.md) have independent position, topology, color, surface-area and signed-volume checks plus gallery snapshots. The original XML files preserve their exporter metadata and Khronos license; these cases qualify static geometry, rather than full exporter or shader compatibility.
 
 ## OFF
 

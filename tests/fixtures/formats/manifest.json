@@ -314,11 +314,59 @@
     },
     {
       "extension": "dae",
+      "id": "dae-cts-lookat4",
+      "input": "collada_primitives/node_lookat4.dae",
+      "kind": "model",
+      "provenance": "Unmodified KhronosGroup/COLLADA-CTS XML conformance asset at commit 61f2a560cbb2a06ee62da8025241f6b08d06bfd9. Original Maya/ColladaMaya/FCollada metadata and Khronos 2012 permission notice are preserved; full original license retained as collada_primitives/KHRONOS-CTS-LICENSE. Independent source geometry expectations and exact hashes in collada_primitives/README.md. https://github.com/KhronosGroup/COLLADA-CTS/tree/61f2a560cbb2a06ee62da8025241f6b08d06bfd9/StandardDataSets/collada/library_visual_scenes/visual_scene/node",
+      "title": "Khronos original look-at pyramid conformance model"
+    },
+    {
+      "extension": "dae",
+      "id": "dae-cts-skew-cube",
+      "input": "collada_primitives/node_skew_cube.dae",
+      "kind": "model",
+      "provenance": "Unmodified KhronosGroup/COLLADA-CTS XML conformance asset at commit 61f2a560cbb2a06ee62da8025241f6b08d06bfd9. Original Maya/ColladaMaya/FCollada metadata and Khronos 2012 permission notice are preserved; full original license retained as collada_primitives/KHRONOS-CTS-LICENSE. Independent source geometry expectations and exact hashes in collada_primitives/README.md. https://github.com/KhronosGroup/COLLADA-CTS/tree/61f2a560cbb2a06ee62da8025241f6b08d06bfd9/StandardDataSets/collada/library_visual_scenes/visual_scene/node",
+      "title": "Khronos original angular-skew cube conformance model"
+    },
+    {
+      "extension": "dae",
+      "id": "dae-holed-plane",
+      "input": "collada_primitives/dae-holed-plane.dae",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "COLLADA tilted planar polygon with two openings"
+    },
+    {
+      "extension": "dae",
+      "id": "dae-lookat-placement",
+      "input": "collada_primitives/dae-lookat-placement.dae",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "COLLADA nested look-at placement and ordered accessor slots"
+    },
+    {
+      "extension": "dae",
       "id": "dae-nested-material",
       "input": "mesh_scene/dae-nested-material.dae",
       "kind": "model",
       "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
       "title": "COLLADA hierarchy, axis and diffuse material"
+    },
+    {
+      "extension": "dae",
+      "id": "dae-nonorthogonal-skew",
+      "input": "collada_primitives/dae-nonorthogonal-skew.dae",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "COLLADA nonorthogonal angular shear with preserved volume"
+    },
+    {
+      "extension": "dae",
+      "id": "dae-wire-instances",
+      "input": "collada_primitives/dae-wire-instances.dae",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "COLLADA colored lines and closed strips with repeated placements"
     },
     {
       "extension": "dcm",
