@@ -1,6 +1,8 @@
 //! Explicit importer dispatch. Unsupported readers fail rather than shelling out.
 /// First-sample Alembic geometry and object hierarchies.
 mod alembic;
+/// Bounded XML/ZIP AMF triangle geometry and qualified constellation placements.
+mod amf;
 /// Static Blender SDNA mesh geometry, placements and collection instances.
 mod blend;
 /// IGES and native ASCII BREP topology conversion and tessellation.
@@ -82,7 +84,7 @@ pub const MODEL_EXTENSIONS: &[&str] = &[
     "3ds", "wrl", "vrml", "gml", "usd", "usda", "usdc", "usdz", "spz", "vti", "nrrd", "nhdr",
     "mhd", "mha", "dxf", "bpf", "bin", "qi", "sbet", "csd", "x", "drc", "fbx", "vtkhdf", "e",
     "ex2", "exo", "g", "nc", "cdf", "ncdf", "slpk", "abc", "ifc", "vdb", "iges", "igs", "brep",
-    "xbf",
+    "xbf", "amf",
 ];
 /// Advertised extension aliases decoded as fitted two-dimensional images.
 pub const IMAGE_EXTENSIONS: &[&str] = &[
@@ -110,6 +112,7 @@ pub fn extension(path: &Path) -> Result<String> {
 /// or unimplemented file variants, exceeded reader limits, or invalid geometry.
 pub fn load(path: &Path) -> Result<Scene> {
     let scene = match extension(path)?.as_str() {
+        "amf" => amf::load(path)?,
         "blend" => blend::load(path)?,
         "lbrn" | "lbrn2" => lightburn::load(path)?,
         "dwg" => dwg::load(path)?,
