@@ -56,6 +56,8 @@ Run `catwalk --list-formats` for the complete extension list. Each reader suppor
 
 Models use a fitted static view. Supported colors and materials are preserved; OBJ, glTF/GLB and 3MF additionally support base-color textures. Animation files use a supported static pose or sample. Raster images are fitted to the canvas with their proportions preserved.
 
+TIFF (`.tif` / `.tiff`) supports fitted single-page images and fresh 3D previews of homogeneous grayscale page stacks. Volume previews use thresholded density surfaces, TIFF orientation and supported physical XY resolution; slice spacing defaults to X spacing. RGB stacks, heterogeneous image series and OME hyperstack axes remain unsupported. See [the TIFF coverage entry](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#tiff).
+
 COLLADA (`.dae`) previews include static surfaces, colored wire geometry, planar polygon holes and supported node placements, including `lookat` and angular `skew`. Controllers, textures and animation remain outside this reader's static subset; see [its coverage entry](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#collada) for limits and tested examples.
 
 Open CASCADE `.brep` previews accept supported ASCII and little-endian binary topology tables, including curved surfaces, free wires, isolated points and stored placements. See [the BREP coverage entry](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#brep) for supported versions, cache exclusions and limits.

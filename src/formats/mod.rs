@@ -71,6 +71,8 @@ mod survey;
 mod threeds;
 /// Core and production multipart 3MF model packages.
 mod threemf;
+/// Bounded scalar TIFF page stacks and their physical sample placement.
+pub(crate) mod tiff_volume;
 /// Column-major affine transforms shared by scene importers.
 mod transform;
 /// Local composed USD stages and supported static geometry.
@@ -94,9 +96,9 @@ pub const MODEL_EXTENSIONS: &[&str] = &[
     "3ds", "wrl", "vrml", "gml", "usd", "usda", "usdc", "usdz", "spz", "vti", "nrrd", "nhdr",
     "mhd", "mha", "dxf", "bpf", "bin", "qi", "sbet", "csd", "x", "drc", "fbx", "vtkhdf", "e",
     "ex2", "exo", "g", "nc", "cdf", "ncdf", "slpk", "abc", "ifc", "vdb", "iges", "igs", "brep",
-    "xbf", "amf", "lys",
+    "xbf", "amf", "lys", "tif", "tiff",
 ];
-/// Advertised extension aliases decoded as fitted two-dimensional images.
+/// Raster extension aliases; scalar multipage TIFF additionally renders as a volume.
 pub const IMAGE_EXTENSIONS: &[&str] = &[
     "png", "jpg", "jpeg", "bmp", "tga", "hdr", "webp", "exr", "tif", "tiff", "dcm",
 ];
@@ -127,6 +129,7 @@ pub fn load(path: &Path) -> Result<Scene> {
         "lbrn" | "lbrn2" => lightburn::load(path)?,
         "dwg" => dwg::load(path)?,
         "lys" => lychee::load(path)?,
+        "tif" | "tiff" => tiff_volume::load(path)?,
         "stl" | "obj" | "ply" | "off" | "pts" | "ptx" | "pcd" | "splat" => mesh::load(path)?,
         "gltf" | "glb" => gltf::load(path)?,
         "dae" => legacy_scene::load(path)?,

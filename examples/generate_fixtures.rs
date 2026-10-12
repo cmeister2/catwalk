@@ -41,6 +41,9 @@ mod vtk_lines;
 /// Register original plain and compressed AMF exporter references.
 mod amf;
 
+#[path = "fixtures/tiff_volumes.rs"]
+/// Register an original TIFF stack and generate typed scalar volume controls.
+mod tiff_volumes;
 #[path = "fixtures/usd_nurbs.rs"]
 /// Generate authored NURBS layers and register a licensed Maya-exported reference.
 mod usd_nurbs;
@@ -110,6 +113,7 @@ fn main() -> Result<()> {
     cases.extend(collada_primitives::generate(&root)?);
     cases.extend(vtk_quadratic::generate(&root)?);
     cases.extend(usd_nurbs::generate(&root)?);
+    cases.extend(tiff_volumes::generate(&root)?);
     cases.sort_by(|a, b| a.extension.cmp(&b.extension).then(a.id.cmp(&b.id)));
     let mut ids = BTreeSet::new();
     for case in &cases {

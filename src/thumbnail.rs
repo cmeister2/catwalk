@@ -8,7 +8,7 @@ use crate::{
 use image::{DynamicImage, Rgba, RgbaImage};
 use std::path::Path;
 
-/// Render a model or fit a raster image or saved document preview to a canvas.
+/// Render model or volume geometry, or fit a raster or saved image to a canvas.
 ///
 /// Raster and saved-image canvases require width and height between 1 and 4096.
 /// Model previews follow the dimensions and work budgets of [`render::render`].
@@ -73,13 +73,19 @@ fn validate_dimensions(options: &RenderOptions) -> Result<()> {
     Ok(())
 }
 
-/// Decode one image frame under codec limits, then fit it onto the preview canvas.
+/// Render a scalar TIFF stack or fit one bounded raster frame to the canvas.
 fn image_thumbnail(path: &Path, options: &RenderOptions) -> Result<RgbaImage> {
     validate_dimensions(options)?;
     let source = if formats::extension(path)? == "dcm" {
         formats::dicom::load(path)?
     } else {
         let data = formats::read_file(path)?;
+        if matches!(formats::extension(path)?.as_str(), "tif" | "tiff")
+            && let Some(scene) = formats::tiff_volume::scene(&data, data.capacity())?
+        {
+            drop(data);
+            return render::render(&scene, options);
+        }
         // TGA has no dependable magic signature. Select the advertised reader
         // from the extension so every supported image type gets its decoder.
         let format = image::ImageFormat::from_extension(formats::extension(path)?)
