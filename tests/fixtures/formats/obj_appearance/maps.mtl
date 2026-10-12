@@ -1,0 +1,12 @@
+# Author-created linear diffuse controls; MIT
+newmtl plain
+Kd .5 .4 .25
+newmtl white
+Kd .5 .4 .25
+map_Kd white.png
+newmtl repeat
+Kd .5 .4 .25
+map_Kd -s 2 .5 -o -.25 .125 -clamp off quadrants.png
+newmtl border
+Kd .5 .4 .25
+map_Kd -s 2 .5 -o -.25 .125 -clamp on quadrants.png

@@ -1,0 +1,10 @@
+# Author-created opacity materials; MIT
+newmtl backing
+Kd .15 .2 .8
+d 1
+newmtl dissolve
+Kd .9 .1 .1
+d .5
+newmtl transparency
+Kd .1 .9 .15
+Tr .75

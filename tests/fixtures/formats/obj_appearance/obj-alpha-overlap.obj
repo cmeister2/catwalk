@@ -1,0 +1,20 @@
+# Author-created material dissolve overlap; MIT
+mtllib alpha.mtl
+v 0 0 0
+v 2 0 .5
+v 2 2 .75
+v 0 2 .25
+v .1 .15 .24375
+v 1.4 .15 .56875
+v 1.4 1.8 .775
+v .1 1.8 .45
+v .6 .4 .5
+v 1.9 .4 .825
+v 1.9 1.9 1.0125
+v .6 1.9 .6875
+usemtl backing
+f 1 2 3 4
+usemtl dissolve
+f 5 6 7 8
+usemtl transparency
+f 9 10 11 12

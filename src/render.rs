@@ -727,20 +727,19 @@ fn srgb_to_linear(value: f64) -> f64 {
     }
 }
 
-/// Resolve a normals-only appearance against the triangle's existing sRGB color.
-/// Explicit materials, corner colors, UVs and coverage settings retain their own color semantics.
+/// Resolve an appearance containing only normals or UVs against the triangle's existing color.
+/// Explicit materials, corner colors, textures and coverage retain their own color semantics.
 #[allow(
     clippy::float_cmp,
-    reason = "Only the exact default-white multiplier identifies the normals-only fallback contract."
+    reason = "Only the exact default-white multiplier identifies the attribute-only fallback contract."
 )]
-fn normal_color_fallback(
+fn attribute_color_fallback(
     appearance: &TriangleAppearance,
     color: [u8; 3],
 ) -> Option<TriangleAppearance> {
-    if appearance.normals.is_none()
+    if (appearance.normals.is_none() && appearance.texcoords.is_none())
         || appearance.base_color != [1.0; 4]
         || appearance.colors.is_some()
-        || appearance.texcoords.is_some()
         || appearance.texture.is_some()
         || !matches!(appearance.alpha_mode, AlphaMode::Opaque)
         || appearance.unlit
@@ -778,7 +777,7 @@ fn encode_color(color: [f64; 4]) -> [u8; 3] {
 fn wrap_coordinate(value: f64, wrap: TextureWrap) -> f64 {
     match wrap {
         TextureWrap::Repeat => value.rem_euclid(1.0),
-        TextureWrap::ClampToEdge => value.clamp(0.0, 1.0),
+        TextureWrap::ClampToEdge | TextureWrap::ClampToBorderWhite => value.clamp(0.0, 1.0),
         TextureWrap::MirroredRepeat => {
             let value = value.rem_euclid(2.0);
             if value > 1.0 { 2.0 - value } else { value }
@@ -796,7 +795,9 @@ fn texture_index(value: i64, size: u32, wrap: TextureWrap) -> u32 {
     let size = i64::from(size);
     match wrap {
         TextureWrap::Repeat => value.rem_euclid(size) as u32,
-        TextureWrap::ClampToEdge => value.clamp(0, size - 1) as u32,
+        TextureWrap::ClampToEdge | TextureWrap::ClampToBorderWhite => {
+            value.clamp(0, size - 1) as u32
+        }
         TextureWrap::MirroredRepeat => {
             let index = value.rem_euclid(size * 2);
             if index < size {
@@ -820,6 +821,15 @@ fn sample_texture(texture: &Texture, uv: [f64; 2]) -> [f64; 4] {
     reason = "Validated framebuffer and texture bounds keep indices representable; color and depth quantization intentionally reduce precision"
 )]
 fn sample_texture_with_filter(texture: &Texture, uv: [f64; 2], filter: TextureFilter) -> [f64; 4] {
+    if [texture.wrap_s, texture.wrap_t]
+        .into_iter()
+        .zip(uv)
+        .any(|(wrap, coordinate)| {
+            wrap == TextureWrap::ClampToBorderWhite && !(0.0..=1.0).contains(&coordinate)
+        })
+    {
+        return [1.0; 4];
+    }
     let width = texture.image.width();
     let height = texture.image.height();
     let u = wrap_coordinate(uv[0], texture.wrap_s);
@@ -1065,7 +1075,7 @@ fn render_view(
         if let Some((vertices, normal)) = geometry.triangle(triangle) {
             if let Some(appearance) = scene.appearances.get(&index) {
                 let resolved =
-                    normal_color_fallback(appearance, triangle.color.unwrap_or(options.color));
+                    attribute_color_fallback(appearance, triangle.color.unwrap_or(options.color));
                 fragments += canvas.appearance_triangle(
                     vertices.map(|p| projection.project(p)),
                     resolved.as_ref().unwrap_or(appearance),
@@ -1589,6 +1599,88 @@ mod tests {
         assert_eq!(image.get_pixel(1, 6).0, [0, 0, 255, 255]);
         assert_eq!(image.get_pixel(6, 6).0, [255; 4]);
         assert!(image.pixels().all(|pixel| pixel[3] == 255));
+    }
+
+    #[test]
+    fn white_border_preserves_underlying_material_and_only_clamps_selected_axes() {
+        for filter in [TextureFilter::Nearest, TextureFilter::Linear] {
+            let mut texture = color_texture(filter);
+            texture.wrap_s = TextureWrap::ClampToBorderWhite;
+            texture.wrap_t = TextureWrap::ClampToBorderWhite;
+            for coordinates in [
+                [-0.001, 0.25],
+                [1.001, 0.25],
+                [0.25, -0.001],
+                [0.25, 1.001],
+                [f64::MAX, -f64::MAX],
+            ] {
+                assert_eq!(sample_texture(&texture, coordinates), [1.0; 4]);
+            }
+            assert_eq!(
+                encode_color(sample_texture(&texture, [0.0, 0.0])),
+                [255, 0, 0]
+            );
+            assert_eq!(encode_color(sample_texture(&texture, [1.0, 1.0])), [255; 3]);
+            texture.wrap_t = TextureWrap::Repeat;
+            assert_eq!(
+                encode_color(sample_texture(&texture, [0.25, -0.75])),
+                [255, 0, 0]
+            );
+            let appearance = TriangleAppearance {
+                texture: Some(texture),
+                texcoords: Some([[1.5, 0.25]; 3]),
+                base_color: [0.25, 0.5, 0.75, 0.3],
+                alpha_mode: AlphaMode::Blend,
+                unlit: true,
+                ..TriangleAppearance::default()
+            };
+            let color = appearance_color(
+                &appearance,
+                [0.2, 0.3, 0.5],
+                Vec3::new(0.0, 0.0, 1.0),
+                Camera::new(Vec3::new(1.0, -1.0, 1.0)),
+            );
+            assert_eq!(color, appearance.base_color);
+        }
+    }
+
+    #[test]
+    fn attribute_only_appearances_keep_fallback_colors_without_overriding_materials() {
+        let color = [64, 128, 192];
+        let expected = color.map(|value| srgb_to_linear(f64::from(value) / 255.0));
+        let uv_only = TriangleAppearance {
+            texcoords: Some([[0.5; 2]; 3]),
+            ..TriangleAppearance::default()
+        };
+        let resolved = attribute_color_fallback(&uv_only, color).unwrap();
+        assert_eq!(
+            resolved.base_color,
+            [expected[0], expected[1], expected[2], 1.0]
+        );
+        assert_eq!(resolved.texcoords, uv_only.texcoords);
+        let white = attribute_color_fallback(&uv_only, [255; 3]).unwrap();
+        assert_eq!(white.base_color, [1.0; 4]);
+        for appearance in [
+            TriangleAppearance {
+                base_color: [0.5, 0.5, 0.5, 1.0],
+                ..uv_only.clone()
+            },
+            TriangleAppearance {
+                texture: Some(color_texture(TextureFilter::Nearest)),
+                ..uv_only.clone()
+            },
+            TriangleAppearance {
+                colors: Some([[0.5; 4]; 3]),
+                ..uv_only.clone()
+            },
+            TriangleAppearance {
+                alpha_mode: AlphaMode::Blend,
+                ..uv_only
+            },
+            TriangleAppearance::default(),
+        ] {
+            assert!(attribute_color_fallback(&appearance, color).is_none());
+        }
     }
 
     #[test]

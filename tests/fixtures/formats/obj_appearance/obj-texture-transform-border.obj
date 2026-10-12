@@ -1,0 +1,30 @@
+# Author-created diffuse map controls; MIT
+mtllib maps.mtl
+v 0 0 0
+v 1 0 .25
+v 1 1 .375
+v 0 1 .125
+v 1.5 0 .375
+v 2.5 0 .625
+v 2.5 1 .75
+v 1.5 1 .5
+v 0 1.5 .1875
+v 1 1.5 .4375
+v 1 2.5 .5625
+v 0 2.5 .3125
+v 1.5 1.5 .5625
+v 2.5 1.5 .8125
+v 2.5 2.5 .9375
+v 1.5 2.5 .6875
+vt -.5 0
+vt .75 0
+vt .75 1
+vt -.5 1
+usemtl plain
+f 1 2 3 4
+usemtl white
+f 5/1 6/2 7/3 8/4
+usemtl repeat
+f 9/1 10/2 11/3 12/4
+usemtl border
+f 13/1 14/2 15/3 16/4

@@ -54,7 +54,7 @@ Common inputs include:
 
 Run `catwalk --list-formats` for the complete extension list. Each reader supports a documented subset; the [coverage matrix](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md) lists supported encodings, scene features and limitations.
 
-Models use a fitted static view. Supported colors and materials are preserved; glTF/GLB and 3MF additionally support base-color textures. Animation files use a supported static pose or sample. Raster images are fitted to the canvas with their proportions preserved.
+Models use a fitted static view. Supported colors and materials are preserved; OBJ, glTF/GLB and 3MF additionally support base-color textures. Animation files use a supported static pose or sample. Raster images are fitted to the canvas with their proportions preserved.
 
 COLLADA (`.dae`) previews include static surfaces, colored wire geometry, planar polygon holes and supported node placements, including `lookat` and angular `skew`. Controllers, textures and animation remain outside this reader's static subset; see [its coverage entry](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#collada) for limits and tested examples.
 
@@ -121,7 +121,7 @@ Add the dependency:
 
 ```toml
 [dependencies]
-catwalk3d = "1"
+catwalk3d = "2"
 ```
 
 ```rust,no_run
@@ -144,6 +144,8 @@ fn main() -> catwalk3d::Result<()> {
 `thumbnail` follows the same saved-image preference and geometry fallback as the CLI. `geometry_thumbnail` forces stored-geometry rendering. For supported documents, `saved_preview::extract` returns an image at its original dimensions, or `None` when the reader finds no saved image; malformed or unsupported carriers can return an error. `saved_preview::inventor::extract_png` preserves native PNG bit depth and strips ancillary metadata.
 
 For custom scenes, `formats::load` produces a `scene::Scene` containing triangles, points, line segments and supported appearances. Pass it to `render::render`, or construct your own scene. `write_png` accepts any `std::io::Write`, including buffers and stdout. See the [API reference](https://docs.rs/catwalk3d/) for the types and functions.
+
+When migrating Rust code to 2.x, include a wildcard arm in matches on the now non-exhaustive `scene::TextureWrap`. Its new `ClampToBorderWhite` mode preserves the underlying material outside a texture's unit square. OBJ material `Kd` now uses linear diffuse reflectivity consistently, so older OBJ material thumbnails can become brighter. OBJ previews also retain imported normals, per-corner UVs and RGB, local diffuse image maps and dissolve opacity; see the [OBJ coverage entry](docs/format-coverage.md#obj) for supported options and limits.
 
 ## Tests and example gallery
 
