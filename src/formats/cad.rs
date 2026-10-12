@@ -3,12 +3,12 @@
 //! Primary implementation: <https://github.com/gilbertorconde/ogeom-rs>
 use crate::{
     Result,
-    scene::{Point, Scene, Triangle, Vec3},
+    scene::{AlphaMode, Point, Scene, Triangle, TriangleAppearance, Vec3},
 };
 use ogeom_core::Tolerances;
 use ogeom_topo::{EdgeRepr, Filter, Model, NodeData, Shape, ShapeType, explore};
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     path::Path,
 };
 
@@ -23,6 +23,10 @@ mod iges_preview;
 /// Preserve authored analytic frames while using the upstream BREP topology reader.
 #[path = "brep_frames.rs"]
 mod brep_frames;
+
+/// Restore native endpoint and connected wire traversal order through public topology constructors.
+#[path = "brep_wires.rs"]
+mod brep_wires;
 
 /// Standard millimetre-scale numerical tolerances for the Rust CAD kernel.
 const TOLERANCES: Tolerances = Tolerances::millimetres();
@@ -60,6 +64,47 @@ pub(super) fn load(path: &Path) -> Result<Scene> {
 /// The text is malformed, contains unsupported geometry or exceeds topology/tessellation limits.
 pub(super) fn load_brep_text(text: &str) -> Result<Scene> {
     parse(text.as_bytes(), "brep")
+}
+
+/// Import fully validated ASCII BREP into unchanged public kernel objects.
+///
+/// # Errors
+///
+/// Input size, native tables, topology, frames or carrier placements are invalid or unsupported.
+pub(super) fn read_brep_model(text: &str) -> Result<(Model, Shape)> {
+    if text.len() > MAX_CAD_BYTES {
+        return Err("CAD input exceeds the 16 MiB preview limit".into());
+    }
+    validate_brep(text)?;
+    let normalized = normalize_brep_caches(text)?;
+    let carriers = carriers::Metadata::parse(&normalized)?;
+    let (mut model, root) = read_brep_with_authored_frames(&normalized, TOLERANCES)?;
+    validate_topology(&model, &root)?;
+    carriers.restore(&mut model, &root, TOLERANCES)?;
+    restore_brep_wire_order(&mut model)?;
+    Ok((model, root))
+}
+
+/// Restore native endpoint and complete wire occurrence order after geometry-carrier restoration.
+///
+/// # Errors
+///
+/// Native endpoint roles, closure, placement identity, ambiguity or normalization limits are invalid.
+pub(super) fn restore_brep_wire_order(model: &mut Model) -> Result<()> {
+    brep_wires::restore(model)
+}
+
+/// Optional document style applied while preserving native face identities.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(super) struct ShapeStyle {
+    /// Uniform source sRGB color for faces, free edges and isolated points.
+    pub color: [u8; 3],
+    /// Uniform linear opacity, combined with per-face opacity by minimum.
+    pub alpha: u8,
+    /// Per-face source sRGB and opacity, in first-seen native occurrence order.
+    pub faces: Vec<[u8; 4]>,
+    /// Render all boundary edges instead of faces for qualified wireframe objects.
+    pub wireframe: bool,
 }
 
 /// Decode native BREP topology while retaining all authored analytic frame axes.
@@ -139,16 +184,11 @@ fn parse(bytes: &[u8], extension: &str) -> Result<Scene> {
                 return Err("IGES exceeds 1024 preview bodies".into());
             }
             for shape in imported.solids.iter().chain(&imported.sheets) {
-                append_shape_with_tolerances(&mut scene, model, shape, tolerances)?;
+                append_shape_with_tolerances(&mut scene, model, shape, tolerances, None)?;
             }
         }
         "brep" => {
-            validate_brep(text)?;
-            let normalized = normalize_brep_caches(text)?;
-            let carriers = carriers::Metadata::parse(&normalized)?;
-            let (mut model, root) = read_brep_with_authored_frames(&normalized, TOLERANCES)?;
-            validate_topology(&model, &root)?;
-            carriers.restore(&mut model, &root, TOLERANCES)?;
+            let (model, root) = read_brep_model(text)?;
             append_shape(&mut scene, &model, &root)?;
         }
         _ => return Err("unsupported CAD exchange extension".into()),
@@ -163,7 +203,21 @@ fn parse(bytes: &[u8], extension: &str) -> Result<Scene> {
 ///
 /// Topology is invalid, geometry cannot be evaluated or preview tessellation limits are exceeded.
 pub(super) fn append_shape(scene: &mut Scene, model: &Model, root: &Shape) -> Result<()> {
-    append_shape_with_tolerances(scene, model, root, TOLERANCES)
+    append_shape_with_tolerances(scene, model, root, TOLERANCES, None)
+}
+
+/// Append a document shape with native face colors or qualified wireframe display.
+///
+/// # Errors
+///
+/// Native face-style counts, topology, geometry evaluation or preview limits are invalid.
+pub(super) fn append_shape_styled(
+    scene: &mut Scene,
+    model: &Model,
+    root: &Shape,
+    style: &ShapeStyle,
+) -> Result<()> {
+    append_shape_with_tolerances(scene, model, root, TOLERANCES, Some(style))
 }
 
 /// Append every supported face, free curve and isolated vertex at the requested tolerances.
@@ -180,13 +234,29 @@ fn append_shape_with_tolerances(
     model: &Model,
     root: &Shape,
     tolerances: Tolerances,
+    style: Option<&ShapeStyle>,
 ) -> Result<()> {
     validate_topology(model, root)?;
     let faces = explore(model, root, Filter::OfType(ShapeType::Face))?;
     if faces.len() > MAX_FACES {
         return Err("CAD body exceeds 4096 preview faces".into());
     }
-    if !faces.is_empty() {
+    let wireframe = style.is_some_and(|style| style.wireframe);
+    let mut face_indices = HashMap::new();
+    if let Some(style) = style
+        && !style.faces.is_empty()
+    {
+        for face in &faces {
+            let index = face_indices.len();
+            face_indices
+                .entry((face.node(), face.location().clone()))
+                .or_insert(index);
+        }
+        if face_indices.len() != style.faces.len() {
+            return Err("CAD face color count disagrees with native faces".into());
+        }
+    }
+    if !faces.is_empty() && !wireframe {
         // Use actual analytic/curve bounds, including a curved boundary's
         // bulge, rather than fitting tessellation to its control vertices.
         let diagonal = ogeom_algo::shape_bounds(model, root, tolerances)?.diagonal();
@@ -231,8 +301,20 @@ fn append_shape_with_tolerances(
         if meshes.len() != faces.len() {
             return Err("CAD tessellation omitted a face".into());
         }
-        for (_, mesh) in meshes {
+        for (face, mesh) in meshes {
             let mesh = mesh?;
+            let color = style.map(|style| {
+                face_indices
+                    .get(&(face.node(), face.location().clone()))
+                    .map_or(
+                        [style.color[0], style.color[1], style.color[2], style.alpha],
+                        |&index| {
+                            let mut color = style.faces[index];
+                            color[3] = color[3].min(style.alpha);
+                            color
+                        },
+                    )
+            });
             if mesh.triangles.is_empty() || !mesh.deflection_met {
                 return Err("CAD face failed the requested preview tessellation tolerance".into());
             }
@@ -250,8 +332,26 @@ fn append_shape_with_tolerances(
                 }
                 scene.triangles.push(Triangle {
                     vertices,
-                    color: None,
+                    color: color.map(|color| [color[0], color[1], color[2]]),
                 });
+                if let Some([r, g, b, alpha]) = color.filter(|color| color[3] != 255) {
+                    let linear = |channel: u8| {
+                        let encoded = f64::from(channel) / 255.0;
+                        if encoded <= 0.04045 {
+                            encoded / 12.92
+                        } else {
+                            ((encoded + 0.055) / 1.055).powf(2.4)
+                        }
+                    };
+                    scene.appearances.insert(
+                        scene.triangles.len() - 1,
+                        TriangleAppearance {
+                            base_color: [linear(r), linear(g), linear(b), f64::from(alpha) / 255.0],
+                            alpha_mode: AlphaMode::Blend,
+                            ..TriangleAppearance::default()
+                        },
+                    );
+                }
             }
         }
     }
@@ -260,7 +360,7 @@ fn append_shape_with_tolerances(
     // overlay; every free curve is evaluated on its stored parameter range.
     let mut edges_seen = HashSet::new();
     let mut vertices_seen = HashSet::new();
-    for face in &faces {
+    for face in faces.iter().filter(|_| !wireframe) {
         for edge in explore(model, face, Filter::OfType(ShapeType::Edge))? {
             edges_seen.insert((edge.node(), edge.location().clone()));
         }
@@ -307,7 +407,7 @@ fn append_shape_with_tolerances(
                 });
                 scene.lines.push(crate::scene::Line {
                     vertices,
-                    color: None,
+                    color: style.map(|style| style.color),
                 });
             }
         }
@@ -326,7 +426,7 @@ fn append_shape_with_tolerances(
         let p = vertex.transform(model.datums())?.apply(data.point);
         scene.points.push(Point {
             position: Vec3::new(p.x, p.y, p.z),
-            color: None,
+            color: style.map(|style| style.color),
         });
     }
     Ok(())
@@ -1310,7 +1410,7 @@ mod tests {
             .shape;
         let authored = Tolerances::with_scale(ogeom_core::tolerance::CONFUSION / 0.001).unwrap();
         let mut scene = Scene::default();
-        append_shape_with_tolerances(&mut scene, &model, &root, authored).unwrap();
+        append_shape_with_tolerances(&mut scene, &model, &root, authored, None).unwrap();
         let maximum_sag = scene
             .triangles
             .iter()

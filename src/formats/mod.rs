@@ -23,6 +23,10 @@ mod dwg;
 mod dxf;
 /// Static and first-pose FBX geometry with supported deformations.
 mod fbx;
+/// Stored FreeCAD BREP geometry, document selection and native placements.
+mod fcstd;
+/// Shared bounded FreeCAD archive admission and selected member decoding.
+pub(crate) mod fcstd_container;
 /// glTF/GLB scenes, appearances, deformations and supported extensions.
 mod gltf;
 /// Owned filtered HDF5 index reads using upstream metadata, codec and numeric APIs.
@@ -85,6 +89,8 @@ mod volume;
 mod vrml;
 /// Binary XCAF document geometry, placement and color tables.
 mod xbf;
+/// Physical ZIP directory counts and duplicates checked before library indexing.
+mod zip_directory;
 
 use crate::{Result, scene::Scene};
 use std::path::Path;
@@ -96,7 +102,7 @@ pub const MODEL_EXTENSIONS: &[&str] = &[
     "3ds", "wrl", "vrml", "gml", "usd", "usda", "usdc", "usdz", "spz", "vti", "nrrd", "nhdr",
     "mhd", "mha", "dxf", "bpf", "bin", "qi", "sbet", "csd", "x", "drc", "fbx", "vtkhdf", "e",
     "ex2", "exo", "g", "nc", "cdf", "ncdf", "slpk", "abc", "ifc", "vdb", "iges", "igs", "brep",
-    "xbf", "amf", "lys", "tif", "tiff",
+    "xbf", "amf", "lys", "tif", "tiff", "fcstd",
 ];
 /// Raster extension aliases; scalar multipage TIFF additionally renders as a volume.
 pub const IMAGE_EXTENSIONS: &[&str] = &[
@@ -104,7 +110,7 @@ pub const IMAGE_EXTENSIONS: &[&str] = &[
 ];
 
 /// Document formats with geometry readers in addition to saved-image extraction.
-pub const NATIVE_GEOMETRY_EXTENSIONS: &[&str] = &["blend", "lbrn", "lbrn2", "dwg", "lys"];
+pub const NATIVE_GEOMETRY_EXTENSIONS: &[&str] = &["blend", "lbrn", "lbrn2", "dwg", "lys", "fcstd"];
 
 /// Return the path's extension in ASCII lowercase, without its leading dot.
 ///
@@ -129,6 +135,7 @@ pub fn load(path: &Path) -> Result<Scene> {
         "lbrn" | "lbrn2" => lightburn::load(path)?,
         "dwg" => dwg::load(path)?,
         "lys" => lychee::load(path)?,
+        "fcstd" => fcstd::load(path)?,
         "tif" | "tiff" => tiff_volume::load(path)?,
         "stl" | "obj" | "ply" | "off" | "pts" | "ptx" | "pcd" | "splat" => mesh::load(path)?,
         "gltf" | "glb" => gltf::load(path)?,

@@ -617,6 +617,158 @@
       "title": "FBX real weighted clusters and current bone pose"
     },
     {
+      "extension": "fcstd",
+      "id": "fcstd-arch-floor-geometry",
+      "input": "freecad/arch_floor.FCStd",
+      "kind": "native-geometry",
+      "provenance": "Unmodified original f3d-app/f3d testing/data/arch_floor.FCStd at commit efb898d0943b4d73b8ef707fb333292493151ef8; BSD-3-Clause, original license and dataset mapping retained as freecad/LICENSE.md and freecad/DATA_LICENSES.md. Original FreeCAD document reference; upstream includes modified protocol controls as well as application exports. Exact source hashes and selection details are in freecad/README.md. Fresh geometry uses the original addressed ASCII BREP shapes and native document placements; saved images are bypassed. https://github.com/f3d-app/f3d/blob/efb898d0943b4d73b8ef707fb333292493151ef8/testing/data/arch_floor.FCStd",
+      "title": "FreeCAD original nested floor without duplicate solids"
+    },
+    {
+      "extension": "fcstd",
+      "id": "fcstd-bracket-1x-geometry",
+      "input": "freecad/bracket_1x.FCStd",
+      "kind": "native-geometry",
+      "provenance": "Unmodified original f3d-app/f3d testing/data/bracket_1x.FCStd at commit efb898d0943b4d73b8ef707fb333292493151ef8; BSD-3-Clause, original license and dataset mapping retained as freecad/LICENSE.md and freecad/DATA_LICENSES.md. Original FreeCAD document reference; upstream includes modified protocol controls as well as application exports. Exact source hashes and selection details are in freecad/README.md. Fresh geometry uses the original addressed ASCII BREP shapes and native document placements; saved images are bypassed. https://github.com/f3d-app/f3d/blob/efb898d0943b4d73b8ef707fb333292493151ef8/testing/data/bracket_1x.FCStd",
+      "title": "FreeCAD 1.1 original bracket and tube materials"
+    },
+    {
+      "extension": "fcstd",
+      "id": "fcstd-bracket-1x-saved-preview",
+      "input": "freecad/bracket_1x.FCStd",
+      "kind": "saved-preview",
+      "provenance": "Unmodified original f3d-app/f3d testing/data/bracket_1x.FCStd at commit efb898d0943b4d73b8ef707fb333292493151ef8; BSD-3-Clause, original license and dataset mapping retained as freecad/LICENSE.md and freecad/DATA_LICENSES.md. Original FreeCAD document reference; upstream includes modified protocol controls as well as application exports. Exact source hashes and selection details are in freecad/README.md. The exact addressed thumbnails/Thumbnail.png is fitted to the preview canvas; a stored image may differ from current geometry. https://github.com/f3d-app/f3d/blob/efb898d0943b4d73b8ef707fb333292493151ef8/testing/data/bracket_1x.FCStd",
+      "title": "FreeCAD 1.1 original saved bracket PNG"
+    },
+    {
+      "extension": "fcstd",
+      "id": "fcstd-colored-visibility-geometry",
+      "input": "freecad/colored_visibility.FCStd",
+      "kind": "native-geometry",
+      "provenance": "Unmodified original f3d-app/f3d testing/data/colored_visibility.FCStd at commit efb898d0943b4d73b8ef707fb333292493151ef8; BSD-3-Clause, original license and dataset mapping retained as freecad/LICENSE.md and freecad/DATA_LICENSES.md. Original FreeCAD document reference; upstream includes modified protocol controls as well as application exports. Exact source hashes and selection details are in freecad/README.md. Fresh geometry uses the original addressed ASCII BREP shapes and native document placements; saved images are bypassed. https://github.com/f3d-app/f3d/blob/efb898d0943b4d73b8ef707fb333292493151ef8/testing/data/colored_visibility.FCStd",
+      "title": "FreeCAD original visible colored solid"
+    },
+    {
+      "extension": "fcstd",
+      "id": "fcstd-colored-visibility-saved-preview",
+      "input": "freecad/colored_visibility.FCStd",
+      "kind": "saved-preview",
+      "provenance": "Unmodified original f3d-app/f3d testing/data/colored_visibility.FCStd at commit efb898d0943b4d73b8ef707fb333292493151ef8; BSD-3-Clause, original license and dataset mapping retained as freecad/LICENSE.md and freecad/DATA_LICENSES.md. Original FreeCAD document reference; upstream includes modified protocol controls as well as application exports. Exact source hashes and selection details are in freecad/README.md. The exact addressed thumbnails/Thumbnail.png is fitted to the preview canvas; a stored image may differ from current geometry. https://github.com/f3d-app/f3d/blob/efb898d0943b4d73b8ef707fb333292493151ef8/testing/data/colored_visibility.FCStd",
+      "title": "FreeCAD original saved scene PNG"
+    },
+    {
+      "extension": "fcstd",
+      "id": "fcstd-draft-wireframe-geometry",
+      "input": "freecad/draft_wireframe.FCStd",
+      "kind": "native-geometry",
+      "provenance": "Unmodified original f3d-app/f3d testing/data/draft_wireframe.FCStd at commit efb898d0943b4d73b8ef707fb333292493151ef8; BSD-3-Clause, original license and dataset mapping retained as freecad/LICENSE.md and freecad/DATA_LICENSES.md. Original FreeCAD document reference; upstream includes modified protocol controls as well as application exports. Exact source hashes and selection details are in freecad/README.md. Fresh geometry uses the original addressed ASCII BREP shapes and native document placements; saved images are bypassed. https://github.com/f3d-app/f3d/blob/efb898d0943b4d73b8ef707fb333292493151ef8/testing/data/draft_wireframe.FCStd",
+      "title": "FreeCAD original draft wireframe geometry"
+    },
+    {
+      "extension": "fcstd",
+      "id": "fcstd-face-colors-geometry",
+      "input": "freecad/face_colors.FCStd",
+      "kind": "native-geometry",
+      "provenance": "Unmodified original f3d-app/f3d testing/data/face_colors.FCStd at commit efb898d0943b4d73b8ef707fb333292493151ef8; BSD-3-Clause, original license and dataset mapping retained as freecad/LICENSE.md and freecad/DATA_LICENSES.md. Original FreeCAD document reference; upstream includes modified protocol controls as well as application exports. Exact source hashes and selection details are in freecad/README.md. Fresh geometry uses the original addressed ASCII BREP shapes and native document placements; saved images are bypassed. https://github.com/f3d-app/f3d/blob/efb898d0943b4d73b8ef707fb333292493151ef8/testing/data/face_colors.FCStd",
+      "title": "FreeCAD original native face colors"
+    },
+    {
+      "extension": "fcstd",
+      "id": "fcstd-gui-without-view-providers-geometry",
+      "input": "freecad/gui_without_view_providers.FCStd",
+      "kind": "native-geometry",
+      "provenance": "Unmodified original f3d-app/f3d testing/data/gui_without_view_providers.FCStd at commit efb898d0943b4d73b8ef707fb333292493151ef8; BSD-3-Clause, original license and dataset mapping retained as freecad/LICENSE.md and freecad/DATA_LICENSES.md. Original FreeCAD document reference; upstream includes modified protocol controls as well as application exports. Exact source hashes and selection details are in freecad/README.md. Fresh geometry uses the original addressed ASCII BREP shapes and native document placements; saved images are bypassed. https://github.com/f3d-app/f3d/blob/efb898d0943b4d73b8ef707fb333292493151ef8/testing/data/gui_without_view_providers.FCStd",
+      "title": "FreeCAD original document without GUI providers"
+    },
+    {
+      "extension": "fcstd",
+      "id": "fcstd-headless-geometry",
+      "input": "freecad/headless.FCStd",
+      "kind": "native-geometry",
+      "provenance": "Unmodified original f3d-app/f3d testing/data/headless.FCStd at commit efb898d0943b4d73b8ef707fb333292493151ef8; BSD-3-Clause, original license and dataset mapping retained as freecad/LICENSE.md and freecad/DATA_LICENSES.md. Original FreeCAD document reference; upstream includes modified protocol controls as well as application exports. Exact source hashes and selection details are in freecad/README.md. Fresh geometry uses the original addressed ASCII BREP shapes and native document placements; saved images are bypassed. https://github.com/f3d-app/f3d/blob/efb898d0943b4d73b8ef707fb333292493151ef8/testing/data/headless.FCStd",
+      "title": "FreeCAD original headless document geometry"
+    },
+    {
+      "extension": "fcstd",
+      "id": "fcstd-hidden-container-geometry",
+      "input": "freecad/hidden_container.FCStd",
+      "kind": "native-geometry",
+      "provenance": "Unmodified original f3d-app/f3d testing/data/hidden_container.FCStd at commit efb898d0943b4d73b8ef707fb333292493151ef8; BSD-3-Clause, original license and dataset mapping retained as freecad/LICENSE.md and freecad/DATA_LICENSES.md. Original FreeCAD document reference; upstream includes modified protocol controls as well as application exports. Exact source hashes and selection details are in freecad/README.md. Fresh geometry uses the original addressed ASCII BREP shapes and native document placements; saved images are bypassed. https://github.com/f3d-app/f3d/blob/efb898d0943b4d73b8ef707fb333292493151ef8/testing/data/hidden_container.FCStd",
+      "title": "FreeCAD original hidden container selection"
+    },
+    {
+      "extension": "fcstd",
+      "id": "fcstd-legacy-visibility-geometry",
+      "input": "freecad/legacy_visibility.FCStd",
+      "kind": "native-geometry",
+      "provenance": "Unmodified original f3d-app/f3d testing/data/legacy_visibility.FCStd at commit efb898d0943b4d73b8ef707fb333292493151ef8; BSD-3-Clause, original license and dataset mapping retained as freecad/LICENSE.md and freecad/DATA_LICENSES.md. Original FreeCAD document reference; upstream includes modified protocol controls as well as application exports. Exact source hashes and selection details are in freecad/README.md. Fresh geometry uses the original addressed ASCII BREP shapes and native document placements; saved images are bypassed. https://github.com/f3d-app/f3d/blob/efb898d0943b4d73b8ef707fb333292493151ef8/testing/data/legacy_visibility.FCStd",
+      "title": "FreeCAD original legacy visibility"
+    },
+    {
+      "extension": "fcstd",
+      "id": "fcstd-link-array-geometry",
+      "input": "freecad/link_array.FCStd",
+      "kind": "native-geometry",
+      "provenance": "Unmodified original f3d-app/f3d testing/data/link_array.FCStd at commit efb898d0943b4d73b8ef707fb333292493151ef8; BSD-3-Clause, original license and dataset mapping retained as freecad/LICENSE.md and freecad/DATA_LICENSES.md. Original FreeCAD document reference; upstream includes modified protocol controls as well as application exports. Exact source hashes and selection details are in freecad/README.md. Fresh geometry uses the original addressed ASCII BREP shapes and native document placements; saved images are bypassed. https://github.com/f3d-app/f3d/blob/efb898d0943b4d73b8ef707fb333292493151ef8/testing/data/link_array.FCStd",
+      "title": "FreeCAD original placed model array"
+    },
+    {
+      "extension": "fcstd",
+      "id": "fcstd-link-array-transform-geometry",
+      "input": "freecad/link_array_transform.FCStd",
+      "kind": "native-geometry",
+      "provenance": "Unmodified original f3d-app/f3d testing/data/link_array_transform.FCStd at commit efb898d0943b4d73b8ef707fb333292493151ef8; BSD-3-Clause, original license and dataset mapping retained as freecad/LICENSE.md and freecad/DATA_LICENSES.md. Original FreeCAD document reference; upstream includes modified protocol controls as well as application exports. Exact source hashes and selection details are in freecad/README.md. Fresh geometry uses the original addressed ASCII BREP shapes and native document placements; saved images are bypassed. https://github.com/f3d-app/f3d/blob/efb898d0943b4d73b8ef707fb333292493151ef8/testing/data/link_array_transform.FCStd",
+      "title": "FreeCAD original rotated model array"
+    },
+    {
+      "extension": "fcstd",
+      "id": "fcstd-link-geometry",
+      "input": "freecad/link.FCStd",
+      "kind": "native-geometry",
+      "provenance": "Unmodified original f3d-app/f3d testing/data/link.FCStd at commit efb898d0943b4d73b8ef707fb333292493151ef8; BSD-3-Clause, original license and dataset mapping retained as freecad/LICENSE.md and freecad/DATA_LICENSES.md. Original FreeCAD document reference; upstream includes modified protocol controls as well as application exports. Exact source hashes and selection details are in freecad/README.md. Fresh geometry uses the original addressed ASCII BREP shapes and native document placements; saved images are bypassed. https://github.com/f3d-app/f3d/blob/efb898d0943b4d73b8ef707fb333292493151ef8/testing/data/link.FCStd",
+      "title": "FreeCAD original local link placement"
+    },
+    {
+      "extension": "fcstd",
+      "id": "fcstd-link-transform-geometry",
+      "input": "freecad/link_transform.FCStd",
+      "kind": "native-geometry",
+      "provenance": "Unmodified original f3d-app/f3d testing/data/link_transform.FCStd at commit efb898d0943b4d73b8ef707fb333292493151ef8; BSD-3-Clause, original license and dataset mapping retained as freecad/LICENSE.md and freecad/DATA_LICENSES.md. Original FreeCAD document reference; upstream includes modified protocol controls as well as application exports. Exact source hashes and selection details are in freecad/README.md. Fresh geometry uses the original addressed ASCII BREP shapes and native document placements; saved images are bypassed. https://github.com/f3d-app/f3d/blob/efb898d0943b4d73b8ef707fb333292493151ef8/testing/data/link_transform.FCStd",
+      "title": "FreeCAD original composed link transform"
+    },
+    {
+      "extension": "fcstd",
+      "id": "fcstd-no-version-geometry",
+      "input": "freecad/no_version.FCStd",
+      "kind": "native-geometry",
+      "provenance": "Unmodified original f3d-app/f3d testing/data/no_version.FCStd at commit efb898d0943b4d73b8ef707fb333292493151ef8; BSD-3-Clause, original license and dataset mapping retained as freecad/LICENSE.md and freecad/DATA_LICENSES.md. Original FreeCAD document reference; upstream includes modified protocol controls as well as application exports. Exact source hashes and selection details are in freecad/README.md. Fresh geometry uses the original addressed ASCII BREP shapes and native document placements; saved images are bypassed. https://github.com/f3d-app/f3d/blob/efb898d0943b4d73b8ef707fb333292493151ef8/testing/data/no_version.FCStd",
+      "title": "FreeCAD original colors without producer version metadata"
+    },
+    {
+      "extension": "fcstd",
+      "id": "fcstd-part-container-geometry",
+      "input": "freecad/part_container.FCStd",
+      "kind": "native-geometry",
+      "provenance": "Unmodified original f3d-app/f3d testing/data/part_container.FCStd at commit efb898d0943b4d73b8ef707fb333292493151ef8; BSD-3-Clause, original license and dataset mapping retained as freecad/LICENSE.md and freecad/DATA_LICENSES.md. Original FreeCAD document reference; upstream includes modified protocol controls as well as application exports. Exact source hashes and selection details are in freecad/README.md. Fresh geometry uses the original addressed ASCII BREP shapes and native document placements; saved images are bypassed. https://github.com/f3d-app/f3d/blob/efb898d0943b4d73b8ef707fb333292493151ef8/testing/data/part_container.FCStd",
+      "title": "FreeCAD original rotated part container"
+    },
+    {
+      "extension": "fcstd",
+      "id": "fcstd-partdesign-body-geometry",
+      "input": "freecad/partdesign_body.FCStd",
+      "kind": "native-geometry",
+      "provenance": "Unmodified original f3d-app/f3d testing/data/partdesign_body.FCStd at commit efb898d0943b4d73b8ef707fb333292493151ef8; BSD-3-Clause, original license and dataset mapping retained as freecad/LICENSE.md and freecad/DATA_LICENSES.md. Original FreeCAD document reference; upstream includes modified protocol controls as well as application exports. Exact source hashes and selection details are in freecad/README.md. Fresh geometry uses the original addressed ASCII BREP shapes and native document placements; saved images are bypassed. https://github.com/f3d-app/f3d/blob/efb898d0943b4d73b8ef707fb333292493151ef8/testing/data/partdesign_body.FCStd",
+      "title": "FreeCAD original body result and side solid"
+    },
+    {
+      "extension": "fcstd",
+      "id": "fcstd-transparency-geometry",
+      "input": "freecad/transparency.FCStd",
+      "kind": "native-geometry",
+      "provenance": "Unmodified original f3d-app/f3d testing/data/transparency.FCStd at commit efb898d0943b4d73b8ef707fb333292493151ef8; BSD-3-Clause, original license and dataset mapping retained as freecad/LICENSE.md and freecad/DATA_LICENSES.md. Original FreeCAD document reference; upstream includes modified protocol controls as well as application exports. Exact source hashes and selection details are in freecad/README.md. Fresh geometry uses the original addressed ASCII BREP shapes and native document placements; saved images are bypassed. https://github.com/f3d-app/f3d/blob/efb898d0943b4d73b8ef707fb333292493151ef8/testing/data/transparency.FCStd",
+      "title": "FreeCAD original transparent materials"
+    },
+    {
       "extension": "g",
       "id": "exodus-g-blocks",
       "input": "scientific_cad/exodus-g-blocks.g",

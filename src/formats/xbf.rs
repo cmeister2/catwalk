@@ -1679,6 +1679,7 @@ impl Tables {
             return Err("XBF topology conversion omitted a primitive".into());
         }
         self.restore_representation_locations(&mut model, &children[..self.shapes.len()])?;
+        super::cad::restore_brep_wire_order(&mut model)?;
         let mut scene = Scene::default();
         for (shape, (_, _, color)) in children
             .into_iter()
