@@ -13,8 +13,17 @@ export default {
   plugins: [
     ['@semantic-release/commit-analyzer', { preset: 'conventionalcommits' }],
     [releaseNotesGenerator, { preset: 'conventionalcommits' }],
+    ['@semantic-release/exec', {
+      prepareCmd: 'node .github/release/verify.mjs ${nextRelease.version} ${nextRelease.gitHead}',
+    }],
     '@semantic-release-cargo/semantic-release-cargo',
     ['@semantic-release/github', {
+      assets: [
+        'release-assets/*.zip',
+        'release-assets/*.json',
+        'release-assets/*.zip.sha256',
+        'release-assets/SHA256SUMS',
+      ],
       successComment: false,
       failComment: false,
       failTitle: false,

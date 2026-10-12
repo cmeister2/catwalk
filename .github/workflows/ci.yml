@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
   checks:
     runs-on: ubuntu-latest
@@ -48,7 +52,7 @@ jobs:
       - name: Check runtime geometry and compression backends
         shell: bash
         run: |
-          for platform in x86_64-unknown-linux-gnu aarch64-apple-darwin x86_64-pc-windows-msvc; do
+          for platform in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu x86_64-unknown-linux-musl aarch64-unknown-linux-musl x86_64-apple-darwin aarch64-apple-darwin x86_64-pc-windows-msvc; do
             cargo tree --locked --target "$platform" --edges normal,build --prefix none > "target/runtime-$platform.txt"
             if rg '^(zstd-sys|zstd-safe|libz-sys|libz-ng-sys|hdf5-sys|netcdf-sys|assimp-sys|vtk-sys|occt-sys|bzip2-sys|cmake|bindgen|cc) v' "target/runtime-$platform.txt"; then
               echo 'A native geometry or compression build dependency entered the runtime graph.' >&2
@@ -96,7 +100,7 @@ jobs:
   success:
     name: Success
     if: always()
-    needs: [checks, tests, gallery]
+    needs: [checks, tests, gallery, release-plan, prepare-binaries, binaries]
     runs-on: ubuntu-latest
     steps:
       - name: Require all checks to pass
@@ -104,10 +108,159 @@ jobs:
           CHECKS_RESULT: ${{ needs.checks.result }}
           TESTS_RESULT: ${{ needs.tests.result }}
           GALLERY_RESULT: ${{ needs.gallery.result }}
+          PLAN_RESULT: ${{ needs.release-plan.result }}
+          PREPARE_RESULT: ${{ needs.prepare-binaries.result }}
+          BINARIES_RESULT: ${{ needs.binaries.result }}
         run: |
           test "$CHECKS_RESULT" = success
           test "$TESTS_RESULT" = success
           test "$GALLERY_RESULT" = success
+          test "$PLAN_RESULT" = success || test "$PLAN_RESULT" = skipped
+          test "$PREPARE_RESULT" = success
+          test "$BINARIES_RESULT" = success
+
+  release-plan:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      releasing: ${{ steps.plan.outputs.releasing }}
+      commit: ${{ steps.plan.outputs.commit }}
+      rust-version: ${{ steps.plan.outputs.rust-version }}
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: lts/*
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Plan version and prepare manifests
+        id: plan
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node .github/release/plan.mjs --release
+      - name: Retain planned manifests
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-plan
+          path: release-prepared
+          if-no-files-found: error
+
+  prepare-binaries:
+    needs: release-plan
+    if: ${{ always() && !cancelled() && (needs.release-plan.result == 'success' || needs.release-plan.result == 'skipped') }}
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ needs.release-plan.outputs.version || steps.ci-plan.outputs.version }}
+      releasing: ${{ needs.release-plan.outputs.releasing || steps.ci-plan.outputs.releasing }}
+      commit: ${{ needs.release-plan.outputs.commit || steps.ci-plan.outputs.commit }}
+      rust-version: ${{ needs.release-plan.outputs.rust-version || steps.ci-plan.outputs.rust-version }}
+      matrix: ${{ needs.release-plan.outputs.matrix || steps.ci-plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+        with:
+          toolchain: ${{ needs.release-plan.outputs.rust-version || 'stable' }}
+          components: rust-docs
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          shared-key: release-notices
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: lts/*
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Read CI version
+        if: needs.release-plan.result == 'skipped'
+        id: ci-plan
+        run: node .github/release/plan.mjs --ci
+      - name: Download planned manifests
+        if: needs.release-plan.result == 'success'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-plan
+          path: release-prepared
+      - name: Apply prepared manifests
+        run: cp release-prepared/Cargo.toml release-prepared/Cargo.lock .
+      - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2
+        with:
+          tool: cargo-about@0.9.2
+      - name: Prepare archive documentation
+        run: cp README.md LICENSE release-prepared/
+      - name: Generate runtime license notices
+        run: node .github/release/notices.mjs --output release-prepared
+      - name: Retain prepared binary inputs
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: binary-prepared
+          path: release-prepared
+          if-no-files-found: error
+
+  binaries:
+    needs: prepare-binaries
+    if: ${{ always() && !cancelled() && needs.prepare-binaries.result == 'success' }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare-binaries.outputs.matrix) }}
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      RUSTFLAGS: ${{ matrix.musl && '-C target-feature=+crt-static -C link-self-contained=yes -C linker=rust-lld' || contains(matrix.target, 'windows') && '-C target-feature=+crt-static' || '' }}
+      CATWALK_SNAPSHOT_ARTIFACTS: ${{ github.workspace }}/target/release-snapshots
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+        with:
+          toolchain: ${{ needs.prepare-binaries.outputs.rust-version }}
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          shared-key: release-${{ matrix.target }}
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: lts/*
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Download prepared manifests and notices
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: binary-prepared
+          path: release-prepared
+      - name: Apply prepared manifests
+        run: cp release-prepared/Cargo.toml release-prepared/Cargo.lock .
+      - name: Compile release executable
+        env:
+          TARGET: ${{ matrix.target }}
+        run: cargo build --release --locked --target "$TARGET" --bin catwalk
+      - name: Compare thumbnails using the release executable
+        env:
+          TARGET: ${{ matrix.target }}
+        run: cargo test --release --locked --target "$TARGET" --test format_snapshots
+      - name: Package and test extracted executable
+        env:
+          TARGET: ${{ matrix.target }}
+        run: node .github/release/package.mjs "$TARGET"
+      - name: Retain release archives
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-binary-${{ matrix.target }}
+          path: release-assets
+          if-no-files-found: error
+      - name: Retain release snapshot comparisons
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-snapshots-${{ matrix.target }}
+          path: target/release-snapshots
+          if-no-files-found: warn
 
   gallery:
     needs: [checks, tests]
@@ -149,8 +302,8 @@ jobs:
         uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
 
   release:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: success
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.prepare-binaries.outputs.releasing == 'true'
+    needs: [success, prepare-binaries]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -164,12 +317,20 @@ jobs:
         with:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+        with:
+          toolchain: ${{ needs.prepare-binaries.outputs.rust-version }}
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: lts/*
           cache: npm
       - run: npm ci --ignore-scripts
+      - name: Download verified release archives
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: release-binary-*
+          path: release-assets
+          merge-multiple: true
       - name: Publish crate and GitHub release
         if: env.CARGO_PUBLISH_READY == 'true'
         env:

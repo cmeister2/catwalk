@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Catwalk third-party licenses</title>
+<style>
+body { max-width: 72rem; margin: 2rem auto; padding: 0 1rem; font-family: system-ui, sans-serif; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+a { overflow-wrap: anywhere; }
+</style>
+<h1>Catwalk third-party licenses</h1>
+<p>This document contains license texts and attribution for the Cargo dependency
+union used by Catwalk's released platforms. Catwalk's own license accompanies
+the executable as LICENSE. Rust standard-library notices accompany it as
+RUST-LICENSES.html; MUSL-COPYRIGHT contains the bundled musl runtime notices.</p>
+<p>This software is based in part on the work of the Independent JPEG Group.</p>
+<p>Source code for unmodified MPL-2.0 dependencies, including acadrust, is
+available under MPL-2.0 through the exact version-specific source links below.
+The other dependencies also have source links for their published versions.</p>
+{{#each licenses}}
+<section data-license="{{id}}">
+<h2>{{name}} ({{id}})</h2>
+<ul>
+{{#each used_by}}
+<li>{{crate.name}} {{crate.version}}:
+<a href="https://crates.io/api/v1/crates/{{crate.name}}/{{crate.version}}/download">published source</a>
+{{#if crate.repository}} · <a href="{{crate.repository}}">upstream repository</a>{{/if}}</li>
+{{/each}}
+</ul>
+{{#unless source_path}}<p>This is the standard SPDX license text; the published
+source links identify the corresponding upstream software.</p>{{/unless}}
+<pre>{{text}}</pre>
+</section>
+{{/each}}
+</html>
