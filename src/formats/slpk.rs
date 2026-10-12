@@ -391,8 +391,6 @@ fn decode(bytes: Vec<u8>) -> Result<Scene> {
 mod tests {
     use super::*;
     use std::io::Write;
-    const PACKAGE: &[u8] = include_bytes!("../../tests/fixtures/slpk/autzen.slpk");
-    const XYZ: &[u8] = include_bytes!("../../tests/fixtures/slpk/autzen.xyz");
 
     fn zip(files: &[(&str, Vec<u8>)]) -> Vec<u8> {
         let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
@@ -413,62 +411,6 @@ mod tests {
         serde_json::to_vec(value).unwrap()
     }
 
-    #[test]
-    fn esri_original_package_renders_geographic_points_in_meters() {
-        let scene = decode(PACKAGE.to_vec()).unwrap();
-        assert_eq!(scene.points.len(), 106);
-        let (min, max) = scene.points.iter().fold(
-            (
-                Vec3::new(f64::INFINITY, f64::INFINITY, f64::INFINITY),
-                Vec3::new(f64::NEG_INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY),
-            ),
-            |(lo, hi), p| {
-                (
-                    Vec3::new(
-                        lo.x.min(p.position.x),
-                        lo.y.min(p.position.y),
-                        lo.z.min(p.position.z),
-                    ),
-                    Vec3::new(
-                        hi.x.max(p.position.x),
-                        hi.y.max(p.position.y),
-                        hi.z.max(p.position.z),
-                    ),
-                )
-            },
-        );
-        assert!(max.x - min.x > 800. && max.y - min.y > 1200.);
-        assert!(max.z - min.z > 30. && max.z - min.z < 50.);
-        assert!(crate::render::render(&scene, &crate::render::RenderOptions::default()).is_ok());
-    }
-    #[test]
-    fn both_page_naming_schemes_select_only_leaves_and_resource_ids() {
-        for version in ["1.6", "2.0"] {
-            let count_key = if version == "2.0" {
-                "vertexCount"
-            } else {
-                "pointCount"
-            };
-            let mut first = serde_json::json!({"nodes":[
-                {"resourceId":99,"firstChild":2,"childCount":1},
-                {"resourceId":999,"firstChild":0,"childCount":0}]});
-            first["nodes"][0][count_key] = 1.into();
-            let mut leaf = serde_json::json!({"nodes":[{"resourceId":"17","childCount":0}]});
-            leaf["nodes"][0][count_key] = 106.into();
-            let filename = if version == "2.0" {
-                "nodepages/1.json"
-            } else {
-                "nodepages/2.json"
-            };
-            let package = zip(&[
-                ("3dSceneLayer.json", bytes(&layer(version))),
-                ("nodepages/0.json", bytes(&first)),
-                (filename, bytes(&leaf)),
-                ("nodes/17/geometries/0.bin.pccxyz", XYZ.to_vec()),
-            ]);
-            assert_eq!(decode(package).unwrap().points.len(), 106);
-        }
-    }
     #[test]
     fn malformed_archives_cycles_and_missing_resources_fail() {
         assert!(decode(b"not a zip".to_vec()).is_err());

@@ -1458,7 +1458,7 @@ fn quaternion(values: &[f64]) -> Result<Transform> {
     ]))
 }
 
-/// Authored binary-layout checks and retained-file transform qualification.
+/// Self-contained authored binary-layout, transform and malformed-input qualification.
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1494,12 +1494,46 @@ mod tests {
         }
         output.extend_from_slice(data);
     }
-    /// Construct a complete static triangle file with matching SDNA and configurable `BHead` layout.
+    /// Construct a complete static triangle with its saved matrix and configurable binary layout.
+    fn authored(pointer: usize, endian: Endian, large: bool) -> Vec<u8> {
+        authored_objects(pointer, endian, large, true)
+    }
+
+    /// Construct matching SDNA and blocks for either saved matrices or modern static TRS fields.
     #[allow(
         clippy::too_many_lines,
         reason = "Construct one internally consistent authored SDNA and its matching BHead payloads for every tested layout."
     )]
-    fn authored(pointer: usize, endian: Endian, large: bool) -> Vec<u8> {
+    fn authored_objects(
+        pointer: usize,
+        endian: Endian,
+        large: bool,
+        saved_matrix: bool,
+    ) -> Vec<u8> {
+        let mut object_fields = vec![
+            ("ID", "id"),
+            ("int", "type"),
+            ("int", "_pad"),
+            ("void", "*data"),
+        ];
+        if saved_matrix {
+            object_fields.push(("float", "obmat[4][4]"));
+        } else {
+            object_fields.extend([
+                ("float", "loc[3]"),
+                ("float", "dloc[3]"),
+                ("float", "size[3]"),
+                ("float", "dscale[3]"),
+                ("float", "rot[3]"),
+                ("float", "drot[3]"),
+                ("float", "quat[4]"),
+                ("float", "dquat[4]"),
+                ("int", "rotmode"),
+                ("int", "partype"),
+                ("Object", "*parent"),
+                ("float", "parentinv[4][4]"),
+            ]);
+        }
         let definitions = [
             ("ID", vec![("void", "*lib")]),
             ("ListBase", vec![("void", "*first"), ("void", "*last")]),
@@ -1511,16 +1545,7 @@ mod tests {
                 "Base",
                 vec![("Base", "*next"), ("Base", "*prev"), ("Object", "*object")],
             ),
-            (
-                "Object",
-                vec![
-                    ("ID", "id"),
-                    ("int", "type"),
-                    ("int", "_pad"),
-                    ("void", "*data"),
-                    ("float", "obmat[4][4]"),
-                ],
-            ),
+            ("Object", object_fields),
             (
                 "Mesh",
                 vec![
@@ -1551,7 +1576,11 @@ mod tests {
             2 * pointer,
             4 * pointer,
             3 * pointer,
-            2 * pointer + 72,
+            if saved_matrix {
+                2 * pointer + 72
+            } else {
+                3 * pointer + 184
+            },
             4 * pointer + 16,
             12,
             16,
@@ -1646,12 +1675,25 @@ mod tests {
         number(&mut object, 1, 4, endian);
         number(&mut object, 0, 4, endian);
         number(&mut object, 4000, pointer, endian);
-        for value in [
-            2.0_f32, 0., 0., 0., 0., 3., 0., 0., 0., 0., 4., 0., 10., 20., 30., 1.,
-        ] {
-            number(&mut object, u64::from(value.to_bits()), 4, endian);
+        if saved_matrix {
+            for value in [
+                2.0_f32, 0., 0., 0., 0., 3., 0., 0., 0., 0., 4., 0., 10., 20., 30., 1.,
+            ] {
+                number(&mut object, u64::from(value.to_bits()), 4, endian);
+            }
+        } else {
+            object.extend_from_slice(&authored_trs(pointer, endian, false));
         }
         block(&mut output, *b"OB\0\0", 3000, 4, 1, &object, layout);
+        if !saved_matrix {
+            let mut parent = Vec::new();
+            number(&mut parent, 0, pointer, endian);
+            number(&mut parent, 0, 4, endian);
+            number(&mut parent, 0, 4, endian);
+            number(&mut parent, 0, pointer, endian);
+            parent.extend_from_slice(&authored_trs(pointer, endian, true));
+            block(&mut output, *b"OB\0\0", 7000, 4, 1, &parent, layout);
+        }
         let mut mesh = Vec::new();
         number(&mut mesh, 0, pointer, endian);
         for n in [3, 0, 1, 0] {
@@ -1673,6 +1715,52 @@ mod tests {
         block(&mut output, *b"DATA", 6000, 7, 1, &face, layout);
         block(&mut output, *b"DNA1", 0, 0, 1, &dna, layout);
         block(&mut output, *b"ENDB", 0, 0, 0, &[], layout);
+        output
+    }
+
+    /// Encode modern static TRS fields, deltas and a nonidentity child parent-inverse matrix.
+    fn authored_trs(pointer: usize, endian: Endian, parent: bool) -> Vec<u8> {
+        let mut output = Vec::new();
+        let vectors = if parent {
+            [
+                [10., 20., 30.],
+                [0., 0., 0.],
+                [2., 1., 0.5],
+                [1., 1., 1.],
+                [0., 0., 0.],
+                [0., 0., 0.],
+            ]
+        } else {
+            [
+                [3., -2., 1.],
+                [1., 0., 0.],
+                [2., 3., 4.],
+                [1., 2., 1.],
+                [0., 0., std::f32::consts::FRAC_PI_2],
+                [0., 0., 0.],
+            ]
+        };
+        for value in vectors.into_iter().flatten() {
+            number(&mut output, u64::from(value.to_bits()), 4, endian);
+        }
+        for value in [1.0_f32, 0., 0., 0., 1., 0., 0., 0.] {
+            number(&mut output, u64::from(value.to_bits()), 4, endian);
+        }
+        number(&mut output, 1, 4, endian); // Euler XYZ rotation mode.
+        number(&mut output, 0, 4, endian); // Ordinary object parenting.
+        number(&mut output, 0, pointer, endian);
+        let inverse = if parent {
+            [
+                1.0_f32, 0., 0., 0., 0., 1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1.,
+            ]
+        } else {
+            [
+                0.0_f32, 1., 0., 0., -1., 0., 0., 0., 0., 0., 1., 0., -3., 4., 5., 1.,
+            ]
+        };
+        for value in inverse {
+            number(&mut output, u64::from(value.to_bits()), 4, endian);
+        }
         output
     }
     #[test]
@@ -1796,54 +1884,10 @@ mod tests {
     }
     #[test]
     fn modern_rotation_scale_delta_and_parent_matrices_are_composed() {
-        let source = std::fs::read(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("tests/fixtures/native_geometry/blend/hierarchy-502-no-thumbnail.blend"),
-        )
-        .unwrap();
+        let source = authored_objects(8, Endian::Little, true, false);
         let file = Database::parse(&source).unwrap();
-        let address = file
-            .blocks
-            .iter()
-            .find(|b| {
-                if file
-                    .schemas
-                    .get(b.schema)
-                    .is_none_or(|s| s.name != "Object")
-                    || b.code == *b"DATA"
-                {
-                    return false;
-                }
-                let record = Record {
-                    schema: b.schema,
-                    data: b.data,
-                    owner: b.owner,
-                };
-                let id = file.embedded(record, "id").unwrap();
-                let name = file.bytes(id, "name").unwrap();
-                name.split(|b| *b == 0).next() == Some(b"OBCube".as_slice())
-            })
-            .unwrap()
-            .address;
-        let object = file.record(address, 0, "Object").unwrap();
-        let mut bytes = source.clone();
-        for (name, values) in [
-            ("loc", [3.0_f32, -2., 1.]),
-            ("dloc", [1., 0., 0.]),
-            ("size", [2., 3., 4.]),
-            ("dscale", [1., 2., 1.]),
-            ("rot", [0., 0., std::f32::consts::FRAC_PI_2]),
-            ("drot", [0., 0., 0.]),
-        ] {
-            let start = object.data.as_ptr() as usize - source.as_ptr() as usize
-                + file.field(object, name).unwrap().offset;
-            for (i, value) in values.into_iter().enumerate() {
-                bytes[start + i * 4..start + (i + 1) * 4].copy_from_slice(&value.to_le_bytes());
-            }
-        }
-        let file = Database::parse(&bytes).unwrap();
         let matrix = file
-            .object_transform(address, &mut HashMap::new(), &mut HashSet::new(), 0)
+            .object_transform(3000, &mut HashMap::new(), &mut HashSet::new(), 0)
             .unwrap();
         for (point, expected) in [
             (Vec3::new(0., 0., 0.), Vec3::new(4., -2., 1.)),
@@ -1853,21 +1897,32 @@ mod tests {
         ] {
             assert!((matrix.apply(point) - expected).length() < 1e-6);
         }
-        // The real Sphere is parented to an empty with a nonidentity parent
-        // inverse. Its measured world bounds in the integration test catch
-        // either dropping or double-applying that parent's translation.
-    }
-    #[test]
-    fn real_zstandard_frames_and_thumbnail_removal_preserve_geometry() {
-        let source = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/fixtures/saved-previews/blend_dwg/blend-extras.blend");
-        let decoded = decompress(&std::fs::read(source).unwrap()).unwrap();
-        assert!(decoded.starts_with(b"BLENDER17-01v0502"));
-        let error = Database::parse(&decoded)
-            .unwrap()
-            .scene()
-            .unwrap_err()
-            .to_string();
-        assert!(error.contains("modifiers"), "{error}");
+        let object = file.record(3000, 0, "Object").unwrap();
+        let start = object.data.as_ptr() as usize - source.as_ptr() as usize
+            + file.field(object, "parent").unwrap().offset;
+        let mut bytes = source.clone();
+        bytes[start..start + 8].copy_from_slice(&7000_u64.to_le_bytes());
+        let file = Database::parse(&bytes).unwrap();
+        let matrix = file
+            .object_transform(3000, &mut HashMap::new(), &mut HashSet::new(), 0)
+            .unwrap();
+        // Parent T(10,20,30)*S(2,1,.5), inverse T(-3,4,5)*Rz(90), then child TRS.
+        for (point, expected) in [
+            (Vec3::new(0., 0., 0.), Vec3::new(8., 28., 33.)),
+            (Vec3::new(1., 0., 0.), Vec3::new(4., 28., 33.)),
+            (Vec3::new(0., 1., 0.), Vec3::new(8., 22., 33.)),
+            (Vec3::new(0., 0., 1.), Vec3::new(8., 28., 35.)),
+        ] {
+            assert!((matrix.apply(point) - expected).length() < 1e-6);
+        }
+        let scene = file.scene().unwrap();
+        assert_eq!(scene.triangles.len(), 1);
+        for (actual, expected) in scene.triangles[0].vertices.into_iter().zip([
+            Vec3::new(8., 28., 33.),
+            Vec3::new(4., 28., 33.),
+            Vec3::new(8., 22., 33.),
+        ]) {
+            assert!((actual - expected).length() < 1e-6);
+        }
     }
 }

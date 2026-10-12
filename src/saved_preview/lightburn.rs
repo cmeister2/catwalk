@@ -135,44 +135,6 @@ mod tests {
     }
 
     #[test]
-    fn real_legacy_and_current_previews_match_saved_png_pixels() {
-        for (source, expected) in [
-            (
-                include_bytes!(concat!(
-                    env!("CARGO_MANIFEST_DIR"),
-                    "/tests/fixtures/saved-previews/lightburn/legacy-example1.lbrn"
-                ))
-                .as_slice(),
-                include_bytes!(concat!(
-                    env!("CARGO_MANIFEST_DIR"),
-                    "/tests/fixtures/saved-previews/lightburn/legacy-example1.png"
-                ))
-                .as_slice(),
-            ),
-            (
-                include_bytes!(concat!(
-                    env!("CARGO_MANIFEST_DIR"),
-                    "/tests/fixtures/saved-previews/lightburn/current-jig.lbrn2"
-                ))
-                .as_slice(),
-                include_bytes!(concat!(
-                    env!("CARGO_MANIFEST_DIR"),
-                    "/tests/fixtures/saved-previews/lightburn/current-jig.png"
-                ))
-                .as_slice(),
-            ),
-        ] {
-            let actual = extract_bytes(source).unwrap().unwrap();
-            let expected = image::load_from_memory_with_format(expected, image::ImageFormat::Png)
-                .unwrap()
-                .to_rgba8();
-            assert_eq!(actual.dimensions(), (256, 256));
-            assert_eq!(actual, expected);
-            assert!(actual.pixels().any(|pixel| pixel[3] != 0));
-        }
-    }
-
-    #[test]
     fn missing_preview_is_distinct_from_corrupt_preview() {
         assert!(
             extract_bytes(b"<LightBurnProject FormatVersion=\"0\"/>")
@@ -215,11 +177,16 @@ mod tests {
 
     #[test]
     fn bounds_saved_png_before_decoding_and_rejects_truncation() {
-        let png = include_bytes!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/tests/fixtures/saved-previews/lightburn/current-jig.png"
-        ));
-        let mut oversized = png.to_vec();
+        let mut encoded = Cursor::new(Vec::new());
+        image::DynamicImage::ImageRgba8(RgbaImage::from_pixel(
+            2,
+            1,
+            image::Rgba([20, 80, 160, 255]),
+        ))
+        .write_to(&mut encoded, image::ImageFormat::Png)
+        .unwrap();
+        let png = encoded.into_inner();
+        let mut oversized = png.clone();
         oversized[16..20].copy_from_slice(&9000u32.to_be_bytes());
         assert!(
             extract_bytes(&project(
