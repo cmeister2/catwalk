@@ -56,6 +56,8 @@ Run `catwalk --list-formats` for the complete extension list. Each reader suppor
 
 Models use a fitted static view. Supported colors and materials are preserved; glTF/GLB and 3MF additionally support base-color textures. Animation files use a supported static pose or sample. Raster images are fitted to the canvas with their proportions preserved.
 
+COLLADA (`.dae`) previews include static surfaces, colored wire geometry, planar polygon holes and supported node placements, including `lookat` and angular `skew`. Controllers, textures and animation remain outside this reader's static subset; see [its coverage entry](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#collada) for limits and tested examples.
+
 ## Native documents and saved previews
 
 Catwalk also handles these application documents:

@@ -6,13 +6,68 @@ use roxmltree::{Document, Node, NodeId};
 
 use super::mesh::triangulate_polygon;
 use super::transform::Transform;
-use crate::scene::{Scene, Triangle, Vec3};
+use crate::scene::{Line, Scene, Triangle, Vec3};
 use crate::{Error, Result};
 
-/// Maximum parsed scalar and index values in a COLLADA document.
+/// Maximum scalar/index list length or individual geometry count.
 const MAX_ITEMS: usize = 20_000_000;
-/// Maximum geometry instances expanded while traversing the scene.
+/// Maximum visited scene nodes or index lists in new wire/hole primitives.
 const MAX_INSTANCES: usize = 100_000;
+/// Maximum shared input tuple width or primitive input count.
+const MAX_INPUTS: usize = 64;
+/// Maximum corners across one polygon and all of its holes.
+const MAX_CORNERS: usize = 100_000;
+/// Maximum independent rings describing one polygon.
+const MAX_RINGS: usize = 1024;
+/// Maximum retained numeric sources, mesh primitives and instanced output bytes.
+const MAX_STORAGE: usize = 256 * 1024 * 1024;
+/// Maximum material, source or semantic identifier length.
+const MAX_NAME: usize = 4096;
+
+/// Checked allocation budget shared by decoded source arrays and geometry.
+#[derive(Default)]
+struct Budget {
+    /// Conservatively retained allocation bytes.
+    bytes: usize,
+}
+
+impl Budget {
+    /// Account for retained storage before allocating it.
+    fn charge(&mut self, count: usize, size: usize) -> Result<()> {
+        self.bytes = count
+            .checked_mul(size)
+            .and_then(|bytes| self.bytes.checked_add(bytes))
+            .ok_or_else(|| error("COLLADA storage size overflow"))?;
+        if self.bytes > MAX_STORAGE {
+            return Err(error(
+                "COLLADA geometry and sources exceed the 256 MiB storage budget",
+            ));
+        }
+        Ok(())
+    }
+}
+
+/// Grow geometry geometrically while charging all requested spare capacity before allocation.
+fn grow<T>(values: &mut Vec<T>, additional: usize, budget: &mut Budget) -> Result<()> {
+    let needed = values
+        .len()
+        .checked_add(additional)
+        .ok_or_else(|| error("COLLADA geometry count overflow"))?;
+    if needed > MAX_ITEMS {
+        return Err(error("too much COLLADA geometry"));
+    }
+    if needed > values.capacity() {
+        let capacity = needed.max(values.capacity().saturating_mul(2)).max(4);
+        budget.charge(capacity - values.capacity(), std::mem::size_of::<T>())?;
+        let previous = values.capacity();
+        values.try_reserve_exact(capacity - values.len())?;
+        if values.capacity() > capacity {
+            budget.charge(values.capacity() - capacity, std::mem::size_of::<T>())?;
+        }
+        debug_assert!(values.capacity() >= previous);
+    }
+    Ok(())
+}
 
 /// Load static COLLADA geometry, node transforms and material colors.
 ///
@@ -59,10 +114,45 @@ fn item_count(value: &str) -> Result<usize> {
     }
     Ok(count)
 }
+/// Borrow ordinary list text or concatenate bounded text segments across comments without adding whitespace.
+fn list_text<'a>(node: Node<'a, '_>) -> Result<std::borrow::Cow<'a, str>> {
+    let mut segments = node
+        .children()
+        .filter(roxmltree::Node::is_text)
+        .filter_map(|node| node.text());
+    let first = segments.next().unwrap_or("");
+    if segments.next().is_none() {
+        return Ok(std::borrow::Cow::Borrowed(first));
+    }
+    let mut size = 0_usize;
+    for text in node
+        .children()
+        .filter(roxmltree::Node::is_text)
+        .filter_map(|node| node.text())
+    {
+        size = size
+            .checked_add(text.len())
+            .ok_or_else(|| error("COLLADA numeric text size overflow"))?;
+        if size as u64 > super::MAX_INPUT_BYTES {
+            return Err(error("COLLADA numeric text exceeds the input byte limit"));
+        }
+    }
+    let mut text = String::with_capacity(size);
+    for segment in node
+        .children()
+        .filter(roxmltree::Node::is_text)
+        .filter_map(|node| node.text())
+    {
+        text.push_str(segment);
+    }
+    Ok(std::borrow::Cow::Owned(text))
+}
+
 /// Parse finite whitespace-separated floating point values.
 fn numbers(node: Node<'_, '_>) -> Result<Vec<f64>> {
     let mut values = Vec::new();
-    for word in node.text().unwrap_or("").split_whitespace() {
+    let text = list_text(node)?;
+    for word in text.split_whitespace() {
         let value: f64 = word.parse()?;
         if !value.is_finite() {
             return Err(error("non-finite COLLADA numeric value"));
@@ -77,7 +167,8 @@ fn numbers(node: Node<'_, '_>) -> Result<Vec<f64>> {
 /// Parse bounded nonnegative index values.
 fn indices(node: Node<'_, '_>) -> Result<Vec<usize>> {
     let mut values = Vec::new();
-    for word in node.text().unwrap_or("").split_whitespace() {
+    let text = list_text(node)?;
+    for word in text.split_whitespace() {
         values.push(item_count(word)?);
         if values.len() > MAX_ITEMS {
             return Err(error("too many COLLADA indices"));
@@ -104,22 +195,21 @@ struct Source {
     stride: usize,
     /// First scalar used by the accessor.
     offset: usize,
-    /// Named source components mapped to their positions within an entry.
-    components: Vec<Option<String>>,
+    /// Named scalar slots in authored order; names do not bind semantic components.
+    components: Vec<usize>,
 }
 impl Source {
-    /// Read a three-component source entry by semantic names and validate its range.
-    fn vector(&self, index: usize, names: [&str; 3]) -> Result<Vec3> {
+    /// Read three ordered named scalar slots according to the consuming input semantic.
+    fn vector(&self, index: usize) -> Result<Vec3> {
         if index >= self.count {
             return Err(error("COLLADA source index out of bounds"));
         }
         let mut components = [0.0; 3];
-        for (i, name) in names.into_iter().enumerate() {
-            let position = self
+        for (i, component) in components.iter_mut().enumerate() {
+            let position = *self
                 .components
-                .iter()
-                .position(|component| component.as_deref() == Some(name))
-                .ok_or_else(|| error(format!("COLLADA source lacks {name} component")))?;
+                .get(i)
+                .ok_or_else(|| error("COLLADA semantic requires three named scalar components"))?;
             if position >= self.stride {
                 return Err(error("COLLADA source component exceeds accessor stride"));
             }
@@ -128,7 +218,7 @@ impl Source {
                 .and_then(|n| n.checked_add(self.offset))
                 .and_then(|n| n.checked_add(position))
                 .ok_or_else(|| error("COLLADA source offset overflow"))?;
-            components[i] = *self
+            *component = *self
                 .values
                 .get(offset)
                 .ok_or_else(|| error("COLLADA accessor exceeds its array"))?;
@@ -142,12 +232,16 @@ impl Source {
         reason = "Color components are clamped and rounded to the inclusive byte range before conversion."
     )]
     fn color(&self, index: usize) -> Result<[u8; 3]> {
-        let c = self.vector(index, ["R", "G", "B"])?;
+        let c = self.vector(index)?;
         Ok([c.x, c.y, c.z].map(|c| (c * 255.0).clamp(0.0, 255.0).round() as u8))
     }
 }
 /// Parse a float source and validate its accessor count, stride, offset and parameters.
-fn parse_source(node: Node<'_, '_>, ids: &HashMap<&str, Node<'_, '_>>) -> Result<Source> {
+fn parse_source(
+    node: Node<'_, '_>,
+    ids: &HashMap<&str, Node<'_, '_>>,
+    budget: &mut Budget,
+) -> Result<Source> {
     let technique = child(node, "technique_common")?;
     let accessor = child(technique, "accessor")?;
     let array_id = reference(attribute(accessor, "source")?)?;
@@ -157,8 +251,24 @@ fn parse_source(node: Node<'_, '_>, ids: &HashMap<&str, Node<'_, '_>>) -> Result
     if array.tag_name().name() != "float_array" {
         return Err(error("COLLADA mesh accessor needs a float_array"));
     }
-    let values = numbers(array)?;
-    if item_count(attribute(array, "count")?)? != values.len() {
+    let array_count = item_count(attribute(array, "count")?)?;
+    let text = list_text(array)?;
+    if text.split_whitespace().count() != array_count {
+        return Err(error("COLLADA float_array count differs from its data"));
+    }
+    budget.charge(array_count, std::mem::size_of::<f64>())?;
+    let mut values = Vec::with_capacity(array_count);
+    for word in text.split_whitespace() {
+        if values.len() == array_count {
+            return Err(error("COLLADA float_array count differs from its data"));
+        }
+        let value: f64 = word.parse()?;
+        if !value.is_finite() {
+            return Err(error("non-finite COLLADA numeric value"));
+        }
+        values.push(value);
+    }
+    if values.len() != array_count {
         return Err(error("COLLADA float_array count differs from its data"));
     }
     let count = item_count(attribute(accessor, "count")?)?;
@@ -175,26 +285,35 @@ fn parse_source(node: Node<'_, '_>, ids: &HashMap<&str, Node<'_, '_>>) -> Result
     if stride == 0 {
         return Err(error("COLLADA accessor stride must be positive"));
     }
-    let end = count
-        .checked_mul(stride)
-        .and_then(|n| n.checked_add(offset))
-        .ok_or_else(|| error("COLLADA accessor size overflow"))?;
-    if end > values.len() {
-        return Err(error("COLLADA accessor exceeds its array"));
-    }
     let mut components = Vec::new();
-    for param in children(accessor, "param") {
+    for (position, param) in children(accessor, "param").enumerate() {
+        if position >= stride || position >= MAX_CORNERS {
+            return Err(error(
+                "COLLADA accessor parameters exceed stride or item limits",
+            ));
+        }
         if !matches!(param.attribute("type"), Some("float" | "double")) {
             return Err(error(
                 "COLLADA geometry accessor parameters must be scalar floats",
             ));
         }
-        components.push(param.attribute("name").map(str::to_ascii_uppercase));
+        if param.attribute("name").is_some() {
+            grow(&mut components, 1, budget)?;
+            components.push(position);
+        }
     }
-    if components.len() > stride {
-        return Err(error(
-            "COLLADA accessor has more parameters than its stride",
-        ));
+    let used = components.last().map_or(0, |position| position + 1);
+    let end = if count == 0 || used == 0 {
+        offset
+    } else {
+        (count - 1)
+            .checked_mul(stride)
+            .and_then(|n| n.checked_add(offset))
+            .and_then(|n| n.checked_add(used))
+            .ok_or_else(|| error("COLLADA accessor size overflow"))?
+    };
+    if end > values.len() {
+        return Err(error("COLLADA accessor exceeds its array"));
     }
     Ok(Source {
         values,
@@ -213,7 +332,26 @@ struct MeshTriangle {
     /// Optional average vertex color.
     color: Option<[u8; 3]>,
     /// Material symbol referenced by the primitive.
-    material: Option<String>,
+    material: Option<std::sync::Arc<str>>,
+}
+
+/// One mesh-local wire segment before placement and material binding.
+struct MeshLine {
+    /// Authored line endpoints.
+    vertices: [Vec3; 2],
+    /// Optional mean endpoint RGB color.
+    color: Option<[u8; 3]>,
+    /// Shared material symbol for the owning primitive.
+    material: Option<std::sync::Arc<str>>,
+}
+
+/// Static mesh surfaces and wire geometry.
+#[derive(Default)]
+struct Mesh {
+    /// Polygon-derived mesh triangles.
+    triangles: Vec<MeshTriangle>,
+    /// Authored line pairs or consecutive strip segments.
+    lines: Vec<MeshLine>,
 }
 /// One primitive input identifying a source, semantic and interleaved index offset.
 struct Input {
@@ -228,24 +366,288 @@ struct Input {
 }
 /// Parse primitive inputs and validate bounded offsets and attribute sets.
 fn inputs(node: Node<'_, '_>) -> Result<Vec<Input>> {
-    children(node, "input")
-        .map(|input| {
-            Ok(Input {
-                source: reference(attribute(input, "source")?)?.to_owned(),
-                semantic: attribute(input, "semantic")?.to_owned(),
-                offset: input
-                    .attribute("offset")
-                    .map(item_count)
-                    .transpose()?
-                    .unwrap_or(0),
-                set: input
-                    .attribute("set")
-                    .map(item_count)
-                    .transpose()?
-                    .unwrap_or(0),
-            })
+    let mut result = Vec::new();
+    for input in children(node, "input") {
+        if result.len() >= MAX_INPUTS {
+            return Err(error("too many COLLADA primitive inputs"));
+        }
+        let source = reference(attribute(input, "source")?)?;
+        let semantic = attribute(input, "semantic")?;
+        if source.len() > MAX_NAME || semantic.len() > MAX_NAME {
+            return Err(error("COLLADA input identifier exceeds name limits"));
+        }
+        let value = Input {
+            source: source.to_owned(),
+            semantic: semantic.to_owned(),
+            offset: input
+                .attribute("offset")
+                .map(item_count)
+                .transpose()?
+                .unwrap_or(0),
+            set: input
+                .attribute("set")
+                .map(item_count)
+                .transpose()?
+                .unwrap_or(0),
+        };
+        if value.offset >= MAX_INPUTS {
+            return Err(error("COLLADA input tuple width exceeds 64"));
+        }
+        result.push(value);
+    }
+    Ok(result)
+}
+
+/// Parse a limited index list before allocating beyond one bounded primitive or ring.
+fn limited_indices(node: Node<'_, '_>, limit: usize) -> Result<Vec<usize>> {
+    let mut result = Vec::new();
+    let text = list_text(node)?;
+    for word in text.split_whitespace() {
+        if result.len() >= limit.min(MAX_ITEMS) {
+            return Err(error("COLLADA primitive index list exceeds its limit"));
+        }
+        result.push(item_count(word)?);
+    }
+    Ok(result)
+}
+
+/// Decode complete shared index tuples and validate every referenced geometry attribute.
+fn decoded_corners(
+    raw: &[usize],
+    width: usize,
+    inputs: &[Input],
+    sources: &HashMap<String, Source>,
+) -> Result<(Vec<Vec3>, Vec<[u8; 3]>)> {
+    if !raw.len().is_multiple_of(width) {
+        return Err(error("COLLADA indices do not form complete input tuples"));
+    }
+    let position = inputs
+        .iter()
+        .find(|input| input.semantic == "POSITION")
+        .ok_or_else(|| error("COLLADA primitive has no position source"))?;
+    let color = inputs
+        .iter()
+        .filter(|input| input.semantic == "COLOR")
+        .min_by_key(|input| input.set);
+    let mut positions = Vec::with_capacity(raw.len() / width);
+    let mut colors = Vec::new();
+    for tuple in raw.chunks_exact(width) {
+        for input in inputs {
+            if tuple[input.offset] >= sources[&input.source].count {
+                return Err(error("COLLADA input index out of bounds"));
+            }
+        }
+        positions.push(sources[&position.source].vector(tuple[position.offset])?);
+        if let Some(input) = color {
+            colors.push(sources[&input.source].color(tuple[input.offset])?);
+        }
+    }
+    Ok((positions, colors))
+}
+
+/// Average legacy byte RGB colors without changing existing COLLADA material behavior.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "A mean of byte color channels remains representable in a byte."
+)]
+fn mean_color(colors: &[[u8; 3]]) -> Option<[u8; 3]> {
+    (!colors.is_empty()).then(|| {
+        std::array::from_fn(|channel| {
+            (colors
+                .iter()
+                .map(|color| u64::from(color[channel]))
+                .sum::<u64>()
+                / colors.len() as u64) as u8
         })
-        .collect()
+    })
+}
+
+/// Decode bounded line pairs or strips into authored segments with independent source indices.
+fn wire_primitive(
+    node: Node<'_, '_>,
+    width: usize,
+    inputs: &[Input],
+    sources: &HashMap<String, Source>,
+    mesh: &mut Mesh,
+    budget: &mut Budget,
+    material: Option<&std::sync::Arc<str>>,
+) -> Result<()> {
+    let count = item_count(attribute(node, "count")?)?;
+    let pairs = node.tag_name().name() == "lines";
+    let lists: Vec<_> = children(node, "p").take(MAX_INSTANCES + 1).collect();
+    if lists.len() > MAX_INSTANCES
+        || (pairs && (lists.len() > 1 || (count != 0 && lists.is_empty())))
+        || (!pairs && lists.len() != count)
+    {
+        return Err(error(
+            "COLLADA wire primitive count differs from its index lists",
+        ));
+    }
+    for list in lists {
+        let limit = if pairs {
+            count
+                .checked_mul(2)
+                .and_then(|count| count.checked_mul(width))
+                .ok_or_else(|| error("COLLADA line count overflow"))?
+        } else {
+            MAX_CORNERS * width
+        };
+        if limit > MAX_ITEMS {
+            return Err(error(
+                "COLLADA line index list exceeds the scalar item limit",
+            ));
+        }
+        let raw = limited_indices(list, limit)?;
+        if pairs && raw.len() != limit {
+            return Err(error("COLLADA line count differs from its indices"));
+        }
+        if pairs && count == 0 {
+            continue;
+        }
+        if !raw.len().is_multiple_of(width) {
+            return Err(error("COLLADA indices do not form complete input tuples"));
+        }
+        let corner_count = raw.len() / width;
+        if corner_count < 2 {
+            return Err(error("COLLADA line strip requires at least two corners"));
+        }
+        let segments = if pairs {
+            corner_count / 2
+        } else {
+            corner_count - 1
+        };
+        // Reject excessive output before expanding all endpoint positions and colors.
+        grow(&mut mesh.lines, segments, budget)?;
+        let (positions, colors) = decoded_corners(&raw, width, inputs, sources)?;
+        for segment in 0..segments {
+            let first = if pairs { segment * 2 } else { segment };
+            mesh.lines.push(MeshLine {
+                vertices: [positions[first], positions[first + 1]],
+                color: if colors.is_empty() {
+                    None
+                } else {
+                    mean_color(&colors[first..first + 2])
+                },
+                material: material.cloned(),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// Decode planar exterior and hole rings without filling their authored openings.
+fn polygons_with_holes(
+    node: Node<'_, '_>,
+    width: usize,
+    inputs: &[Input],
+    sources: &HashMap<String, Source>,
+    mesh: &mut Mesh,
+    budget: &mut Budget,
+    material: Option<&std::sync::Arc<str>>,
+) -> Result<()> {
+    let polygons: Vec<_> = node
+        .children()
+        .filter(|node| node.is_element() && matches!(node.tag_name().name(), "p" | "ph"))
+        .take(MAX_INSTANCES + 1)
+        .collect();
+    if polygons.len() > MAX_INSTANCES || polygons.len() != item_count(attribute(node, "count")?)? {
+        return Err(error("COLLADA polygon count differs from its boundaries"));
+    }
+    for polygon in polygons {
+        let boundaries = if polygon.tag_name().name() == "ph" {
+            let exterior = child(polygon, "p")?;
+            if children(polygon, "p").count() != 1 {
+                return Err(error("COLLADA hole polygon needs exactly one exterior"));
+            }
+            let mut boundaries = vec![exterior];
+            for hole in children(polygon, "h") {
+                if boundaries.len() >= MAX_RINGS {
+                    return Err(error("COLLADA polygon has too many rings"));
+                }
+                boundaries.push(hole);
+            }
+            if boundaries.len() == 1 {
+                return Err(error("COLLADA ph polygon needs at least one hole"));
+            }
+            boundaries
+        } else {
+            vec![polygon]
+        };
+        let mut rings = Vec::new();
+        let mut color = None;
+        let mut corners = 0_usize;
+        for (index, boundary) in boundaries.into_iter().enumerate() {
+            let raw = limited_indices(boundary, (MAX_CORNERS - corners) * width)?;
+            let (mut positions, colors) = decoded_corners(&raw, width, inputs, sources)?;
+            corners = corners
+                .checked_add(positions.len())
+                .ok_or_else(|| error("COLLADA ring corner count overflow"))?;
+            if positions.len() > 1 && positions.first() == positions.last() {
+                positions.pop();
+            }
+            if positions.len() < 3 {
+                return Err(error(
+                    "COLLADA polygon ring requires at least three corners",
+                ));
+            }
+            if index > 0 && !hole_has_area(&positions) {
+                return Err(error("COLLADA zero-area hole rings are unsupported"));
+            }
+            if index == 0 {
+                color = mean_color(&colors);
+            }
+            rings.push(positions);
+        }
+        let triangles = if polygon.tag_name().name() == "ph" {
+            super::citygml::triangulate_rings(&rings)?
+        } else {
+            triangulate_polygon(&rings[0])?
+        };
+        grow(&mut mesh.triangles, triangles.len(), budget)?;
+        mesh.triangles
+            .extend(triangles.into_iter().map(|vertices| MeshTriangle {
+                vertices,
+                color,
+                material: material.cloned(),
+            }));
+    }
+    Ok(())
+}
+
+/// Reject undefined zero signed-area holes using a linear, scale-resistant ring-area sum.
+/// This does not impose a blanket self-intersection rule on COLLADA polygons.
+fn hole_has_area(ring: &[Vec3]) -> bool {
+    let origin = ring[0];
+    let mut scale = 0.0_f64;
+    let mut overflow = false;
+    for &position in ring {
+        let edge = position - origin;
+        overflow |= !edge.is_finite();
+        scale = scale.max(edge.x.abs()).max(edge.y.abs()).max(edge.z.abs());
+    }
+    if overflow {
+        scale = ring.iter().fold(0.0_f64, |scale, position| {
+            scale
+                .max(position.x.abs())
+                .max(position.y.abs())
+                .max(position.z.abs())
+        });
+    }
+    if scale == 0.0 {
+        return false;
+    }
+    let relative = |position: Vec3| {
+        if overflow {
+            position / scale - origin / scale
+        } else {
+            (position - origin) / scale
+        }
+    };
+    let mut area = Vec3::default();
+    for index in 0..ring.len() {
+        area = area + relative(ring[index]).cross(relative(ring[(index + 1) % ring.len()]));
+    }
+    area.length() > 0.0
 }
 /// Decode indexed triangles, polygons, strips and fans from a COLLADA mesh.
 #[allow(
@@ -253,19 +655,47 @@ fn inputs(node: Node<'_, '_>) -> Result<Vec<Input>> {
     clippy::cast_possible_truncation,
     reason = "The bounded primitive parser keeps index and source validation together; averages of byte colors stay within byte range."
 )]
-fn parse_mesh(node: Node<'_, '_>, ids: &HashMap<&str, Node<'_, '_>>) -> Result<Vec<MeshTriangle>> {
+fn parse_mesh(
+    node: Node<'_, '_>,
+    ids: &HashMap<&str, Node<'_, '_>>,
+    budget: &mut Budget,
+) -> Result<Mesh> {
     let mut sources = HashMap::new();
     for source in children(node, "source") {
-        sources.insert(
-            attribute(source, "id")?.to_owned(),
-            parse_source(source, ids)?,
-        );
+        let id = attribute(source, "id")?;
+        if id.len() > MAX_NAME || sources.len() >= MAX_INSTANCES {
+            return Err(error(
+                "COLLADA source identifiers or source count exceed limits",
+            ));
+        }
+        budget.charge(
+            3,
+            std::mem::size_of::<Source>() + std::mem::size_of::<String>(),
+        )?;
+        budget.charge(id.len(), 1)?;
+        sources.insert(id.to_owned(), parse_source(source, ids, budget)?);
     }
     let mut vertex_inputs = HashMap::new();
     for vertices in children(node, "vertices") {
-        vertex_inputs.insert(attribute(vertices, "id")?.to_owned(), inputs(vertices)?);
+        let id = attribute(vertices, "id")?;
+        if id.len() > MAX_NAME || vertex_inputs.len() >= MAX_INSTANCES {
+            return Err(error(
+                "COLLADA vertices identifiers or declaration count exceed limits",
+            ));
+        }
+        let entries = inputs(vertices)?;
+        budget.charge(
+            3,
+            std::mem::size_of::<Vec<Input>>() + std::mem::size_of::<String>(),
+        )?;
+        budget.charge(entries.capacity(), std::mem::size_of::<Input>())?;
+        budget.charge(id.len(), 1)?;
+        for entry in &entries {
+            budget.charge(entry.source.len() + entry.semantic.len(), 1)?;
+        }
+        vertex_inputs.insert(id.to_owned(), entries);
     }
-    let mut result = Vec::new();
+    let mut result = Mesh::default();
     for primitive in node.children().filter(roxmltree::Node::is_element) {
         let name = primitive.tag_name().name();
         if matches!(name, "source" | "vertices" | "extra") {
@@ -273,13 +703,29 @@ fn parse_mesh(node: Node<'_, '_>, ids: &HashMap<&str, Node<'_, '_>>) -> Result<V
         }
         if !matches!(
             name,
-            "triangles" | "polylist" | "polygons" | "trifans" | "tristrips"
+            "triangles"
+                | "polylist"
+                | "polygons"
+                | "trifans"
+                | "tristrips"
+                | "lines"
+                | "linestrips"
         ) {
             return Err(error(format!(
                 "unsupported COLLADA mesh primitive <{name}>"
             )));
         }
         let count = item_count(attribute(primitive, "count")?)?;
+        let material = primitive
+            .attribute("material")
+            .map(|symbol| -> Result<std::sync::Arc<str>> {
+                if symbol.len() > MAX_NAME {
+                    return Err(error("COLLADA material symbol exceeds name limits"));
+                }
+                budget.charge(symbol.len() + 2 * std::mem::size_of::<usize>(), 1)?;
+                Ok(symbol.into())
+            })
+            .transpose()?;
         let raw_inputs = inputs(primitive)?;
         let width = raw_inputs
             .iter()
@@ -295,6 +741,9 @@ fn parse_mesh(node: Node<'_, '_>, ids: &HashMap<&str, Node<'_, '_>>) -> Result<V
                     .get(&input.source)
                     .ok_or_else(|| error("COLLADA primitive references missing vertices"))?
                 {
+                    if expanded.len() >= MAX_INPUTS {
+                        return Err(error("COLLADA expanded primitive inputs exceed 64"));
+                    }
                     expanded.push(Input {
                         source: vertex_input.source.clone(),
                         semantic: vertex_input.semantic.clone(),
@@ -303,6 +752,9 @@ fn parse_mesh(node: Node<'_, '_>, ids: &HashMap<&str, Node<'_, '_>>) -> Result<V
                     });
                 }
             } else {
+                if expanded.len() >= MAX_INPUTS {
+                    return Err(error("COLLADA expanded primitive inputs exceed 64"));
+                }
                 expanded.push(input);
             }
         }
@@ -334,6 +786,30 @@ fn parse_mesh(node: Node<'_, '_>, ids: &HashMap<&str, Node<'_, '_>>) -> Result<V
             if !sources.contains_key(&input.source) {
                 return Err(error("COLLADA input references a missing source"));
             }
+        }
+        if matches!(name, "lines" | "linestrips") {
+            wire_primitive(
+                primitive,
+                width,
+                &expanded,
+                &sources,
+                &mut result,
+                budget,
+                material.as_ref(),
+            )?;
+            continue;
+        }
+        if name == "polygons" && children(primitive, "ph").next().is_some() {
+            polygons_with_holes(
+                primitive,
+                width,
+                &expanded,
+                &sources,
+                &mut result,
+                budget,
+                material.as_ref(),
+            )?;
+            continue;
         }
         let p_nodes: Vec<_> = children(primitive, "p").collect();
         let mut polygons = Vec::new();
@@ -438,7 +914,7 @@ fn parse_mesh(node: Node<'_, '_>, ids: &HashMap<&str, Node<'_, '_>>) -> Result<V
                         return Err(error("COLLADA input index out of bounds"));
                     }
                 }
-                vertices.push(position_source.vector(tuple[position.offset], ["X", "Y", "Z"])?);
+                vertices.push(position_source.vector(tuple[position.offset])?);
                 if let (Some(input), Some(source)) = (color_input, color_source) {
                     colors.push(source.color(tuple[input.offset])?);
                 }
@@ -452,12 +928,13 @@ fn parse_mesh(node: Node<'_, '_>, ids: &HashMap<&str, Node<'_, '_>>) -> Result<V
                 }))
             };
             for vertices in triangulate_polygon(&vertices)? {
-                result.push(MeshTriangle {
+                grow(&mut result.triangles, 1, budget)?;
+                result.triangles.push(MeshTriangle {
                     vertices,
                     color,
-                    material: primitive.attribute("material").map(str::to_owned),
+                    material: material.clone(),
                 });
-                if result.len() > MAX_ITEMS {
+                if result.triangles.len() > MAX_ITEMS {
                     return Err(error("too many COLLADA triangles"));
                 }
             }
@@ -546,11 +1023,8 @@ fn node_transform(node: Node<'_, '_>) -> Result<Transform> {
                     }
                 }
             }
-            "lookat" | "skew" => {
-                return Err(error(format!(
-                    "COLLADA <{name}> transforms are not supported"
-                )));
-            }
+            "lookat" => matrix = lookat(&values)?.0,
+            "skew" => matrix = skew(&values)?.0,
             _ => unreachable!(),
         }
         result = result.then(Transform(matrix));
@@ -561,12 +1035,93 @@ fn node_transform(node: Node<'_, '_>) -> Result<Transform> {
     Ok(result)
 }
 
+/// Normalize finite transform directions without overflowing or underflowing their magnitudes.
+fn direction(vector: Vec3) -> Result<Vec3> {
+    let scale = vector.x.abs().max(vector.y.abs()).max(vector.z.abs());
+    if !scale.is_finite() || scale == 0.0 {
+        return Err(error(
+            "COLLADA transform direction must be finite and nonzero",
+        ));
+    }
+    Ok((vector / scale).normalized())
+}
+
+/// Decode a lookat node placement, preserving eye translation and its local negative-Z forward axis.
+fn lookat(values: &[f64]) -> Result<Transform> {
+    if values.len() != 9 {
+        return Err(error("COLLADA lookat needs eye, interest and up vectors"));
+    }
+    let eye = Vec3::new(values[0], values[1], values[2]);
+    let target = Vec3::new(values[3], values[4], values[5]);
+    let mut forward = target - eye;
+    if !forward.is_finite() {
+        let scale = [eye, target].iter().fold(0.0_f64, |scale, position| {
+            scale
+                .max(position.x.abs())
+                .max(position.y.abs())
+                .max(position.z.abs())
+        });
+        forward = target / scale - eye / scale;
+    }
+    let forward = direction(forward)?;
+    let up = direction(Vec3::new(values[6], values[7], values[8]))?;
+    let right = direction(forward.cross(up))?;
+    let up = direction(right.cross(forward))?;
+    let backward = -forward;
+    Ok(Transform([
+        [right.x, right.y, right.z, 0.0],
+        [up.x, up.y, up.z, 0.0],
+        [backward.x, backward.y, backward.z, 0.0],
+        [eye.x, eye.y, eye.z, 1.0],
+    ]))
+}
+
+/// Decode `RenderMan` angular skew for normalized, possibly nonorthogonal authored axes.
+/// The rotation direction tilts toward the translation direction by the specified degrees.
+fn skew(values: &[f64]) -> Result<Transform> {
+    if values.len() != 7 {
+        return Err(error("COLLADA skew needs degrees and two axis vectors"));
+    }
+    let rotation = direction(Vec3::new(values[1], values[2], values[3]))?;
+    let translation = direction(Vec3::new(values[4], values[5], values[6]))?;
+    let cosine = rotation.dot(translation).clamp(-1.0, 1.0);
+    let sine = rotation.cross(translation).length();
+    if sine == 0.0 {
+        return Err(error("COLLADA skew axes must not be parallel"));
+    }
+    let separation = sine.atan2(cosine);
+    let angle = values[0].to_radians();
+    if angle == 0.0 {
+        return Ok(Transform::IDENTITY);
+    }
+    if angle <= separation - std::f64::consts::PI || angle >= separation {
+        return Err(error(
+            "COLLADA skew angle makes the transformed axes singular or reverses their order",
+        ));
+    }
+    let perpendicular = direction(translation.cross(rotation.cross(translation)))?;
+    // cot(phi-angle)-cot(phi), expressed without subtracting large cotangents.
+    let gain = (angle.sin() / sine) / (separation - angle).sin();
+    if !gain.is_finite() {
+        return Err(error("COLLADA skew coefficient exceeds numeric range"));
+    }
+    let t = [translation.x, translation.y, translation.z];
+    let n = [perpendicular.x, perpendicular.y, perpendicular.z];
+    let mut matrix = Transform::IDENTITY.0;
+    for column in 0..3 {
+        for row in 0..3 {
+            matrix[column][row] += gain * t[row] * n[column];
+        }
+    }
+    Ok(Transform(matrix))
+}
+
 /// Resolved COLLADA resources and traversal state for the selected visual scene.
 struct Collada<'a, 'i> {
     /// XML elements indexed by their unique IDs.
     ids: HashMap<&'a str, Node<'a, 'i>>,
     /// Decoded triangles indexed by geometry ID.
-    meshes: HashMap<String, Vec<MeshTriangle>>,
+    meshes: HashMap<String, Mesh>,
     /// Display colors indexed by material ID.
     materials: HashMap<String, [u8; 3]>,
     /// Source up-axis conversion into the renderer coordinate system.
@@ -579,6 +1134,8 @@ struct Collada<'a, 'i> {
     instances: usize,
     /// Accumulated transformed geometry.
     scene: Scene,
+    /// Shared retained source and output storage budget.
+    budget: Budget,
 }
 impl Collada<'_, '_> {
     /// Transform a source position and apply declared units and up-axis conversion.
@@ -601,7 +1158,13 @@ impl Collada<'_, '_> {
             .meshes
             .get(id)
             .ok_or_else(|| error("COLLADA instance_geometry references a missing mesh"))?;
-        for triangle in mesh {
+        grow(
+            &mut self.scene.triangles,
+            mesh.triangles.len(),
+            &mut self.budget,
+        )?;
+        grow(&mut self.scene.lines, mesh.lines.len(), &mut self.budget)?;
+        for triangle in &mesh.triangles {
             let vertices = triangle
                 .vertices
                 .map(|v| self.world_position(world.apply(v)));
@@ -611,7 +1174,7 @@ impl Collada<'_, '_> {
             let color = triangle
                 .material
                 .as_ref()
-                .and_then(|symbol| bindings.get(symbol))
+                .and_then(|symbol| bindings.get(symbol.as_ref()))
                 .and_then(|id| self.materials.get(id))
                 .copied()
                 .or(triangle.color);
@@ -619,6 +1182,22 @@ impl Collada<'_, '_> {
             if self.scene.triangles.len() > MAX_ITEMS {
                 return Err(error("too much instanced COLLADA geometry"));
             }
+        }
+        for line in &mesh.lines {
+            let vertices = line
+                .vertices
+                .map(|vertex| self.world_position(world.apply(vertex)));
+            if vertices.iter().any(|vertex| !vertex.is_finite()) {
+                return Err(error("COLLADA transformed line endpoint is non-finite"));
+            }
+            let color = line
+                .material
+                .as_ref()
+                .and_then(|symbol| bindings.get(symbol.as_ref()))
+                .and_then(|id| self.materials.get(id))
+                .copied()
+                .or(line.color);
+            self.scene.lines.push(Line { vertices, color });
         }
         Ok(())
     }
@@ -730,13 +1309,15 @@ fn collada(source: &str) -> Result<Scene> {
         .unwrap_or(1.0);
     let axis = asset
         .and_then(|asset| children(asset, "up_axis").next())
-        .and_then(|axis| axis.text())
-        .unwrap_or("Y_UP")
+        .map(list_text)
+        .transpose()?
+        .unwrap_or(std::borrow::Cow::Borrowed("Y_UP"))
         .trim()
         .to_owned();
     if !matches!(axis.as_str(), "X_UP" | "Y_UP" | "Z_UP") {
         return Err(error("invalid COLLADA up_axis"));
     }
+    let mut budget = Budget::default();
     let mut meshes = HashMap::new();
     for library in children(root, "library_geometries") {
         for geometry in children(library, "geometry") {
@@ -744,7 +1325,7 @@ fn collada(source: &str) -> Result<Scene> {
                 .map_err(|_| error("COLLADA spline/BREP geometry is not supported"))?;
             meshes.insert(
                 attribute(geometry, "id")?.to_owned(),
-                parse_mesh(mesh, &ids)?,
+                parse_mesh(mesh, &ids, &mut budget)?,
             );
         }
     }
@@ -792,6 +1373,7 @@ fn collada(source: &str) -> Result<Scene> {
         active: HashSet::new(),
         instances: 0,
         scene: Scene::default(),
+        budget,
     };
     let selected = children(root, "scene")
         .next()
@@ -833,8 +1415,19 @@ fn collada(source: &str) -> Result<Scene> {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "Exact authored integer coordinates, identity transforms and power-of-two values are protocol witnesses in these tests."
+)]
 mod tests {
     use super::*;
+    /// Construct a unit-scaled static mesh document with simple ordered scalar accessors.
+    fn geometry_document(positions: &str, count: usize, primitive: &str, nodes: &str) -> String {
+        format!(
+            r##"<COLLADA version="1.4.1"><asset><up_axis>Z_UP</up_axis></asset><library_geometries><geometry id="mesh"><mesh><source id="pos"><float_array id="array" count="{}">{positions}</float_array><technique_common><accessor source="#array" count="{count}" stride="3"><param name="A" type="float"/><param name="B" type="float"/><param name="C" type="float"/></accessor></technique_common></source><vertices id="vertices"><input semantic="POSITION" source="#pos"/></vertices>{primitive}</mesh></geometry></library_geometries><library_visual_scenes><visual_scene id="scene">{nodes}</visual_scene></library_visual_scenes><scene><instance_visual_scene url="#scene"/></scene></COLLADA>"##,
+            count * 3
+        )
+    }
     fn document(primitive: &str, nodes: &str) -> String {
         format!(
             r##"<COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1">
@@ -920,5 +1513,332 @@ mod tests {
             collada(&document(primitive, "").replace("<param/>", "<param type=\"float\"/>"))
                 .is_err()
         );
+    }
+
+    /// Parameter names are labels; named scalar slots retain authored component order.
+    #[test]
+    fn accessor_components_follow_named_slots_instead_of_name_bindings() {
+        let nodes = r##"<node><instance_geometry url="#mesh"/></node>"##;
+        for names in [["A", "F", "X"], ["Z", "X", "Y"]] {
+            let params = format!(
+                "<param name=\"{}\" type=\"float\"/><param name=\"{}\" type=\"float\"/><param name=\"{}\" type=\"float\"/>",
+                names[0], names[1], names[2]
+            );
+            let source = document(TRIANGLE, nodes)
+                .replace("<param/>", "<param type=\"float\"/>")
+                .replace("<param name=\"X\" type=\"float\"/><param name=\"Y\" type=\"float\"/><param name=\"Z\" type=\"float\"/>", &params);
+            let scene = collada(&source).unwrap();
+            assert_eq!(
+                scene.triangles[0].vertices,
+                [
+                    Vec3::new(0.0, 0.0, 0.0),
+                    Vec3::new(1.0, 0.0, 0.0),
+                    Vec3::new(0.0, 1.0, 0.0)
+                ]
+            );
+        }
+    }
+
+    /// The final unused stride padding is optional, but consumed named slots must exist.
+    #[test]
+    fn accessor_ranges_use_consumed_slots_and_handle_zero_count() {
+        let source = document(TRIANGLE, r##"<node><instance_geometry url="#mesh"/></node>"##)
+            .replace("count=\"12\">9 0 0 0 9 1000 0 0 9 0 1000 0", "count=\"11\">0 0 0 9 1000 0 0 9 0 1000 0")
+            .replace("<param/><param name=\"X\" type=\"float\"/><param name=\"Y\" type=\"float\"/><param name=\"Z\" type=\"float\"/>", "<param name=\"X\" type=\"float\"/><param name=\"Y\" type=\"float\"/><param name=\"Z\" type=\"float\"/><param type=\"float\"/>");
+        assert_eq!(collada(&source).unwrap().triangles.len(), 1);
+        assert!(
+            collada(&source.replace(
+                "count=\"11\">0 0 0 9 1000 0 0 9 0 1000 0",
+                "count=\"10\">0 0 0 9 1000 0 0 9 0 1000"
+            ))
+            .is_err()
+        );
+        let zero = r##"<source id="empty"><float_array id="a" count="0"/><technique_common><accessor source="#a" count="0" stride="3"><param name="A" type="float"/><param name="B" type="float"/><param name="C" type="float"/></accessor></technique_common></source>"##;
+        let document = Document::parse(zero).unwrap();
+        let ids = document
+            .descendants()
+            .filter_map(|node| node.attribute("id").map(|id| (id, node)))
+            .collect();
+        let source = parse_source(document.root_element(), &ids, &mut Budget::default()).unwrap();
+        assert_eq!(source.count, 0);
+        assert!(source.vector(0).is_err());
+    }
+
+    /// Line pairs and strips resolve independent color indices, instances, units and translations.
+    #[test]
+    fn wire_primitives_preserve_segments_independent_indices_and_placements() {
+        let color_source = r##"<source id="colors"><float_array id="colorarray" count="9">1 0 0 0 1 0 0 0 1</float_array><technique_common><accessor source="#colorarray" count="3" stride="3"><param name="A" type="float"/><param name="B" type="float"/><param name="C" type="float"/></accessor></technique_common></source>"##;
+        for primitive in [
+            r##"<lines count="2"><input semantic="VERTEX" source="#vertices" offset="0"/><input semantic="COLOR" source="#colors" offset="1"/><p>0 2 1 1 1 1 2 0</p></lines>"##,
+            r##"<linestrips count="1"><input semantic="VERTEX" source="#vertices" offset="0"/><input semantic="COLOR" source="#colors" offset="1"/><p>0 2 1 1 2 0</p></linestrips>"##,
+        ] {
+            let source = document(
+                primitive,
+                r##"<node><translate>1000 0 0</translate><instance_geometry url="#mesh"/></node>"##,
+            )
+            .replace("<param/>", "<param type=\"float\"/>")
+            .replace(
+                "<vertices id=\"vertices\">",
+                &format!("{color_source}<vertices id=\"vertices\">"),
+            );
+            let scene = collada(&source).unwrap();
+            assert_eq!(scene.lines.len(), 2);
+            assert_eq!(
+                scene.lines[0].vertices,
+                [Vec3::new(1.0, 0.0, 0.0), Vec3::new(2.0, 0.0, 0.0)]
+            );
+            assert_eq!(
+                scene.lines[1].vertices,
+                [Vec3::new(2.0, 0.0, 0.0), Vec3::new(1.0, 1.0, 0.0)]
+            );
+            assert_eq!(scene.lines[0].color, Some([0, 127, 127]));
+            assert_eq!(scene.lines[1].color, Some([127, 127, 0]));
+            scene.validate().unwrap();
+        }
+    }
+
+    /// Optional empty zero-count line lists are valid in a scene containing other geometry.
+    #[test]
+    fn zero_count_wires_allow_empty_lists_but_reject_authored_indices() {
+        let wire =
+            r##"<lines count="0"><input semantic="VERTEX" source="#vertices"/><p/></lines>"##;
+        let source = document(
+            &format!("{TRIANGLE}{wire}"),
+            r##"<node><instance_geometry url="#mesh"/></node>"##,
+        )
+        .replace("<param/>", "<param type=\"float\"/>");
+        let scene = collada(&source).unwrap();
+        assert_eq!([scene.triangles.len(), scene.lines.len()], [1, 0]);
+        assert!(collada(&source.replace("<p/>", "<p>0 1</p>")).is_err());
+        assert!(collada(&source.replace("count=\"0\"", "count=\"1\"")).is_err());
+    }
+
+    /// Exhausted storage rejects both wire encodings before endpoint expansion.
+    #[test]
+    fn wire_storage_is_checked_before_expanding_source_indices() {
+        let inputs = [Input {
+            source: "positions".into(),
+            semantic: "POSITION".into(),
+            offset: 0,
+            set: 0,
+        }];
+        let sources = HashMap::from([(
+            "positions".into(),
+            Source {
+                values: vec![0.0; 3],
+                count: 1,
+                stride: 3,
+                offset: 0,
+                components: vec![0, 1, 2],
+            },
+        )]);
+        for name in ["lines", "linestrips"] {
+            let xml = format!("<{name} count=\"1\"><p>1 1</p></{name}>");
+            let document = Document::parse(&xml).unwrap();
+            let mut mesh = Mesh::default();
+            let mut budget = Budget { bytes: MAX_STORAGE };
+            let failure = wire_primitive(
+                document.root_element(),
+                1,
+                &inputs,
+                &sources,
+                &mut mesh,
+                &mut budget,
+                None,
+            )
+            .unwrap_err();
+            assert!(failure.to_string().contains("storage budget"));
+            assert_eq!(mesh.lines.capacity(), 0);
+        }
+    }
+
+    /// Hole triangles preserve the exterior area and front winding without covering the opening.
+    #[test]
+    fn planar_polygon_holes_preserve_open_area_and_winding() {
+        let primitive = r##"<polygons count="1"><input semantic="VERTEX" source="#vertices"/><ph><p>0 1 2 3</p><h>4 5 6 7</h></ph></polygons>"##;
+        let source = geometry_document(
+            "0 0 0 4 0 0 4 4 0 0 4 0 1 1 0 1 3 0 3 3 0 3 1 0",
+            8,
+            primitive,
+            r##"<node><instance_geometry url="#mesh"/></node>"##,
+        );
+        let scene = collada(&source).unwrap();
+        assert_eq!(scene.triangles.len(), 8);
+        let area: f64 = scene
+            .triangles
+            .iter()
+            .map(|triangle| {
+                let vertices = triangle.vertices;
+                let cross = (vertices[1] - vertices[0]).cross(vertices[2] - vertices[0]);
+                assert!(cross.z > 0.0);
+                cross.length() * 0.5
+            })
+            .sum();
+        assert!((area - 12.0).abs() < 1e-12);
+        assert!(collada(&source.replace("<h>4 5 6 7</h>", "")).is_err());
+        assert!(collada(&source.replace("<h>4 5 6 7</h>", "<h>4 5</h>")).is_err());
+        assert!(collada(&source.replace("<h>4 5 6 7</h>", "<h>4 5 6 8</h>")).is_err());
+        let error = collada(&source.replace("<h>4 5 6 7</h>", "<h>4 6 5 7</h>")).unwrap_err();
+        assert!(error.to_string().contains("zero-area hole"));
+    }
+
+    /// Signed-area validation retains a valid concave opening instead of requiring convex rings.
+    #[test]
+    fn concave_hole_rings_keep_their_authored_opening() {
+        let primitive = r##"<polygons count="1"><input semantic="VERTEX" source="#vertices"/><ph><p>0 1 2 3</p><h>4 5 6 7 8</h></ph></polygons>"##;
+        let source = geometry_document(
+            "0 0 0 4 0 0 4 4 0 0 4 0 1 1 0 1 3 0 2 2 0 3 3 0 3 1 0",
+            9,
+            primitive,
+            r##"<node><instance_geometry url="#mesh"/></node>"##,
+        );
+        let scene = collada(&source).unwrap();
+        let area: f64 = scene
+            .triangles
+            .iter()
+            .map(|triangle| {
+                (triangle.vertices[1] - triangle.vertices[0])
+                    .cross(triangle.vertices[2] - triangle.vertices[0])
+                    .length()
+                    * 0.5
+            })
+            .sum();
+        assert!((area - 13.0).abs() < 1e-12);
+        scene.validate().unwrap();
+    }
+
+    /// A plain sibling polygon retains its prior triangulation rules when another polygon has a hole.
+    #[test]
+    fn mixed_plain_and_holed_polygons_preserve_existing_plain_faces() {
+        let positions = "0 0 0 4 0 0 4 4 0 0 4 0 1 1 0 1 3 0 3 3 0 3 1 0 6 0 0 9 0 0 9 3 1 6 3 0";
+        let primitive = r##"<polygons count="2"><input semantic="VERTEX" source="#vertices"/><p>8 9 10 11</p><ph><p>0 1 2 3</p><h>4 5 6 7</h></ph></polygons>"##;
+        let scene = collada(&geometry_document(
+            positions,
+            12,
+            primitive,
+            r##"<node><instance_geometry url="#mesh"/></node>"##,
+        ))
+        .unwrap();
+        assert_eq!(scene.triangles.len(), 10);
+        assert!(
+            scene
+                .triangles
+                .iter()
+                .any(|triangle| triangle.vertices.contains(&Vec3::new(9.0, 3.0, 1.0)))
+        );
+    }
+
+    /// Lookat is node placement, retains original translation and recomputes an orthogonal up vector.
+    #[test]
+    fn lookat_places_local_axes_and_composes_in_document_order() {
+        let matrix = lookat(&[2.0, 3.0, 4.0, 3.0, 3.0, 4.0, 0.0, 1.0, 0.5]).unwrap();
+        assert_eq!(matrix.apply(Vec3::default()), Vec3::new(2.0, 3.0, 4.0));
+        assert_eq!(
+            matrix.apply(Vec3::new(0.0, 0.0, -1.0)),
+            Vec3::new(3.0, 3.0, 4.0)
+        );
+        let document = Document::parse("<node><translate>10 0 0</translate><lookat>2 3 4 <!-- eye --> 2 3 3 <!-- target --> 0 1 0</lookat><scale>2 3 4</scale></node>").unwrap();
+        let matrix = node_transform(document.root_element()).unwrap();
+        assert_eq!(
+            matrix.apply(Vec3::new(1.0, 1.0, 1.0)),
+            Vec3::new(14.0, 6.0, 8.0)
+        );
+        for values in [[0.0; 9], [0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 1.0]] {
+            assert!(lookat(&values).is_err());
+        }
+    }
+
+    /// General angular skew tilts nonorthogonal axes correctly and handles small or large direction magnitudes.
+    #[test]
+    fn skew_uses_angular_nonorthogonal_axis_semantics() {
+        let angle = 18.434_948_822_922_01;
+        for scale in [1.0_f64, 1e-250, 1e308] {
+            let matrix = skew(&[angle, scale, scale, 0.0, scale, 0.0, 0.0]).unwrap();
+            let transformed = matrix.apply(Vec3::new(2.0, 3.0, 4.0));
+            assert!((transformed.x - 5.0).abs() < 1e-12);
+            assert_eq!([transformed.y, transformed.z], [3.0, 4.0]);
+        }
+        let angle = (5e-251_f64).to_degrees();
+        let matrix = skew(&[angle, 1e308, 1e58, 0.0, 1e-250, 0.0, 0.0]).unwrap();
+        assert!((matrix.0[1][0] / 1e250 - 1.0).abs() < 1e-12);
+        assert!(skew(&[90.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0]).is_err());
+        assert!(skew(&[-90.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0]).is_err());
+        assert!(skew(&[1.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0]).is_err());
+        assert!(skew(&[0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0]).is_err());
+    }
+
+    /// Finite extreme eye differences and direction magnitudes retain their geometric meaning.
+    #[test]
+    fn lookat_normalization_resists_direction_and_subtraction_overflow() {
+        for scale in [1e-250_f64, 1e308] {
+            let matrix = lookat(&[2.0, 3.0, 4.0, 3.0, 3.0, 4.0, 0.0, scale, scale]).unwrap();
+            assert_eq!(
+                matrix.apply(Vec3::new(0.0, 0.0, -1.0)),
+                Vec3::new(3.0, 3.0, 4.0)
+            );
+        }
+        let matrix = lookat(&[-1e308, 0.0, 0.0, 1e308, 0.0, 0.0, 0.0, 1e308, 1e308]).unwrap();
+        assert_eq!(matrix.0[3][0], -1e308);
+        assert_eq!(matrix.0[2][0], -1.0);
+    }
+
+    /// Oversized offsets, inconsistent line tuples and malformed counts fail before geometry growth.
+    #[test]
+    fn wire_limits_and_malformed_index_lists_are_rejected() {
+        for primitive in [
+            r##"<lines count="1"><input semantic="VERTEX" source="#vertices" offset="64"/><p>0 1</p></lines>"##,
+            r##"<lines count="1"><input semantic="VERTEX" source="#vertices"/><p>0 1 2</p></lines>"##,
+            r##"<linestrips count="1"><input semantic="VERTEX" source="#vertices"/><p>0</p></linestrips>"##,
+            r##"<lines count="1"><input semantic="VERTEX" source="#vertices"/><p>0 3</p></lines>"##,
+            r##"<lines count="20000000"><input semantic="VERTEX" source="#vertices" offset="63"/><p/></lines>"##,
+        ] {
+            let source = document(
+                primitive,
+                r##"<node><instance_geometry url="#mesh"/></node>"##,
+            )
+            .replace("<param/>", "<param type=\"float\"/>");
+            assert!(collada(&source).is_err(), "{primitive}");
+        }
+        let mut budget = Budget { bytes: MAX_STORAGE };
+        let mut vertices = Vec::<Vec3>::new();
+        assert!(grow(&mut vertices, 1, &mut budget).is_err());
+        assert_eq!(vertices, []);
+        assert!(
+            limited_indices(Document::parse("<p>0 1 2</p>").unwrap().root_element(), 2).is_err()
+        );
+    }
+
+    /// XML comments preserve text-content adjacency even when they split a numeric token.
+    #[test]
+    fn comments_inside_numeric_tokens_do_not_insert_list_whitespace() {
+        let primitive = r##"<triangles count="1"><input semantic="VERTEX" source="#vertices"/><p>0 0<!-- index -->1 2</p></triangles>"##;
+        let source = geometry_document(
+            "0 0 0 1<!-- coordinate -->2 0 0 0 1 0",
+            3,
+            primitive,
+            r##"<node><translate>1<!-- translation -->2 0 0</translate><instance_geometry url="#mesh"/></node>"##,
+        );
+        let scene = collada(&source).unwrap();
+        assert_eq!(
+            scene.triangles[0].vertices,
+            [
+                Vec3::new(12.0, 0.0, 0.0),
+                Vec3::new(24.0, 0.0, 0.0),
+                Vec3::new(12.0, 1.0, 0.0)
+            ]
+        );
+        let axis_source = source.replace("Z_UP", "Y_<!-- axis -->UP");
+        let axis_scene = collada(&axis_source).unwrap();
+        assert_eq!(
+            axis_scene.triangles[0].vertices[2],
+            Vec3::new(12.0, 0.0, 1.0)
+        );
+        let document = Document::parse("<p>0 0<!-- index -->1</p>").unwrap();
+        assert_eq!(limited_indices(document.root_element(), 2).unwrap(), [0, 1]);
+        let document = Document::parse("<p>0 1</p>").unwrap();
+        assert!(matches!(
+            list_text(document.root_element()).unwrap(),
+            std::borrow::Cow::Borrowed(_)
+        ));
     }
 }

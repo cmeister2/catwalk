@@ -1,5 +1,8 @@
 //! Regenerate the authored, portable format corpus. PNG baselines are updated
 //! separately so fixture regeneration can never silently approve a new image.
+#[path = "fixtures/collada_primitives.rs"]
+/// Generate COLLADA static primitive controls and register licensed conformance models.
+mod collada_primitives;
 #[path = "fixtures/images_points.rs"]
 /// Generate portable raster and point-cloud fixture encodings.
 mod images_points;
@@ -73,6 +76,7 @@ fn main() -> Result<()> {
     cases.extend(saved_previews::generate_fusion(&root)?);
     cases.extend(saved_previews::generate_inventor(&root)?);
     cases.extend(native_geometry::generate(&root)?);
+    cases.extend(collada_primitives::generate(&root)?);
     cases.sort_by(|a, b| a.extension.cmp(&b.extension).then(a.id.cmp(&b.id)));
     let mut ids = BTreeSet::new();
     for case in &cases {
