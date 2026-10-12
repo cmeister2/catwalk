@@ -10,13 +10,15 @@ pub mod blend_dwg;
 pub mod inventor;
 /// Direct XML thumbnail extraction from qualified LightBurn projects.
 pub mod lightburn;
+/// Addressed PNG extraction from qualified Lychee Mango scene containers.
+pub mod lychee;
 
 use crate::{Result, formats};
 use image::RgbaImage;
 use std::path::Path;
 
 /// Extension aliases dispatched to the saved-image readers.
-pub const EXTENSIONS: &[&str] = &["ipt", "iam", "lbrn", "lbrn2", "blend", "f3d", "dwg"];
+pub const EXTENSIONS: &[&str] = &["ipt", "iam", "lbrn", "lbrn2", "blend", "f3d", "dwg", "lys"];
 
 /// A supported document has no usable saved thumbnail carrier.
 #[derive(Debug)]
@@ -44,6 +46,7 @@ pub fn extract(path: &Path) -> Result<Option<RgbaImage>> {
         "blend" => blend_dwg::extract_blend(path),
         "f3d" => autodesk::extract_fusion(path),
         "dwg" => blend_dwg::extract_dwg(path),
+        "lys" => lychee::extract(path),
         extension => Err(format!("no saved-preview reader for .{extension}").into()),
     }
 }

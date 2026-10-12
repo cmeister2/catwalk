@@ -9,6 +9,9 @@ mod collada_primitives;
 #[path = "fixtures/images_points.rs"]
 /// Generate portable raster and point-cloud fixture encodings.
 mod images_points;
+#[path = "fixtures/lychee.rs"]
+/// Register original Lychee scenes and their independently qualified saved images.
+mod lychee;
 #[path = "fixtures/mesh_scene.rs"]
 /// Generate authored mesh and scene fixtures and register retained reference assets.
 mod mesh_scene;
@@ -91,6 +94,7 @@ fn main() -> Result<()> {
     cases.extend(saved_previews::generate_blend_dwg(&root)?);
     cases.extend(saved_previews::generate_fusion(&root)?);
     cases.extend(saved_previews::generate_inventor(&root)?);
+    cases.extend(lychee::generate(&root)?);
     cases.extend(native_geometry::generate(&root)?);
     cases.extend(vrml_prototypes::generate(&root)?);
     cases.extend(vtk_lines::generate(&root)?);
