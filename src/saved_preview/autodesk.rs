@@ -35,7 +35,7 @@ const ACTIVE_MANIFEST: &str = "FusionAssetName[Active]/Manifest.dat";
 ///
 /// # Errors
 ///
-/// Returns an error for I/O failures, malformed or unqualified archive metadata or image data,
+/// Returns an error for I/O failures, filename decoding, malformed or unqualified archive metadata or image data,
 /// unsupported compression, failed checksums, or exceeded extraction budgets.
 pub fn extract_fusion(path: &Path) -> Result<Option<RgbaImage>> {
     let started = Instant::now();
@@ -56,7 +56,7 @@ pub fn extract_fusion(path: &Path) -> Result<Option<RgbaImage>> {
     for index in 0..archive.len() {
         check_time(started)?;
         let entry = archive.by_index_raw(index)?;
-        match entry.name() {
+        match entry.name()?.as_ref() {
             "Manifest.dat" => root_manifest = Some(index),
             ACTIVE_MANIFEST => active_manifest = Some(index),
             PREVIEW => preview = Some(index),

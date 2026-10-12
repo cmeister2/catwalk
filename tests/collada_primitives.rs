@@ -1,5 +1,9 @@
 //! Independent static COLLADA primitive, accessor and affine-placement qualification.
 
+#[path = "support/digest_hex.rs"]
+/// Format digest bytes with the unchanged lowercase hexadecimal comparison protocol.
+mod digest_hex;
+
 use catwalk3d::{
     formats,
     scene::{Scene, Vec3},
@@ -153,7 +157,10 @@ fn bounds(scene: &Scene, minimum: [f64; 3], maximum: [f64; 3]) {
 fn retained_primary_models_and_license_preserve_exact_source_bytes() {
     for (name, expected) in RETAINED {
         assert_eq!(
-            format!("{:x}", Sha256::digest(fs::read(fixture(name)).unwrap())),
+            format!(
+                "{:x}",
+                digest_hex::Hex(Sha256::digest(fs::read(fixture(name)).unwrap()))
+            ),
             expected,
             "{name}"
         );

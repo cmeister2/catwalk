@@ -18,6 +18,12 @@ ignore-dev-dependencies = true
 ignore-build-dependencies = true
 ignore-transitive-dependencies = false
 
+# openusd-schemas declares MIT for its Rust wrapper. Its bundled OpenUSD schema
+# definitions and generated schema code have separate Tomorrow Open Source
+# Technology License 1.0 terms.
+# notices.mjs verifies and includes their complete published LICENSE and NOTICE;
+# no standard SPDX license is substituted for those schema-specific terms.
+
 # These files have real copyright text that SPDX synthesis did not preserve.
 # Packaged files are preferred; git is used only for files omitted by upstream.
 [Inflector.clarify]

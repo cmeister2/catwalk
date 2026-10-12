@@ -1,5 +1,9 @@
 //! Unchanged Google producer meshes qualify authored corner normals independently.
 
+#[path = "support/digest_hex.rs"]
+/// Format digest bytes with the unchanged lowercase hexadecimal comparison protocol.
+mod digest_hex;
+
 use catwalk3d::{
     Result, formats,
     scene::{Scene, Vec3},
@@ -85,7 +89,10 @@ fn unchanged_google_encodings_preserve_authored_normal_geometry_associations() -
         let path = root.join(name);
         let bytes = fs::read(&path)?;
         assert_eq!(bytes.len(), length);
-        assert_eq!(format!("{:x}", Sha256::digest(&bytes)), hash);
+        assert_eq!(
+            format!("{:x}", digest_hex::Hex(Sha256::digest(&bytes))),
+            hash
+        );
         qualify_cube(&formats::load(&path)?, normal_order);
     }
     // The existing gallery file remains the original Google valence stream.

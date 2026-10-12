@@ -7,6 +7,10 @@
 //! solid volumes only for closed volume cells; open surface contributions qualify
 //! winding without making a solid-volume claim.
 
+#[path = "support/digest_hex.rs"]
+/// Format digest bytes with the unchanged lowercase hexadecimal comparison protocol.
+mod digest_hex;
+
 use catwalk3d::{
     formats, render,
     scene::{Scene, Vec3},
@@ -994,7 +998,11 @@ fn retained_kitware_input_and_license_keep_their_original_identity() {
     ] {
         let bytes = fs::read(fixture(name)).unwrap();
         assert_eq!(bytes.len(), length, "{name}");
-        assert_eq!(format!("{:x}", Sha256::digest(&bytes)), digest, "{name}");
+        assert_eq!(
+            format!("{:x}", digest_hex::Hex(Sha256::digest(&bytes))),
+            digest,
+            "{name}"
+        );
     }
 }
 

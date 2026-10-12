@@ -1,5 +1,9 @@
 //! Independent geometry and original-byte qualification of multipart 3MF packages.
 
+#[path = "support/digest_hex.rs"]
+/// Format digest bytes with the unchanged lowercase hexadecimal comparison protocol.
+mod digest_hex;
+
 use catwalk3d::{
     formats,
     scene::{Scene, Vec3},
@@ -153,7 +157,10 @@ fn original_slicer_packages_match_independent_geometry_and_exact_source_bytes() 
     for expected in references {
         let path = fixture(expected.name);
         let original = fs::read(&path).unwrap();
-        assert_eq!(format!("{:x}", Sha256::digest(&original)), expected.sha256);
+        assert_eq!(
+            format!("{:x}", digest_hex::Hex(Sha256::digest(&original))),
+            expected.sha256
+        );
         let mut zip = zip::ZipArchive::new(std::io::Cursor::new(&original)).unwrap();
         let mut model = String::new();
         zip.by_name("3D/3dmodel.model")

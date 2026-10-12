@@ -1,5 +1,9 @@
 //! Independent source, geometry and headless-render qualification for unstructured VTK lines.
 
+#[path = "support/digest_hex.rs"]
+/// Format digest bytes with the unchanged lowercase hexadecimal comparison protocol.
+mod digest_hex;
+
 use catwalk3d::{
     formats,
     render::{RenderOptions, render, write_png},
@@ -199,7 +203,11 @@ fn original_f3d_dataset_and_required_notices_retain_pinned_bytes() {
     ] {
         let bytes = fs::read(fixture(name)).unwrap();
         assert_eq!(bytes.len(), size);
-        assert_eq!(format!("{:x}", Sha256::digest(bytes)), expected, "{name}");
+        assert_eq!(
+            format!("{:x}", digest_hex::Hex(Sha256::digest(bytes))),
+            expected,
+            "{name}"
+        );
     }
 }
 
@@ -231,7 +239,7 @@ fn original_f3d_lines_match_every_independently_decoded_endpoint() {
     // using binary32 promotion: 3,497 cells × six little-endian f64 values.
     // This includes all 282 coincident-endpoint cells and original signed zeros.
     assert_eq!(
-        format!("{:x}", digest.finalize()),
+        format!("{:x}", digest_hex::Hex(digest.finalize())),
         "e2045cd0886cdae8ffe2299f7c602743e6be45329df2d7c7300881d3d08b8edc"
     );
     let origin = Vec3::new(9.999_999_974_752_427e-7, 9.999_999_974_752_427e-7, 0.);

@@ -1,4 +1,8 @@
 //! Shared corpus and decoded-pixel comparison used by CI and the Pages gallery.
+#[path = "digest_hex.rs"]
+/// Format digest bytes with the unchanged lowercase hexadecimal comparison protocol.
+mod digest_hex;
+
 use catwalk3d::{
     Result, formats,
     render::{RenderOptions, write_png},
@@ -104,7 +108,7 @@ fn fingerprint(root: &Path, paths: &[&str]) -> Result<String> {
             digest.update(&buffer[..count]);
         }
     }
-    Ok(format!("{:x}", digest.finalize()))
+    Ok(format!("{:x}", digest_hex::Hex(digest.finalize())))
 }
 
 /// Include every corpus file, so detached buffers, materials and scalar arrays
@@ -118,7 +122,7 @@ pub fn verification_context(workspace: &Path) -> Result<Value> {
         "schema": 1,
         "corpus_sha256": fingerprint(workspace, &["tests/fixtures/formats"] )?,
         "baselines_sha256": fingerprint(workspace, &["tests/snapshots/formats"] )?,
-        "renderer_sha256": fingerprint(workspace, &["src", "Cargo.toml", "Cargo.lock", "tests/support/format_corpus.rs"] )?,
+        "renderer_sha256": fingerprint(workspace, &["src", "Cargo.toml", "Cargo.lock", "tests/support/format_corpus.rs", "tests/support/digest_hex.rs"] )?,
     }))
 }
 
@@ -580,6 +584,7 @@ mod report_reuse_tests {
             for directory in [
                 "tests/fixtures/formats",
                 "tests/snapshots/formats",
+                "tests/support",
                 "src",
                 "report/images",
             ] {
@@ -598,6 +603,10 @@ mod report_reuse_tests {
                 vertices,
             )?;
             std::fs::write(workspace.0.join("src/lib.rs"), "// renderer version A\n")?;
+            std::fs::write(
+                workspace.0.join("tests/support/digest_hex.rs"),
+                "// digest formatting version A\n",
+            )?;
             let image = RgbaImage::from_pixel(2, 2, Rgba([100, 50, 25, 255]));
             save_png(
                 &workspace.0.join("tests/snapshots/formats/mesh.png"),
@@ -638,6 +647,7 @@ mod report_reuse_tests {
             "tests/fixtures/formats/mesh.bin",
             "tests/snapshots/formats/mesh.png",
             "src/lib.rs",
+            "tests/support/digest_hex.rs",
         ] {
             let path = workspace.0.join(path);
             let original = std::fs::read(&path)?;

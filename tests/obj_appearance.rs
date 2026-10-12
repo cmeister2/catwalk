@@ -1,5 +1,9 @@
 //! Independent source, corner-attribute and rendered appearance qualification for OBJ.
 
+#[path = "support/digest_hex.rs"]
+/// Format digest bytes with the unchanged lowercase hexadecimal comparison protocol.
+mod digest_hex;
+
 use catwalk3d::{
     formats,
     render::{RenderOptions, render},
@@ -158,7 +162,11 @@ fn card(scene: &Scene, first: usize) -> Scene {
 fn genuine_exporter_source_bytes_and_geometry_match_independent_expectations() {
     for (name, expected) in RETAINED {
         let bytes = fs::read(fixture(name)).unwrap();
-        assert_eq!(format!("{:x}", Sha256::digest(bytes)), expected, "{name}");
+        assert_eq!(
+            format!("{:x}", digest_hex::Hex(Sha256::digest(bytes))),
+            expected,
+            "{name}"
+        );
     }
     let source = fs::read(fixture("regr01.obj")).unwrap();
     assert!(source.starts_with(b"# Max2Obj Version 4.0 Mar 10th, 2001"));
@@ -207,7 +215,7 @@ fn genuine_exporter_source_bytes_and_geometry_match_independent_expectations() {
         }
     }
     assert_eq!(
-        format!("{:x}", geometry.finalize()),
+        format!("{:x}", digest_hex::Hex(geometry.finalize())),
         "ec2c17ab5f5f9daecd2963a852615bdd9ca8bd56ff5995ccf5131522b5740760"
     );
     let minimum = scene.positions().fold([f64::INFINITY; 3], |mut bounds, p| {

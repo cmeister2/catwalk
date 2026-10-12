@@ -411,8 +411,8 @@ impl Package {
         let physical_entries = validate_zip_directory(&mut file, length)?;
         let mut archive = zip::ZipArchive::new(file)?;
         if archive.len() != physical_entries {
-            // Also catch aliases which ZIP filename decoding maps to the
-            // same Unicode name before its public archive index is built.
+            // Require every physically validated record to remain visible.
+            // Decoded-name aliases are checked by the canonical index below.
             return Err("duplicate decoded 3MF package part name".into());
         }
         if archive.len() > MAX_RESOURCES {
@@ -427,7 +427,7 @@ impl Package {
             // ZIP item names are decoded names, whereas relationship and
             // production targets are URIs. A literal '%' in an item name must
             // not be interpreted as a second URI escape.
-            let path = part_name(entry.name())?;
+            let path = part_name(&entry.name()?)?;
             if entries.insert(path, index).is_some() {
                 return Err("duplicate 3MF package part name".into());
             }
@@ -1872,8 +1872,12 @@ mod tests {
 
     fn zip_bytes(zip64_comment: Option<&[u8]>) -> Vec<u8> {
         let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
-        writer.set_raw_zip64_comment(zip64_comment.map(Into::into));
-        writer.set_comment("a package comment containing PK\u{5}\u{6}");
+        if let Some(extension) = zip64_comment {
+            writer.set_raw_zip64_extensible_data_sector(extension.into());
+        }
+        writer
+            .set_comment("a package comment containing PK\u{5}\u{6}")
+            .unwrap();
         writer
             .start_file("3D/3dmodel.model", zip::write::SimpleFileOptions::default())
             .unwrap();

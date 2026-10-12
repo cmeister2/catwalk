@@ -1,5 +1,9 @@
 //! Independent planar faceted STEP geometry, topology and assembly qualification.
 
+#[path = "support/digest_hex.rs"]
+/// Format digest bytes with the unchanged lowercase hexadecimal comparison protocol.
+mod digest_hex;
+
 use catwalk3d::{
     Result, formats,
     scene::{Scene, Triangle, Vec3},
@@ -197,13 +201,13 @@ fn genuine_jumper_step_matches_unchanged_binary_stl_geometry_and_orientation() -
     let step = fs::read(&path)?;
     assert_eq!(step.len(), 273_247);
     assert_eq!(
-        format!("{:x}", Sha256::digest(&step)),
+        format!("{:x}", digest_hex::Hex(Sha256::digest(&step))),
         "2d31965483cc219cfdd3375816658fee90ac1eb01ccfb7d8539f35c25322826f"
     );
     let stl = fs::read(fixture("stl-jumper-source.stl"))?;
     assert_eq!(stl.len(), 38_484);
     assert_eq!(
-        format!("{:x}", Sha256::digest(&stl)),
+        format!("{:x}", digest_hex::Hex(Sha256::digest(&stl))),
         "955cae66249058e00a25dc913228766275803a1cc471c09581cb2984cf674733"
     );
     let reference = binary_stl(&stl)?;
