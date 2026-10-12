@@ -1,0 +1,4 @@
+# Author-created diffuse material; MIT
+newmtl textured
+Kd .5 .8 1
+map_Kd quadrants.png

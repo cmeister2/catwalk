@@ -970,6 +970,22 @@
     },
     {
       "extension": "obj",
+      "id": "obj-alpha-overlap",
+      "input": "obj_appearance/obj-alpha-overlap.obj",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "OBJ dissolved materials with translucent depth overlaps"
+    },
+    {
+      "extension": "obj",
+      "id": "obj-assimp-building",
+      "input": "obj_appearance/regr01.obj",
+      "kind": "model",
+      "provenance": "Unmodified Assimp test/models/OBJ/regr01.obj and regr01.mtl at commit f6ee58e2489f3cbaee328655599f50c5c386a08e; original headers identify Max2Obj/Max2Mtl Version 4.0 export. Original legacy material names are decoded without modifying source bytes. Separately BSD-3-Clause licensed test asset; complete original license retained as obj_appearance/ASSIMP-LICENSE. Source contains 2710 triangles, including four zero-area faces omitted from rendered geometry, and 12 diffuse materials with UVs and translucent windows; no texture maps or supplied normals. Exact hashes and independent geometry/appearance expectations in obj_appearance/README.md. https://github.com/assimp/assimp/tree/f6ee58e2489f3cbaee328655599f50c5c386a08e/test/models/OBJ",
+      "title": "Max2Obj exported building with original diffuse materials and UVs"
+    },
+    {
+      "extension": "obj",
       "id": "obj-colored-polyline",
       "input": "mesh_scene/obj-colored-polyline.obj",
       "kind": "model",
@@ -983,6 +999,22 @@
       "kind": "model",
       "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
       "title": "OBJ closed mesh with detached MTL palette"
+    },
+    {
+      "extension": "obj",
+      "id": "obj-texture-transform-border",
+      "input": "obj_appearance/obj-texture-transform-border.obj",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "OBJ linear diffuse colors, map transforms, repeat and border"
+    },
+    {
+      "extension": "obj",
+      "id": "obj-textured-concave",
+      "input": "obj_appearance/obj-textured-concave.obj",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "OBJ concave polygon with independent UV, normal and color corners"
     },
     {
       "extension": "off",

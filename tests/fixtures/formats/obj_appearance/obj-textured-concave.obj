@@ -1,0 +1,20 @@
+# Author-created tilted concave L; MIT
+mtllib concave.mtl
+o ConcaveCornerStreams
+v 0 0 0 1 1 1
+v 2 0 .5 .75 1 1
+v 2 1 .625 1 .75 1
+v 1 1 .375 1 1 .75
+v 1 2 .5 .75 .75 1
+v 0 2 .25 1 .75 .75
+vt .5 .5
+vt 0 1
+vt 1 0
+vt .5 1
+vt 0 0
+vt 1 .5
+vn -.25 -.125 2
+vn .75 -.125 1
+vn -.25 .875 1
+usemtl textured
+f -5/-4/2 -4/-1/2 -3/-6/1 -2/-3/3 -1/-5/3 -6/-2/1

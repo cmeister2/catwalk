@@ -37,6 +37,10 @@ mod lidar;
 mod lightburn;
 /// Polygon, triangle, point and wire interchange readers.
 mod mesh;
+/// Indexed OBJ corner attributes and local Wavefront material resources.
+mod obj;
+/// Bounded Wavefront diffuse materials and image maps.
+mod obj_material;
 /// First-frame Quake IDPO model geometry.
 mod quakemdl;
 /// VTK mesh, grid and multiblock geometry.

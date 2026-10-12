@@ -12,6 +12,9 @@ mod mesh_scene;
 #[path = "fixtures/native_geometry.rs"]
 /// Register licensed native documents with fresh geometry render qualification.
 mod native_geometry;
+#[path = "fixtures/obj_appearance.rs"]
+/// Generate OBJ appearance controls and register a retained textured exporter model.
+mod obj_appearance;
 #[path = "fixtures/saved_previews.rs"]
 /// Generate qualified saved-thumbnail carrier fixtures.
 mod saved_previews;
@@ -76,6 +79,7 @@ fn main() -> Result<()> {
     cases.extend(saved_previews::generate_fusion(&root)?);
     cases.extend(saved_previews::generate_inventor(&root)?);
     cases.extend(native_geometry::generate(&root)?);
+    cases.extend(obj_appearance::generate(&root)?);
     cases.extend(collada_primitives::generate(&root)?);
     cases.sort_by(|a, b| a.extension.cmp(&b.extension).then(a.id.cmp(&b.id)));
     let mut ids = BTreeSet::new();

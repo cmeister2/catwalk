@@ -1,4 +1,5 @@
 //! Mesh and point formats with no native library dependencies.
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -26,12 +27,23 @@ pub fn load(path: &Path) -> Result<Scene> {
         .to_ascii_lowercase();
     let scene = match ext.as_str() {
         "stl" => stl(&bytes),
-        "obj" => obj(
-            text(&bytes)?,
-            path.parent()
+        "obj" => {
+            let mut storage = u64::try_from(bytes.len())?;
+            let source = wavefront_text(&bytes, &mut storage)?;
+            let directory = path
+                .parent()
                 .filter(|p| !p.as_os_str().is_empty())
-                .unwrap_or(Path::new(".")),
-        ),
+                .unwrap_or(Path::new("."));
+            match source {
+                Cow::Borrowed(source) => obj(source, directory),
+                Cow::Owned(source) => {
+                    // The legacy copy was bounded together with the input during
+                    // decoding; release that input before loading sidecar files.
+                    drop(bytes);
+                    obj(&source, directory)
+                }
+            }
+        }
         "ply" => ply(&bytes),
         "off" => off(text(&bytes)?),
         "pts" => pts(text(&bytes)?),
@@ -47,6 +59,65 @@ pub fn load(path: &Path) -> Result<Scene> {
 /// Decode a mesh text payload as UTF-8.
 fn text(bytes: &[u8]) -> Result<&str> {
     Ok(std::str::from_utf8(bytes)?)
+}
+
+/// Decode OBJ/MTL text as UTF-8, falling back to lossless Windows-1252 for legacy files.
+/// Undefined Windows-1252 bytes retain their distinct C1 control code points.
+/// The caller has already charged encoded bytes to `storage`; an owned UTF-8 copy
+/// is charged before allocation, including any extra reserved capacity.
+///
+/// # Errors
+/// Returns an error if decoded size arithmetic, allocation or the shared aggregate
+/// 512 MiB resource ceiling is exceeded. Valid UTF-8 requires no additional storage.
+pub(super) fn wavefront_text<'a>(bytes: &'a [u8], storage: &mut u64) -> Result<Cow<'a, str>> {
+    if *storage > super::MAX_INPUT_BYTES {
+        return Err("OBJ and material resources exceed the aggregate 512 MiB limit".into());
+    }
+    if let Ok(source) = std::str::from_utf8(bytes) {
+        return Ok(Cow::Borrowed(source));
+    }
+    let length = bytes
+        .iter()
+        .try_fold(0_usize, |length, &byte| {
+            length.checked_add(wavefront_legacy_char(byte).len_utf8())
+        })
+        .ok_or("OBJ legacy text expansion overflow")?;
+    let projected = storage
+        .checked_add(u64::try_from(length)?)
+        .ok_or("OBJ legacy text storage overflow")?;
+    if projected > super::MAX_INPUT_BYTES {
+        return Err("OBJ legacy text expansion exceeds the aggregate 512 MiB limit".into());
+    }
+    *storage = projected;
+    let mut source = String::new();
+    source.try_reserve_exact(length)?;
+    *storage = storage
+        .checked_add(u64::try_from(source.capacity() - length)?)
+        .ok_or("OBJ legacy text storage overflow")?;
+    if *storage > super::MAX_INPUT_BYTES {
+        return Err("OBJ legacy text allocation exceeds the aggregate 512 MiB limit".into());
+    }
+    for &byte in bytes {
+        source.push(wavefront_legacy_char(byte));
+    }
+    Ok(Cow::Owned(source))
+}
+
+/// Map one Windows-1252 byte without replacing or merging undefined code points.
+/// Defined mappings follow the [Microsoft mapping table](https://www.unicode.org/Public/MAPPINGS/VENDORS/MICSFT/WINDOWS/CP1252.TXT).
+fn wavefront_legacy_char(byte: u8) -> char {
+    /// Windows-1252's non-Latin-1 block, with undefined bytes preserved as C1 controls.
+    const C1: [char; 32] = [
+        '\u{20ac}', '\u{81}', '\u{201a}', '\u{192}', '\u{201e}', '\u{2026}', '\u{2020}',
+        '\u{2021}', '\u{2c6}', '\u{2030}', '\u{160}', '\u{2039}', '\u{152}', '\u{8d}', '\u{17d}',
+        '\u{8f}', '\u{90}', '\u{2018}', '\u{2019}', '\u{201c}', '\u{201d}', '\u{2022}', '\u{2013}',
+        '\u{2014}', '\u{2dc}', '\u{2122}', '\u{161}', '\u{203a}', '\u{153}', '\u{9d}', '\u{17e}',
+        '\u{178}',
+    ];
+    match byte {
+        0x80..=0x9f => C1[usize::from(byte - 0x80)],
+        _ => char::from(byte),
+    }
 }
 /// Convert a mesh parser diagnostic into the shared error type.
 fn err(message: impl Into<String>) -> Error {
@@ -108,7 +179,7 @@ fn rgb(values: &[&str], normalized: bool) -> Result<[u8; 3]> {
     clippy::too_many_lines,
     reason = "Keep polygon validation, dominant-plane projection and triangulation consistency checks together."
 )]
-pub(crate) fn triangulate_polygon(vertices: &[Vec3]) -> Result<Vec<[Vec3; 3]>> {
+pub(super) fn triangulate_polygon_indices(vertices: &[Vec3]) -> Result<Vec<[usize; 3]>> {
     if vertices.len() < 3 {
         return Err(err("face has fewer than three vertices"));
     }
@@ -128,7 +199,7 @@ pub(crate) fn triangulate_polygon(vertices: &[Vec3]) -> Result<Vec<[Vec3; 3]>> {
         return Ok(Vec::new());
     }
     if ids.len() == 3 {
-        return Ok(vec![[vertices[ids[0]], vertices[ids[1]], vertices[ids[2]]]]);
+        return Ok(vec![[ids[0], ids[1], ids[2]]]);
     }
     let mut normal = Vec3::default();
     // Shift first to avoid cancellation in models far from the origin.
@@ -179,7 +250,7 @@ pub(crate) fn triangulate_polygon(vertices: &[Vec3]) -> Result<Vec<[Vec3; 3]>> {
         .all(|k| cross(ids[k], ids[(k + 1) % ids.len()], ids[(k + 2) % ids.len()]) * sign > epsilon)
     {
         return Ok((1..ids.len() - 1)
-            .map(|k| [vertices[ids[0]], vertices[ids[k]], vertices[ids[k + 1]]])
+            .map(|k| [ids[0], ids[k], ids[k + 1]])
             .collect());
     }
     let mut triangles = Vec::with_capacity(ids.len() - 2);
@@ -207,7 +278,7 @@ pub(crate) fn triangulate_polygon(vertices: &[Vec3]) -> Result<Vec<[Vec3; 3]>> {
                     && cross(c, a, p) * sign >= -epsilon
             });
             if !contains {
-                ear = Some((k, [vertices[a], vertices[b], vertices[c]]));
+                ear = Some((k, [a, b, c]));
                 break;
             }
         }
@@ -223,9 +294,20 @@ pub(crate) fn triangulate_polygon(vertices: &[Vec3]) -> Result<Vec<[Vec3; 3]>> {
         }
     }
     if ids.len() == 3 {
-        triangles.push([vertices[ids[0]], vertices[ids[1]], vertices[ids[2]]]);
+        triangles.push([ids[0], ids[1], ids[2]]);
     }
     Ok(triangles)
+}
+
+/// Triangulate positions while retaining the original indexed helper's winding and ordering.
+///
+/// # Errors
+/// Returns the indexed triangulator's polygon validation and geometry limit errors.
+pub(crate) fn triangulate_polygon(vertices: &[Vec3]) -> Result<Vec<[Vec3; 3]>> {
+    Ok(triangulate_polygon_indices(vertices)?
+        .into_iter()
+        .map(|indices| indices.map(|index| vertices[index]))
+        .collect())
 }
 
 /// Resolve polygon indices, triangulate the face and append it within the item budget.
@@ -322,26 +404,6 @@ fn stl(bytes: &[u8]) -> Result<Scene> {
     Ok(scene)
 }
 
-/// Resolve positive or relative-negative OBJ vertex references with optional slash fields.
-#[allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_sign_loss,
-    reason = "The caller bounds vertex counts to MAX_ITEMS; signed OBJ references are range checked before native indexing."
-)]
-fn obj_vertex_index(word: &str, vertex_count: usize) -> Result<usize> {
-    let index: i64 = word.split('/').next().unwrap_or("").parse()?;
-    let index = match index.cmp(&0) {
-        std::cmp::Ordering::Greater => index - 1,
-        std::cmp::Ordering::Less => vertex_count as i64 + index,
-        std::cmp::Ordering::Equal => return Err(err("OBJ indices are one-based; zero is invalid")),
-    };
-    if index < 0 || index as usize >= vertex_count {
-        return Err(err("OBJ index out of bounds"));
-    }
-    Ok(index as usize)
-}
-
 /// Average available indexed vertex RGB values without allocating an intermediate palette.
 #[allow(
     clippy::cast_possible_truncation,
@@ -362,143 +424,9 @@ fn indexed_color(indices: &[usize], colors: &[Option<[u8; 3]>]) -> Option<[u8; 3
     (count != 0).then(|| sum.map(|value| (value / count) as u8))
 }
 
-/// Decode OBJ polygons, polylines, points, vertex colors and adjacent MTL diffuse colors.
-#[allow(
-    clippy::too_many_lines,
-    reason = "Keep OBJ directives together because they share evolving vertex, material and index state."
-)]
+/// Decode indexed OBJ geometry and bounded local Wavefront material resources.
 fn obj(source: &str, directory: &Path) -> Result<Scene> {
-    let mut vertices = Vec::new();
-    let mut colors = Vec::new();
-    let mut materials = HashMap::new();
-    let mut material = None;
-    let mut scene = Scene::default();
-    // OBJ continuations are allowed; build logical lines before tokenizing.
-    let source = source.replace("\\\r\n", " ").replace("\\\n", " ");
-    for (line_no, line) in source.lines().enumerate() {
-        let words: Vec<_> = line
-            .split('#')
-            .next()
-            .unwrap_or("")
-            .split_whitespace()
-            .collect();
-        let result = (|| -> Result<()> {
-            match words.first().copied() {
-                Some("v") => {
-                    let mut p = vertex(&words[1..])?;
-                    if words.len() == 5 || words.len() == 8 {
-                        let w = finite(words[4])?;
-                        if w == 0.0 {
-                            return Err(err("OBJ homogeneous vertex has zero weight"));
-                        }
-                        p = p / w;
-                    }
-                    vertices.push(p);
-                    let color = if words.len() == 7 {
-                        Some(rgb(&words[4..7], true)?)
-                    } else if words.len() >= 8 {
-                        Some(rgb(&words[5..8], true)?)
-                    } else {
-                        None
-                    };
-                    colors.push(color);
-                }
-                Some("f") => {
-                    let indices = words[1..]
-                        .iter()
-                        .map(|w| obj_vertex_index(w, vertices.len()))
-                        .collect::<Result<Vec<_>>>()?;
-                    let color = material
-                        .as_ref()
-                        .and_then(|name| materials.get(name))
-                        .copied()
-                        .or_else(|| indexed_color(&indices, &colors));
-                    add_face(&mut scene, &indices, &vertices, color)?;
-                }
-                Some("l") => {
-                    if words.len() < 3 {
-                        return Err(err("OBJ polyline requires at least two vertices"));
-                    }
-                    let indices = words[1..]
-                        .iter()
-                        .map(|word| obj_vertex_index(word, vertices.len()))
-                        .collect::<Result<Vec<_>>>()?;
-                    if scene.lines.len().saturating_add(indices.len() - 1) > MAX_ITEMS {
-                        return Err(err("too much OBJ line geometry"));
-                    }
-                    let material_color = material
-                        .as_ref()
-                        .and_then(|name| materials.get(name))
-                        .copied();
-                    scene.lines.extend(indices.windows(2).map(|edge| Line {
-                        vertices: [vertices[edge[0]], vertices[edge[1]]],
-                        color: material_color.or_else(|| indexed_color(edge, &colors)),
-                    }));
-                }
-                Some("p") => {
-                    if words.len() < 2 {
-                        return Err(err("OBJ point element requires a vertex"));
-                    }
-                    for word in &words[1..] {
-                        let index = obj_vertex_index(word, vertices.len())?;
-                        scene.points.push(Point {
-                            position: vertices[index],
-                            color: colors[index],
-                        });
-                    }
-                }
-                Some("curv" | "curv2" | "surf") => {
-                    return Err(err("OBJ free-form curves and surfaces are not implemented"));
-                }
-                Some("usemtl") => material = words.get(1).map(std::string::ToString::to_string),
-                Some("mtllib") => {
-                    for name in &words[1..] {
-                        // A missing optional appearance file should not hide geometry.
-                        if let Ok(source) = super::relative_resource(directory, name)
-                            .and_then(|path| super::read_file(&path))
-                            .and_then(|bytes| String::from_utf8(bytes).map_err(Error::from))
-                        {
-                            let mut name = None;
-                            for line in source.lines() {
-                                let words: Vec<_> = line
-                                    .split('#')
-                                    .next()
-                                    .unwrap_or("")
-                                    .split_whitespace()
-                                    .collect();
-                                if words.first() == Some(&"newmtl") {
-                                    name = words.get(1).map(std::string::ToString::to_string);
-                                } else if words.first() == Some(&"Kd")
-                                    && words.len() >= 4
-                                    && let (Some(name), Ok(color)) =
-                                        (name.as_ref(), rgb(&words[1..4], true))
-                                {
-                                    materials.insert(name.clone(), color);
-                                }
-                            }
-                        }
-                    }
-                }
-                _ => {}
-            }
-            if vertices.len() > MAX_ITEMS
-                || scene.triangles.len() > MAX_ITEMS
-                || scene.points.len() > MAX_ITEMS
-            {
-                return Err(err("too much OBJ geometry"));
-            }
-            Ok(())
-        })();
-        result.map_err(|e| err(format!("OBJ line {}: {e}", line_no + 1)))?;
-    }
-    if scene.triangles.is_empty() && scene.points.is_empty() && scene.lines.is_empty() {
-        scene.points = vertices
-            .into_iter()
-            .zip(colors)
-            .map(|(position, color)| Point { position, color })
-            .collect();
-    }
-    Ok(scene)
+    super::obj::parse(source, directory)
 }
 
 /// Decode OFF or COFF polygon meshes with checked counts and optional vertex/face colors.
@@ -1576,6 +1504,59 @@ fn pcd(bytes: &[u8]) -> Result<Scene> {
 mod tests {
     use super::*;
 
+    /// Valid UTF-8 is borrowed unchanged even when no allocation budget remains.
+    #[test]
+    fn wavefront_utf8_remains_borrowed_and_other_mesh_text_stays_strict() {
+        let bytes = "usemtl Terraindæk_€\n".as_bytes();
+        let mut storage = super::super::MAX_INPUT_BYTES;
+        let source = wavefront_text(bytes, &mut storage).unwrap();
+        assert!(matches!(source, Cow::Borrowed(_)));
+        assert_eq!(source.as_bytes(), bytes);
+        assert_eq!(source.as_ptr(), bytes.as_ptr());
+        assert_eq!(storage, super::super::MAX_INPUT_BYTES);
+        assert!(text(b"usemtl Terraind\xe6k\n").is_err());
+    }
+
+    /// Every legacy byte remains distinct, including all undefined Windows-1252 positions.
+    #[test]
+    fn wavefront_legacy_mapping_preserves_every_single_byte() {
+        let bytes: Vec<_> = (u8::MIN..=u8::MAX).collect();
+        let mut storage = u64::try_from(bytes.len()).unwrap();
+        let source = wavefront_text(&bytes, &mut storage).unwrap();
+        assert!(matches!(source, Cow::Owned(_)));
+        let characters: Vec<_> = source.chars().collect();
+        assert_eq!(characters.len(), 256);
+        assert_eq!(
+            characters
+                .iter()
+                .collect::<std::collections::HashSet<_>>()
+                .len(),
+            256
+        );
+        assert_eq!(characters[0x80], '€');
+        assert_eq!(characters[0xe6], 'æ');
+        for byte in [0x81_u8, 0x8d, 0x8f, 0x90, 0x9d] {
+            assert_eq!(characters[usize::from(byte)], char::from(byte));
+        }
+        assert!(!characters.contains(&'\u{fffd}'));
+    }
+
+    /// UTF-8 expansion is checked before reserving or mutating the remaining resource budget.
+    #[test]
+    fn wavefront_legacy_expansion_obeys_the_aggregate_resource_ceiling() {
+        let mut storage = super::super::MAX_INPUT_BYTES - 5;
+        let source = wavefront_text(b"\x80\xe6", &mut storage).unwrap();
+        assert_eq!(source, "€æ");
+        assert_eq!(source.len(), 5);
+        assert_eq!(storage, super::super::MAX_INPUT_BYTES);
+        let mut storage = super::super::MAX_INPUT_BYTES - 4;
+        assert!(wavefront_text(b"\x80\xe6", &mut storage).is_err());
+        assert_eq!(storage, super::super::MAX_INPUT_BYTES - 4);
+        let mut storage = u64::MAX;
+        assert!(wavefront_text(b"\xe6", &mut storage).is_err());
+        assert_eq!(storage, u64::MAX);
+    }
+
     fn triangle_area(t: [Vec3; 3]) -> f64 {
         (t[1] - t[0]).cross(t[2] - t[0]).length() / 2.0
     }
@@ -1630,7 +1611,7 @@ mod tests {
 
     #[test]
     fn obj_negative_indices_and_vertex_colors() {
-        let source = "v 0 0 0 1 0 0\nv 1 0 0 1 0 0\nv 0 1 0 1 0 0\nf -3/-1 -2/-1 -1/-1\n";
+        let source = "v 0 0 0 1 0 0\nv 1 0 0 1 0 0\nv 0 1 0 1 0 0\nvt 0 0\nf -3/-1 -2/-1 -1/-1\n";
         let scene = obj(source, Path::new(".")).unwrap();
         assert_eq!(scene.triangles.len(), 1);
         assert_eq!(scene.triangles[0].color, Some([255, 0, 0]));
@@ -1688,7 +1669,7 @@ mod tests {
         );
         std::fs::remove_dir_all(&directory).unwrap();
         let scene = loaded.unwrap();
-        assert_eq!(scene.lines[0].color, Some([230, 105, 55]));
+        assert_eq!(scene.lines[0].color, Some([244, 172, 128]));
         for element in [
             "l",
             "l 1",

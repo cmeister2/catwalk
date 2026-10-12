@@ -120,13 +120,18 @@ pub struct Line {
 }
 
 /// Handling of texture coordinates outside the image's unit square.
+/// Match with a wildcard arm to allow additional addressing policies.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum TextureWrap {
     /// Repeat the image at every integer coordinate.
     #[default]
     Repeat,
     /// Extend the nearest edge texel beyond the image.
     ClampToEdge,
+    /// Use opaque white outside the unit interval, preserving a multiplied
+    /// material's color and opacity; use edge texels at the interval endpoints.
+    ClampToBorderWhite,
     /// Repeat the image with alternating mirrored intervals.
     MirroredRepeat,
 }
@@ -192,8 +197,9 @@ pub enum AlphaMode {
 #[derive(Clone, Debug)]
 pub struct TriangleAppearance {
     /// Linear RGBA material multiplier, with components between zero and one.
-    /// An otherwise default, normals-only appearance inherits the triangle's
-    /// sRGB color or renderer fallback; an explicit white triangle remains white.
+    /// An otherwise default appearance containing only normals or UVs inherits
+    /// the triangle's sRGB color or renderer fallback; an explicit white
+    /// triangle remains white.
     pub base_color: [f64; 4],
     /// Optional linear RGBA multipliers at the three triangle corners.
     pub colors: Option<[[f64; 4]; 3]>,
