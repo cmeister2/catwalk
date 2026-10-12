@@ -140,7 +140,7 @@ fn original_licensed_sources_and_selected_png_bytes_remain_exact() {
 #[test]
 fn public_extraction_preserves_original_pixels_and_thumbnail_dispatch() {
     assert!(saved_preview::EXTENSIONS.contains(&"lys"));
-    assert!(!catwalk3d::formats::NATIVE_GEOMETRY_EXTENSIONS.contains(&"lys"));
+    assert!(catwalk3d::formats::NATIVE_GEOMETRY_EXTENSIONS.contains(&"lys"));
     for original in &ORIGINALS {
         let input = fixture(original.name, "lys");
         let actual = saved_preview::lychee::extract(&input).unwrap().unwrap();
@@ -171,7 +171,7 @@ fn public_extraction_preserves_original_pixels_and_thumbnail_dispatch() {
                 }
             }
         }
-        assert!(catwalk3d::geometry_thumbnail(&input, &options).is_err());
+        assert!(catwalk3d::geometry_thumbnail(&input, &options).is_ok());
     }
 }
 
@@ -251,24 +251,28 @@ fn absence_and_corruption_have_distinct_statuses_and_preserve_previous_output() 
     assert!(
         thumbnail(&absent, &options)
             .unwrap_err()
-            .is::<saved_preview::NoSavedPreview>()
+            .to_string()
+            .contains("scene.bin")
     );
     for mode in [vec![], vec!["--extract-saved-preview"]] {
         let missing = command(&absent, &output, &mode);
-        assert_eq!(missing.status.code(), Some(3));
+        let extracting = mode.contains(&"--extract-saved-preview");
+        assert_eq!(missing.status.code(), Some(if extracting { 3 } else { 1 }));
         assert_eq!(missing.stdout, [] as [u8; 0]);
-        assert!(String::from_utf8_lossy(&missing.stderr).contains("no supported saved preview"));
+        assert!(
+            String::from_utf8_lossy(&missing.stderr).contains(if extracting {
+                "no supported saved preview"
+            } else {
+                "scene.bin"
+            })
+        );
         assert_eq!(fs::read(&output).unwrap(), b"retain previous usable image");
         let invalid = command(&corrupt, &output, &mode);
         assert_eq!(invalid.status.code(), Some(1));
         assert_eq!(invalid.stdout, [] as [u8; 0]);
         assert_eq!(fs::read(&output).unwrap(), b"retain previous usable image");
     }
-    let forced = command(
-        &fixture(ORIGINALS[0].name, "lys"),
-        &output,
-        &["--render-geometry"],
-    );
+    let forced = command(&corrupt, &output, &["--render-geometry"]);
     assert_eq!(forced.status.code(), Some(1));
     assert_eq!(forced.stdout, [] as [u8; 0]);
     assert_eq!(fs::read(output).unwrap(), b"retain previous usable image");

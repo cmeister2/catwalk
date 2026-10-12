@@ -71,15 +71,15 @@ Catwalk also handles these application documents:
 | [AutoCAD `.dwg`](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#autocad-drawings) | Supported drawing entities and block instances | PNG or DIB |
 | [Inventor `.ipt` / `.iam`](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#autodesk-inventor) | Unavailable | PNG or supported DIB/BMP |
 | [Fusion `.f3d`](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#autodesk-fusion) | Unavailable | Active design's saved PNG |
-| [Lychee `.lys`](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#lychee) | Unavailable | Saved PNG from qualified Mango/ASAR scenes |
+| [Lychee `.lys`](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#lychee) | Original stored model meshes with saved object placements | Saved PNG from qualified Mango/ASAR scenes |
 
-By default, a supported saved image is used when available. Blender, `LightBurn` and DWG fall back to their geometry readers when the saved image is missing or unreadable. A saved thumbnail can be blank or out of date.
+By default, a supported saved image is used when available. Blender, `LightBurn`, DWG and Lychee fall back to their geometry readers when the saved image is missing or unreadable. A saved thumbnail can be blank or out of date.
 
 **`LightBurn` supports fresh vector rendering:** paths, cubic Bézier curves, shared instances, nested groups, rectangles, rounded corners, ellipses and the first 16 standard cut-layer colors. Text, bitmaps, laser fills and multipage geometry remain unsupported. Nine projects without saved thumbnails have geometry checks and PNG snapshots.
 
 **Inventor support currently extracts saved images.** The reader selects the native document summary and can fall back to a usable legacy summary. Fresh part and assembly geometry previews are not yet supported. Tests qualify the image carriers; compatibility with every Inventor release remains unfinished.
 
-**Lychee support extracts the saved scene PNG.** Original Lychee 5.4.3 keyboard scenes qualify the flat Mango/ASAR manifest 3.1.0 container. Legacy ZIP scenes, `.lyt`, other manifest versions and native geometry remain unsupported; see [the Lychee coverage entry](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#lychee).
+**Lychee previews prefer the saved scene PNG.** Fresh geometry renders the original stored model meshes with their saved scale, rotation, XY position and Z lift. Supports, rafts, hollowing and holes preparation are intentionally excluded from fresh geometry; the saved PNG preserves the prepared image. Original Lychee 5.4.3 keyboard scenes qualify flat Mango/ASAR manifest 3.1.0, scene-state 2 and mesh 2 encodings. Legacy ZIP scenes, `.lyt`, other stored encodings and missing external/library model geometry remain unsupported; see [the Lychee coverage entry](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#lychee).
 
 Choose the preview mode explicitly when needed:
 
@@ -87,6 +87,7 @@ Choose the preview mode explicitly when needed:
 # Regenerate a supported document's preview from stored geometry.
 catwalk project.lbrn2 --render-geometry --output fresh.png --size 256
 catwalk scene.blend --render-geometry --output fresh.png --size 256
+catwalk scene.lys --render-geometry --output models.png --size 256
 
 # Extract a saved image at its original dimensions.
 catwalk part.ipt --extract-saved-preview --output saved.png

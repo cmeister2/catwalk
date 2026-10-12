@@ -49,48 +49,102 @@ pub fn extract(path: &Path) -> Result<Option<RgbaImage>> {
 
 /// Validate the carrier and decode only the addressed, integrity-checked PNG.
 fn extract_bytes(data: &[u8]) -> Result<Option<RgbaImage>> {
-    let manifest = manifest(data)?;
-    let root = object(&manifest, "Lychee manifest must be a JSON object")?;
-    allowed_fields(root, &["version", "mangoFiles"])?;
-    if root.get("version").and_then(Value::as_str) != Some("3.1.0") {
-        return Err("unqualified Lychee manifest version (expected 3.1.0)".into());
-    }
-    let members = object(
-        root.get("mangoFiles")
-            .ok_or("Lychee manifest has no mangoFiles index")?,
-        "Lychee mangoFiles index must be a flat JSON object",
-    )?;
-    if members.len() > MAX_MEMBERS {
-        return Err("Lychee member index exceeds the 4096-entry limit".into());
-    }
-    let data_start = 8 + usize::try_from(u32_le(data, 4)?)?;
-    let mut spans = Vec::with_capacity(members.len());
-    let mut selected = None;
-    for (name, member) in members {
-        validate_name(name)?;
-        let metadata = object(member, "Lychee member metadata must be an object")?;
-        allowed_fields(metadata, &["size", "offset", "integrity"])?;
-        let span = member_span(metadata, data_start, data.len())?;
-        if span.start != span.end {
-            spans.push(span.clone());
-        }
-        if name == PREVIEW {
-            selected = Some((span, metadata));
-        }
-    }
-    spans.sort_unstable_by_key(|span| span.start);
-    if spans.windows(2).any(|pair| pair[0].end > pair[1].start) {
-        return Err("Lychee member spans overlap".into());
-    }
-    let Some((span, metadata)) = selected else {
+    let container = Container::parse(data)?;
+    let Some(png) = container.member(
+        PREVIEW,
+        MAX_PREVIEW,
+        "Lychee saved PNG exceeds the 8 MiB limit",
+    )?
+    else {
         return Ok(None);
     };
-    let png = &data[span];
-    if png.len() > MAX_PREVIEW {
-        return Err("Lychee saved PNG exceeds the 8 MiB limit".into());
-    }
-    verify_integrity(png, metadata)?;
     decode_png(png).map(Some)
+}
+
+/// Validated flat Mango index shared by saved-image and stored-model readers.
+/// Member bodies remain borrowed from the single bounded source allocation.
+pub(crate) struct Container<'a> {
+    /// Original input containing every validated member span.
+    data: &'a [u8],
+    /// Owned bounded metadata for the flat addressed members.
+    members: Map<String, Value>,
+    /// Absolute byte offset at which member-relative offsets begin.
+    data_start: usize,
+}
+
+impl<'a> Container<'a> {
+    /// Validate framing, unique flat names and every source-bounded member span once.
+    ///
+    /// # Errors
+    /// Returns an error for malformed or unsupported JSON/Pickle metadata, names,
+    /// directory/link fields, overlapping spans, or exceeded manifest limits.
+    pub(crate) fn parse(data: &'a [u8]) -> Result<Self> {
+        let manifest = manifest(data)?;
+        let root = object(&manifest, "Lychee manifest must be a JSON object")?;
+        allowed_fields(root, &["version", "mangoFiles"])?;
+        if root.get("version").and_then(Value::as_str) != Some("3.1.0") {
+            return Err("unqualified Lychee manifest version (expected 3.1.0)".into());
+        }
+        let members = object(
+            root.get("mangoFiles")
+                .ok_or("Lychee manifest has no mangoFiles index")?,
+            "Lychee mangoFiles index must be a flat JSON object",
+        )?;
+        if members.len() > MAX_MEMBERS {
+            return Err("Lychee member index exceeds the 4096-entry limit".into());
+        }
+        let data_start = 8 + usize::try_from(u32_le(data, 4)?)?;
+        let mut spans = Vec::with_capacity(members.len());
+        for (name, member) in members {
+            validate_name(name)?;
+            let metadata = object(member, "Lychee member metadata must be an object")?;
+            allowed_fields(metadata, &["size", "offset", "integrity"])?;
+            let span = member_span(metadata, data_start, data.len())?;
+            if span.start != span.end {
+                spans.push(span);
+            }
+        }
+        spans.sort_unstable_by_key(|span| span.start);
+        if spans.windows(2).any(|pair| pair[0].end > pair[1].start) {
+            return Err("Lychee member spans overlap".into());
+        }
+        let Value::Object(mut root) = manifest else {
+            return Err("Lychee manifest must be a JSON object".into());
+        };
+        let Some(Value::Object(members)) = root.remove("mangoFiles") else {
+            return Err("Lychee mangoFiles index must be a flat JSON object".into());
+        };
+        Ok(Self {
+            data,
+            members,
+            data_start,
+        })
+    }
+
+    /// Address one required-name member and verify any declared whole/block digests.
+    /// Optional integrity metadata remains optional in both reader paths.
+    ///
+    /// # Errors
+    /// Returns an error for invalid metadata, a selected member above `maximum`,
+    /// unsupported or incomplete integrity metadata, or failed SHA-256 checks.
+    pub(crate) fn member(
+        &self,
+        name: &str,
+        maximum: usize,
+        size_error: &str,
+    ) -> Result<Option<&'a [u8]>> {
+        let Some(member) = self.members.get(name) else {
+            return Ok(None);
+        };
+        let metadata = object(member, "Lychee member metadata must be an object")?;
+        let span = member_span(metadata, self.data_start, self.data.len())?;
+        let bytes = &self.data[span];
+        if bytes.len() > maximum {
+            return Err(size_error.into());
+        }
+        verify_integrity(bytes, metadata, maximum)?;
+        Ok(Some(bytes))
+    }
 }
 
 /// Read one checked little-endian word from the fixed Pickle prefix.
@@ -210,7 +264,7 @@ fn digest(value: &Value) -> Result<[u8; 32]> {
 }
 
 /// Check the selected member's whole digest and every declared contiguous block digest.
-fn verify_integrity(png: &[u8], metadata: &Map<String, Value>) -> Result<()> {
+fn verify_integrity(png: &[u8], metadata: &Map<String, Value>, maximum_block: usize) -> Result<()> {
     let Some(declared) = metadata.get("integrity") else {
         return Ok(());
     };
@@ -230,10 +284,11 @@ fn verify_integrity(png: &[u8], metadata: &Map<String, Value>) -> Result<()> {
     if !integrity.contains_key("blockSize") && !integrity.contains_key("blocks") {
         return Ok(());
     }
+    let maximum_block = u64::try_from(maximum_block)?;
     let block_size = integrity
         .get("blockSize")
         .and_then(Value::as_u64)
-        .filter(|&size| size > 0 && size <= MAX_PREVIEW as u64)
+        .filter(|&size| size > 0 && size <= maximum_block)
         .ok_or("invalid Lychee preview integrity block size")?;
     let block_size = usize::try_from(block_size)?;
     let blocks = integrity
