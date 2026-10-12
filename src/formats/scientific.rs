@@ -12,6 +12,8 @@ const MAX_ITEMS: usize = 5_000_000;
 mod arrays;
 #[path = "scientific_legacy.rs"]
 mod legacy;
+#[path = "scientific_quadratic.rs"]
+mod quadratic;
 use arrays::XmlData;
 
 /// Read a VTK dataset and resolve nested package-local multiblock children.
@@ -570,16 +572,26 @@ fn line_segment_count(vertices: usize, existing: usize) -> Result<usize> {
     Ok(segments)
 }
 
+/// Resolve one cell reference without allocating an endpoint buffer.
+///
+/// # Errors
+/// Returns an error for an out-of-bounds reference or nonfinite coordinate.
+fn checked_position(positions: &[Vec3], index: usize) -> Result<Vec3> {
+    let position = positions
+        .get(index)
+        .copied()
+        .ok_or("VTK cell index is out of bounds")?;
+    if !position.x.is_finite() || !position.y.is_finite() || !position.z.is_finite() {
+        return Err("VTK cell coordinate is nonfinite".into());
+    }
+    Ok(position)
+}
+
 /// Resolve cell indices into finite point coordinates.
 fn checked_positions(positions: &[Vec3], indices: &[usize]) -> Result<Vec<Vec3>> {
     indices
         .iter()
-        .map(|&index| {
-            positions
-                .get(index)
-                .copied()
-                .ok_or_else(|| "VTK cell index is out of bounds".into())
-        })
+        .map(|&index| checked_position(positions, index))
         .collect()
 }
 
@@ -704,7 +716,110 @@ fn append_grid(
     append_grid_with_polyhedra(positions, cells, types, scene, None)
 }
 
-/// Preserve authored point/line cells and emit exterior cell faces with validated topology.
+/// Full mixed visible-output counts checked before scene mutation or primitive reservation.
+#[derive(Default)]
+struct GridOutput {
+    /// Maximum exposed triangle count, including preexisting scene triangles.
+    triangles: usize,
+    /// Maximum line count, including preexisting scene lines.
+    lines: usize,
+    /// Point count, including preexisting scene points.
+    points: usize,
+}
+
+impl GridOutput {
+    /// Initialize aggregate counts from an existing output scene.
+    fn new(scene: &Scene) -> Self {
+        Self {
+            triangles: scene.triangles.len(),
+            lines: scene.lines.len(),
+            points: scene.points.len(),
+        }
+    }
+
+    /// Charge bounded visible output without allocating its primitive vectors.
+    ///
+    /// # Errors
+    /// Count arithmetic or any independent primitive ceiling is exceeded.
+    fn add(&mut self, triangles: usize, lines: usize, points: usize) -> Result<()> {
+        for (count, additional) in [
+            (&mut self.triangles, triangles),
+            (&mut self.lines, lines),
+            (&mut self.points, points),
+        ] {
+            *count = count
+                .checked_add(additional)
+                .ok_or("VTK output count overflow")?;
+            if *count > MAX_ITEMS {
+                return Err("VTK mixed output exceeds geometry limit".into());
+            }
+        }
+        Ok(())
+    }
+
+    /// Preflight complete primitive storage and reserve all growth before emission.
+    ///
+    /// # Errors
+    /// Payload arithmetic, conservative storage accounting or allocation fails.
+    fn reserve(&self, scene: &mut Scene, storage: &mut quadratic::Storage) -> Result<()> {
+        if self
+            .triangles
+            .checked_add(self.lines)
+            .and_then(|n| n.checked_add(self.points))
+            .is_none_or(|n| n > MAX_ITEMS)
+        {
+            return Err("VTK mixed output exceeds five million total primitives".into());
+        }
+        let triangles = self
+            .triangles
+            .max(scene.triangles.capacity())
+            .checked_mul(std::mem::size_of::<Triangle>())
+            .ok_or("VTK triangle storage overflow")?;
+        let lines = self
+            .lines
+            .max(scene.lines.capacity())
+            .checked_mul(std::mem::size_of::<Line>())
+            .ok_or("VTK line storage overflow")?;
+        let points = self
+            .points
+            .max(scene.points.capacity())
+            .checked_mul(std::mem::size_of::<Point>())
+            .ok_or("VTK point storage overflow")?;
+        let bytes = triangles
+            .checked_add(lines)
+            .and_then(|n| n.checked_add(points))
+            .and_then(|n| n.checked_mul(2))
+            .ok_or("VTK primitive storage overflow")?;
+        storage.charge(bytes)?;
+        scene
+            .triangles
+            .try_reserve_exact(self.triangles - scene.triangles.len())?;
+        scene
+            .lines
+            .try_reserve_exact(self.lines - scene.lines.len())?;
+        scene
+            .points
+            .try_reserve_exact(self.points - scene.points.len())?;
+        Ok(())
+    }
+}
+
+/// Precharge variable node-list copies and a conservative linear-face map entry before allocation.
+///
+/// # Errors
+/// Node-list size arithmetic or the common importer storage ceiling is exceeded.
+fn linear_face_storage(nodes: usize, storage: &mut quadratic::Storage) -> Result<()> {
+    let payload = nodes
+        .checked_mul(2 * std::mem::size_of::<usize>())
+        .and_then(|n| n.checked_add(256))
+        .ok_or("VTK face storage overflow")?;
+    storage.charge(payload)
+}
+
+/// Count shared cell faces and append only exterior geometry, accounting for preexisting lines/points.
+///
+/// # Errors
+/// Invalid mixed topology, references, nonfinite nodes or aggregate output/storage limits fail.
 #[allow(
     clippy::cast_precision_loss,
     reason = "Cell vertex counts are bounded by supported topology; f64 averaging computes an approximate face center."
@@ -713,7 +828,7 @@ fn append_grid(
     clippy::too_many_lines,
     reason = "Keep cell-type topology and shared-face cancellation together with their orientation/count checks."
 )]
-fn append_grid_with_polyhedra(
+pub(super) fn append_grid_with_polyhedra(
     positions: &[Vec3],
     cells: &[Vec<usize>],
     types: &[usize],
@@ -723,10 +838,29 @@ fn append_grid_with_polyhedra(
     if cells.len() != types.len() {
         return Err("VTK cell and type counts disagree".into());
     }
+    if positions.len() > MAX_ITEMS || cells.len() > MAX_ITEMS {
+        return Err("VTK grid arrays exceed geometry limit".into());
+    }
+    let mut storage = quadratic::Storage::default();
+    let mut output = GridOutput::new(scene);
+    let mut curved_faces = quadratic::Faces::default();
     let mut volume_faces: BTreeMap<Vec<usize>, (usize, Vec<usize>)> = BTreeMap::new();
+    let mut connectivity = 0_usize;
     for (cell_index, (indices, &cell_type)) in cells.iter().zip(types).enumerate() {
-        // The line helper validates every index after preflighting the entire
-        // segment output; avoid allocating a second endpoint copy for lines.
+        connectivity = connectivity
+            .checked_add(indices.len())
+            .ok_or("VTK connectivity count overflow")?;
+        if connectivity > MAX_ITEMS {
+            return Err("VTK grid connectivity exceeds geometry limit".into());
+        }
+        storage.charge(
+            indices
+                .len()
+                .checked_mul(std::mem::size_of::<Vec3>())
+                .ok_or("VTK validation storage overflow")?,
+        )?;
+        // Ordered lines preflight their complete output before validating
+        // references without allocating another endpoint buffer.
         if !matches!(cell_type, 3 | 4) {
             checked_positions(positions, indices)?;
         }
@@ -739,13 +873,24 @@ fn append_grid_with_polyhedra(
             11 | 12 => Some(8),
             13 => Some(6),
             14 => Some(5),
-            _ => None,
+            _ => quadratic::node_count(cell_type),
         };
         if expected.is_some_and(|n| indices.len() != n) {
             return Err(format!("invalid vertex count for VTK cell type {cell_type}").into());
         }
         if cell_type == 2 && indices.is_empty() {
             return Err("VTK poly-vertex cell is empty".into());
+        }
+        if matches!(cell_type, 5..=7 | 9) && indices.len() < 3 {
+            return Err("VTK surface cell has fewer than three vertices".into());
+        }
+        if quadratic::node_count(cell_type).is_some()
+            && indices
+                .iter()
+                .enumerate()
+                .any(|(i, node)| indices[..i].contains(node))
+        {
+            return Err("VTK higher-order cell repeats a node ID".into());
         }
         if (10..=14).contains(&cell_type) {
             let mut unique = indices.clone();
@@ -756,19 +901,29 @@ fn append_grid_with_polyhedra(
         }
         match cell_type {
             0 => {}
-            1 | 2 => {
+            1 | 2 => output.add(0, 0, indices.len())?,
+            3 | 4 => {
+                let segments = line_segment_count(indices.len(), output.lines)?;
+                output.add(0, segments, 0)?;
                 for &index in indices {
-                    append_point(positions[index], scene)?;
+                    let _ = checked_position(positions, index)?;
                 }
             }
-            3 | 4 => append_line(positions, indices, scene)?,
-            5 | 7 | 9 => append_polygon(positions, indices, scene)?,
-            6 => append_strip(positions, indices, scene)?,
-            8 => append_polygon(
-                positions,
-                &[indices[0], indices[1], indices[3], indices[2]],
-                scene,
-            )?,
+            5..=9 => output.add(indices.len() - 2, 0, 0)?,
+            21 | 35 => output.add(0, quadratic::line_segments(), 0)?,
+            22 | 23 | 28 | 30 | 34 => {
+                let kind = quadratic::surface_kind(cell_type)
+                    .ok_or("VTK curved surface basis is missing")?;
+                output.add(kind.triangles(), 0, 0)?;
+            }
+            24..=27 | 29 | 31..=33 | 37 => {
+                for &(kind, roles) in quadratic::volume_layout(cell_type) {
+                    curved_faces.insert(
+                        quadratic::Surface::local(kind, indices, roles)?,
+                        &mut storage,
+                    )?;
+                }
+            }
             42 => {
                 let faces = polyhedra
                     .and_then(|p| p.get(&cell_index))
@@ -782,6 +937,19 @@ fn append_grid_with_polyhedra(
                 if unique.len() != indices.len() {
                     return Err("VTK polyhedron cell repeats a vertex".into());
                 }
+                let used_count = faces.iter().try_fold(0_usize, |count, face| {
+                    count
+                        .checked_add(face.len())
+                        .ok_or("VTK polyhedron face storage overflow")
+                })?;
+                if used_count > MAX_ITEMS {
+                    return Err("VTK polyhedron face lists exceed geometry limit".into());
+                }
+                storage.charge(
+                    used_count
+                        .checked_mul(4 * std::mem::size_of::<usize>())
+                        .ok_or("VTK polyhedron topology storage overflow")?,
+                )?;
                 let mut used: Vec<_> = faces.iter().flatten().copied().collect();
                 used.sort_unstable();
                 used.dedup();
@@ -803,6 +971,7 @@ fn append_grid_with_polyhedra(
                             "VTK polyhedron face references a vertex outside its cell".into()
                         );
                     }
+                    linear_face_storage(face.len(), &mut storage)?;
                     let mut face = face.clone();
                     let mut unique = face.clone();
                     unique.sort_unstable();
@@ -884,6 +1053,7 @@ fn append_grid_with_polyhedra(
                     _ => unreachable!(),
                 };
                 for face in local_faces {
+                    linear_face_storage(face.len(), &mut storage)?;
                     let face: Vec<_> = face.into_iter().map(|i| indices[i]).collect();
                     let mut key = face.clone();
                     key.sort_unstable();
@@ -897,10 +1067,46 @@ fn append_grid_with_polyhedra(
             _ => return Err(format!("VTK cell type {cell_type} is not implemented").into()),
         }
     }
+    for &(count, ref face) in volume_faces.values() {
+        if count == 1 {
+            output.add(face.len() - 2, 0, 0)?;
+        }
+    }
+    for face in curved_faces.visible() {
+        output.add(face.kind.triangles(), 0, 0)?;
+    }
+    output.reserve(scene, &mut storage)?;
+    for (indices, &cell_type) in cells.iter().zip(types) {
+        match cell_type {
+            1 | 2 => {
+                for &index in indices {
+                    append_point(positions[index], scene)?;
+                }
+            }
+            3 | 4 => append_line(positions, indices, scene)?,
+            5 | 7 | 9 => append_polygon(positions, indices, scene)?,
+            6 => append_strip(positions, indices, scene)?,
+            8 => append_polygon(
+                positions,
+                &[indices[0], indices[1], indices[3], indices[2]],
+                scene,
+            )?,
+            21 | 35 => quadratic::append_curve(cell_type, positions, indices, scene)?,
+            22 | 23 | 28 | 30 | 34 => {
+                let kind = quadratic::surface_kind(cell_type)
+                    .ok_or("VTK curved surface basis is missing")?;
+                quadratic::Surface::new(kind, indices)?.append(positions, scene)?;
+            }
+            _ => {}
+        }
+    }
     for (_, (count, face)) in volume_faces {
         if count == 1 {
             append_polygon(positions, &face, scene)?;
         }
+    }
+    for face in curved_faces.visible() {
+        face.append(positions, scene)?;
     }
     Ok(())
 }
@@ -909,6 +1115,138 @@ fn append_grid_with_polyhedra(
 mod tests {
     use super::*;
     const HEADER: &str = "# vtk DataFile Version 3.0\ntest geometry\nASCII\n";
+
+    #[test]
+    fn fixed_nonlinear_cells_validate_all_nodes_before_emitting_any_geometry() {
+        let mut positions: Vec<_> = (0_u32..27)
+            .map(|i| Vec3::new(f64::from(i), f64::from(i % 3), f64::from(i % 5)))
+            .collect();
+        for (kind, count) in [
+            (21, 3),
+            (22, 6),
+            (23, 8),
+            (24, 10),
+            (25, 20),
+            (26, 15),
+            (27, 13),
+            (28, 9),
+            (29, 27),
+            (30, 6),
+            (31, 12),
+            (32, 18),
+            (33, 24),
+            (34, 7),
+            (35, 4),
+            (37, 19),
+        ] {
+            let good: Vec<_> = (0..count).collect();
+            let mut duplicate = good.clone();
+            duplicate[count - 1] = 0;
+            let mut invalid_index = good.clone();
+            invalid_index[count - 1] = 27;
+            for invalid in [
+                good[..count - 1].to_vec(),
+                (0..=count).collect(),
+                duplicate,
+                invalid_index,
+            ] {
+                let mut scene = Scene::default();
+                assert!(
+                    append_grid(&positions, &[vec![0], invalid], &[1, kind], &mut scene).is_err()
+                );
+                assert!(scene.points.is_empty());
+                assert!(scene.triangles.is_empty());
+                assert!(scene.lines.is_empty());
+            }
+        }
+        for (kind, count, interior) in [(29, 27, 26), (37, 19, 18)] {
+            positions[interior].x = f64::NAN;
+            let mut scene = Scene::default();
+            assert!(
+                append_grid(
+                    &positions,
+                    &[vec![0], (0..count).collect()],
+                    &[1, kind],
+                    &mut scene
+                )
+                .is_err()
+            );
+            assert!(scene.points.is_empty());
+            positions[interior].x = f64::from(u32::try_from(interior).unwrap());
+        }
+        assert!(grid_scene(&positions, &[vec![0, 1, 2]], &[36]).is_err());
+    }
+
+    #[test]
+    fn curved_tetrahedra_cancel_only_the_complete_shared_face_roles() {
+        let positions = [
+            Vec3::new(0., 0., 0.),
+            Vec3::new(2., 0., 0.),
+            Vec3::new(0., 2., 0.),
+            Vec3::new(0., 0., 2.),
+            Vec3::new(1., 0., 0.3),
+            Vec3::new(1., 1., 0.4),
+            Vec3::new(0., 1., 0.1),
+            Vec3::new(0., 0., 1.),
+            Vec3::new(1., 0., 1.),
+            Vec3::new(0., 1., 1.),
+            Vec3::new(0., 0., -2.),
+            Vec3::new(0., 0., -1.),
+            Vec3::new(0., 1., -1.),
+            Vec3::new(1., 0., -1.),
+        ];
+        let first: Vec<_> = (0..10).collect();
+        let second = vec![0, 2, 1, 10, 6, 5, 4, 11, 12, 13];
+        assert_eq!(
+            grid_scene(&positions, std::slice::from_ref(&first), &[24])
+                .unwrap()
+                .triangles
+                .len(),
+            144
+        );
+        assert_eq!(
+            grid_scene(&positions, &[first.clone(), second.clone()], &[24, 24])
+                .unwrap()
+                .triangles
+                .len(),
+            216
+        );
+        let mut wrong_roles = second.clone();
+        wrong_roles.swap(4, 5);
+        assert_eq!(
+            grid_scene(&positions, &[first.clone(), wrong_roles], &[24, 24])
+                .unwrap()
+                .triangles
+                .len(),
+            288
+        );
+        assert!(grid_scene(&positions, &[first.clone(), second, first], &[24, 24, 24]).is_err());
+    }
+
+    #[test]
+    fn mixed_output_budget_preflights_aggregate_limits_without_large_allocations() {
+        let mut output = GridOutput {
+            triangles: MAX_ITEMS - 1,
+            lines: 1,
+            points: 0,
+        };
+        output.add(0, 0, 1).unwrap();
+        let mut scene = Scene::default();
+        let mut storage = quadratic::Storage::default();
+        assert!(output.reserve(&mut scene, &mut storage).is_err());
+        assert_eq!(scene.triangles.capacity(), 0);
+        assert_eq!(scene.lines.capacity(), 0);
+        assert_eq!(scene.points.capacity(), 0);
+        assert!(
+            GridOutput {
+                triangles: usize::MAX,
+                lines: 0,
+                points: 0
+            }
+            .add(1, 0, 0)
+            .is_err()
+        );
+    }
 
     #[test]
     fn legacy_polydata_renders_polygon_strip_and_vertices() {

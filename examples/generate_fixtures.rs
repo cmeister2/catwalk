@@ -35,6 +35,10 @@ mod vtk_lines;
 /// Register original plain and compressed AMF exporter references.
 mod amf;
 
+#[path = "fixtures/vtk_quadratic.rs"]
+/// Register retained VTK geometry and generate curved fixed-node cell representations.
+mod vtk_quadratic;
+
 use catwalk3d::{Result, formats};
 use serde_json::json;
 use std::{collections::BTreeSet, path::Path};
@@ -93,6 +97,7 @@ fn main() -> Result<()> {
     cases.extend(binary_brep::generate(&root)?);
     cases.extend(obj_appearance::generate(&root)?);
     cases.extend(collada_primitives::generate(&root)?);
+    cases.extend(vtk_quadratic::generate(&root)?);
     cases.sort_by(|a, b| a.extension.cmp(&b.extension).then(a.id.cmp(&b.id)));
     let mut ids = BTreeSet::new();
     for case in &cases {
