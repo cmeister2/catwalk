@@ -7,11 +7,14 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const repository = fileURLToPath(new URL('../../', import.meta.url));
 const aboutVersion = 'cargo-about 0.9.2';
+const maximumNoticeBytes = 1024 * 1024;
 
 // These are upstream notice bytes, not a copy of the dependency or its source.
 const muslNotices = new Map([
   ['1.2.5', {
     url: 'https://git.musl-libc.org/cgit/musl/plain/COPYRIGHT?h=v1.2.5',
+    // Exact release-1.2.5 mirror bytes were verified against the primary notice.
+    fallbackUrl: 'https://raw.githubusercontent.com/ifduyue/musl/0784374d561435f7c787a555aeab8ede699ed298/COPYRIGHT',
     sha256: 'f9bc4423732350eb0b3f7ed7e91d530298476f8fec0c6c427a1c04ade22655af',
   }],
 ]);
@@ -57,6 +60,43 @@ export function verifyMuslCopyright(version, bytes) {
   }
 }
 
+/** Fetch a complete original notice, using its verified mirror only after source unavailability. */
+export async function fetchVerifiedNotice(sources, checksum, load = sourceBytes) {
+  if (!Array.isArray(sources) || sources.length === 0 || sources.length > 2) {
+    throw new Error('A verified notice requires one or two bounded sources');
+  }
+  const failures = [];
+  for (const source of sources) {
+    let bytes;
+    try {
+      bytes = await load(source);
+    } catch (error) {
+      if (error.code === 'NOTICE_SIZE_LIMIT') throw error;
+      failures.push(error);
+      continue;
+    }
+    // Returned substitutions or oversized content are errors, never a reason
+    // to conceal an upstream change by trying the mirror instead.
+    if (!Buffer.isBuffer(bytes) || bytes.length > maximumNoticeBytes) {
+      throw new Error('Original notice exceeds the 1 MiB size limit');
+    }
+    if (createHash('sha256').update(bytes).digest('hex') !== checksum) {
+      throw new Error('Original notice checksum differs');
+    }
+    return bytes;
+  }
+  throw new AggregateError(failures, 'All verified original notice sources are unavailable');
+}
+
+/** Keep primary and immutable-mirror musl downloads under the original copyright checksum. */
+export async function fetchMuslCopyright(version, load = sourceBytes) {
+  const notice = muslNotices.get(version);
+  if (!notice) throw new Error(`Bundled musl ${version} requires a verified upstream copyright notice`);
+  const bytes = await fetchVerifiedNotice([notice.url, notice.fallbackUrl], notice.sha256, load);
+  verifyMuslCopyright(version, bytes);
+  return bytes;
+}
+
 /** Keep mandatory combined-license clauses and executable-distribution notices. */
 export function verifyCargoNotices(html) {
   for (const id of ['MPL-2.0', 'BSD-3-Clause', 'IJG', 'Unicode-3.0']) {
@@ -71,14 +111,18 @@ export function verifyCargoNotices(html) {
 }
 
 /** Fetch a bounded public source file without credentials or local configuration. */
-async function sourceBytes(url) {
-  const response = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+export async function sourceBytes(url, fetchSource = fetch) {
+  const response = await fetchSource(url, { signal: AbortSignal.timeout(30_000) });
   if (!response.ok) throw new Error(`Cannot retrieve notice source: ${url} (${response.status})`);
   const chunks = [];
   let size = 0;
   for await (const chunk of response.body) {
     size += chunk.length;
-    if (size > 1024 * 1024) throw new Error(`Notice source exceeds 1 MiB: ${url}`);
+    if (size > maximumNoticeBytes) {
+      const error = new Error(`Notice source exceeds 1 MiB: ${url}`);
+      error.code = 'NOTICE_SIZE_LIMIT';
+      throw error;
+    }
     chunks.push(chunk);
   }
   return Buffer.concat(chunks);
@@ -106,8 +150,7 @@ export async function generateNotices(output) {
 
   const scriptUrl = `https://raw.githubusercontent.com/rust-lang/rust/${compiler.commit}/src/ci/docker/scripts/musl-toolchain.sh`;
   const muslVersion = bundledMuslVersion((await sourceBytes(scriptUrl)).toString('utf8'));
-  const musl = await sourceBytes(muslNotices.get(muslVersion).url);
-  verifyMuslCopyright(muslVersion, musl);
+  const musl = await fetchMuslCopyright(muslVersion);
 
   await mkdir(output, { recursive: true });
   const temporary = join(output, 'THIRD_PARTY_LICENSES.html.tmp');
