@@ -58,6 +58,8 @@ Models use a fitted static view. Supported colors and materials are preserved; O
 
 COLLADA (`.dae`) previews include static surfaces, colored wire geometry, planar polygon holes and supported node placements, including `lookat` and angular `skew`. Controllers, textures and animation remain outside this reader's static subset; see [its coverage entry](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#collada) for limits and tested examples.
 
+Open CASCADE `.brep` previews accept supported ASCII and little-endian binary topology tables, including curved surfaces, free wires, isolated points and stored placements. See [the BREP coverage entry](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#brep) for supported versions, cache exclusions and limits.
+
 ## Native documents and saved previews
 
 Catwalk also handles these application documents:
