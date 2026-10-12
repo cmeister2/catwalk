@@ -6,6 +6,9 @@ mod binary_brep;
 #[path = "fixtures/collada_primitives.rs"]
 /// Generate COLLADA static primitive controls and register licensed conformance models.
 mod collada_primitives;
+#[path = "fixtures/freecad.rs"]
+/// Register original FreeCAD saved images and native placed BREP geometry.
+mod freecad;
 #[path = "fixtures/images_points.rs"]
 /// Generate portable raster and point-cloud fixture encodings.
 mod images_points;
@@ -114,6 +117,7 @@ fn main() -> Result<()> {
     cases.extend(vtk_quadratic::generate(&root)?);
     cases.extend(usd_nurbs::generate(&root)?);
     cases.extend(tiff_volumes::generate(&root)?);
+    cases.extend(freecad::generate(&root)?);
     cases.sort_by(|a, b| a.extension.cmp(&b.extension).then(a.id.cmp(&b.id)));
     let mut ids = BTreeSet::new();
     for case in &cases {

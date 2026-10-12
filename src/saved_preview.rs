@@ -6,6 +6,8 @@
 pub mod autodesk;
 /// Addressed thumbnail extraction from Blender and AutoCAD containers.
 pub mod blend_dwg;
+/// Addressed PNG extraction from qualified FreeCAD document archives.
+pub mod freecad;
 /// Inventor property-set image selection and normalization.
 pub mod inventor;
 /// Direct XML thumbnail extraction from qualified LightBurn projects.
@@ -18,7 +20,9 @@ use image::RgbaImage;
 use std::path::Path;
 
 /// Extension aliases dispatched to the saved-image readers.
-pub const EXTENSIONS: &[&str] = &["ipt", "iam", "lbrn", "lbrn2", "blend", "f3d", "dwg", "lys"];
+pub const EXTENSIONS: &[&str] = &[
+    "ipt", "iam", "lbrn", "lbrn2", "blend", "f3d", "dwg", "lys", "fcstd",
+];
 
 /// A supported document has no usable saved thumbnail carrier.
 #[derive(Debug)]
@@ -47,6 +51,7 @@ pub fn extract(path: &Path) -> Result<Option<RgbaImage>> {
         "f3d" => autodesk::extract_fusion(path),
         "dwg" => blend_dwg::extract_dwg(path),
         "lys" => lychee::extract(path),
+        "fcstd" => freecad::extract(path),
         extension => Err(format!("no saved-preview reader for .{extension}").into()),
     }
 }
