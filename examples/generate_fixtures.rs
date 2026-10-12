@@ -24,6 +24,9 @@ mod saved_previews;
 #[path = "fixtures/scientific_cad.rs"]
 /// Generate scientific datasets and CAD boundary representations.
 mod scientific_cad;
+#[path = "fixtures/vrml_prototypes.rs"]
+/// Register original VRML prototypes and generate typed static expansion controls.
+mod vrml_prototypes;
 #[path = "fixtures/vtk_lines.rs"]
 /// Register scientific line cells and generate equivalent mixed unstructured grids.
 mod vtk_lines;
@@ -85,6 +88,7 @@ fn main() -> Result<()> {
     cases.extend(saved_previews::generate_fusion(&root)?);
     cases.extend(saved_previews::generate_inventor(&root)?);
     cases.extend(native_geometry::generate(&root)?);
+    cases.extend(vrml_prototypes::generate(&root)?);
     cases.extend(vtk_lines::generate(&root)?);
     cases.extend(binary_brep::generate(&root)?);
     cases.extend(obj_appearance::generate(&root)?);

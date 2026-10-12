@@ -1,0 +1,49 @@
+#VRML V2.0 utf8
+# Catwalk authored fixed-view billboard occurrence control; MIT.
+Transform {
+  translation -4 0 0
+  children [
+    DEF Facing Billboard {
+      children [
+        Shape {
+          appearance Appearance { material Material { diffuseColor 1 0.25 0.25 } }
+          geometry IndexedFaceSet {
+            coord Coordinate { point [0 0 0, 2 0 0, 0 3 0] }
+            coordIndex [0 1 2 -1]
+          }
+        }
+        Shape {
+          appearance Appearance { material Material { emissiveColor 1 0.25 0.25 } }
+          geometry PointSet { coord Coordinate { point [0 0 2] } }
+        }
+      ]
+    }
+  ]
+}
+Transform {
+  translation 3 0 0
+  children [
+    Billboard {
+      axisOfRotation 0 0 0
+      children [
+        Shape {
+          appearance Appearance { material Material { diffuseColor 0.25 1 0.25 } }
+          geometry IndexedFaceSet {
+            coord Coordinate { point [0 0 0, 2 0 0, 0 3 0] }
+            coordIndex [0 1 2 -1]
+          }
+        }
+        Shape {
+          appearance Appearance { material Material { emissiveColor 0.25 1 0.25 } }
+          geometry PointSet { coord Coordinate { point [0 0 2] } }
+        }
+      ]
+    }
+  ]
+}
+Transform {
+  translation -4 0 4
+  rotation 0 1 0 1.5707963267948966
+  scale 3 2 1
+  children [USE Facing]
+}

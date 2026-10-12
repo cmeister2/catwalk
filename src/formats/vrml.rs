@@ -14,6 +14,12 @@ const MAX_ITEMS: usize = 20_000_000;
 const MAX_NODES: usize = 100_000;
 #[path = "vrml_geometry.rs"]
 mod detailed_geometry;
+/// Typed local prototype templates, lexical scopes and bounded structural expansion.
+#[path = "vrml_prototypes.rs"]
+mod prototypes;
+use prototypes::{Budget, Interface, Prototype};
+#[path = "vrml_billboard.rs"]
+mod billboard;
 /// Attach VRML context to an import error.
 fn error(message: impl Into<String>) -> Error {
     message.into().into()
@@ -39,10 +45,89 @@ enum Token {
     /// Structural punctuation token.
     Symbol(char),
 }
+
+/// Incremental lexical allocation preflight, including token spare capacity and string buffers.
+#[derive(Default)]
+struct LexicalStorage {
+    /// Cumulative token-vector and string-buffer capacity bytes.
+    bytes: usize,
+}
+
+impl LexicalStorage {
+    /// Charge storage before capacity growth while enforcing the existing input byte ceiling.
+    ///
+    /// # Errors
+    /// Capacity arithmetic overflows or lexical buffers exceed the byte ceiling.
+    fn charge(&mut self, additional: usize) -> Result<()> {
+        let bytes = self
+            .bytes
+            .checked_add(additional)
+            .ok_or("VRML lexical storage overflow")?;
+        if bytes as u64 > super::MAX_INPUT_BYTES {
+            return Err(error(
+                "VRML lexical storage exceeds the 512 MiB input ceiling",
+            ));
+        }
+        self.bytes = bytes;
+        Ok(())
+    }
+
+    /// Append one decoded character with amortized geometric, precharged string growth.
+    ///
+    /// # Errors
+    /// String capacity, cumulative byte accounting or allocation fails.
+    fn character(&mut self, text: &mut String, character: char) -> Result<()> {
+        let required = text
+            .len()
+            .checked_add(character.len_utf8())
+            .ok_or("VRML string size overflow")?;
+        if required > text.capacity() {
+            let capacity = required.max(text.capacity().saturating_mul(2)).max(4);
+            self.charge(capacity - text.capacity())?;
+            text.try_reserve_exact(capacity - text.len())?;
+            if text.capacity() > capacity {
+                self.charge(text.capacity() - capacity)?;
+            }
+        }
+        text.push(character);
+        Ok(())
+    }
+
+    /// Append a lexical token only after checking item count and complete spare-capacity growth.
+    ///
+    /// # Errors
+    /// Token count, cumulative capacity arithmetic or allocation exceeds a limit.
+    fn token(&mut self, tokens: &mut Vec<Token>, token: Token) -> Result<()> {
+        if tokens.len() >= MAX_ITEMS {
+            return Err(error("too many VRML tokens"));
+        }
+        if tokens.len() == tokens.capacity() {
+            let capacity = (tokens.len() + 1)
+                .max(tokens.capacity().saturating_mul(2))
+                .clamp(4, MAX_ITEMS);
+            let bytes = (capacity - tokens.capacity())
+                .checked_mul(std::mem::size_of::<Token>())
+                .ok_or("VRML token storage overflow")?;
+            self.charge(bytes)?;
+            tokens.try_reserve_exact(capacity - tokens.len())?;
+            if tokens.capacity() > capacity {
+                self.charge(
+                    (tokens.capacity() - capacity)
+                        .checked_mul(std::mem::size_of::<Token>())
+                        .ok_or("VRML token storage overflow")?,
+                )?;
+            }
+        }
+        tokens.push(token);
+        Ok(())
+    }
+}
+
 /// Tokenize VRML text while respecting comments and quoted string escapes.
 fn tokenize(source: &str) -> Result<Vec<Token>> {
     let mut chars = source.chars().peekable();
     let mut tokens = Vec::new();
+    let mut storage = LexicalStorage::default();
     while let Some(c) = chars.next() {
         match c {
             c if c.is_whitespace() || c == ',' => {}
@@ -53,7 +138,7 @@ fn tokenize(source: &str) -> Result<Vec<Token>> {
                     }
                 }
             }
-            '{' | '}' | '[' | ']' => tokens.push(Token::Symbol(c)),
+            '{' | '}' | '[' | ']' => storage.token(&mut tokens, Token::Symbol(c))?,
             '"' => {
                 let mut s = String::new();
                 let mut closed = false;
@@ -69,28 +154,26 @@ fn tokenize(source: &str) -> Result<Vec<Token>> {
                         if !matches!(c, '\\' | '"') {
                             return Err(error("unsupported VRML string escape"));
                         }
-                        s.push(c);
+                        storage.character(&mut s, c)?;
                     } else {
-                        s.push(c);
+                        storage.character(&mut s, c)?;
                     }
                 }
                 if !closed {
                     return Err(error("unterminated VRML string"));
                 }
-                tokens.push(Token::String(s));
+                storage.token(&mut tokens, Token::String(s))?;
             }
             _ => {
-                let mut s = String::from(c);
+                let mut s = String::new();
+                storage.character(&mut s, c)?;
                 while chars.peek().is_some_and(|c| {
                     !c.is_whitespace() && !matches!(c, ',' | '#' | '{' | '}' | '[' | ']' | '"')
                 }) {
-                    s.push(chars.next().unwrap());
+                    storage.character(&mut s, chars.next().unwrap())?;
                 }
-                tokens.push(Token::Atom(s));
+                storage.token(&mut tokens, Token::Atom(s))?;
             }
-        }
-        if tokens.len() > MAX_ITEMS {
-            return Err(error("too many VRML tokens"));
         }
     }
     Ok(tokens)
@@ -101,13 +184,20 @@ enum Value {
     /// Consecutive numeric or identifier atoms.
     Atoms(Vec<String>),
     /// One or more quoted strings.
-    Strings,
+    Strings(Vec<String>),
     /// A parsed node shared by definitions and uses.
     Node(Rc<Node>),
     /// Bracketed field values retaining their source order.
     List(Vec<Value>),
     /// Explicit null node value.
     Null,
+    /// Typed interface association, optionally supplying a static initial field value.
+    Binding {
+        /// Interface declaration supplying this association.
+        name: String,
+        /// Whether the association initializes a persistent field rather than an event.
+        initialize: bool,
+    },
 }
 #[derive(Debug)]
 /// A VRML node with its type and named field values.
@@ -116,6 +206,8 @@ struct Node {
     kind: String,
     /// Fields indexed by their names.
     fields: HashMap<String, Value>,
+    /// Immutable local template for a prototype-instance node, if this is not a built-in node.
+    prototype: Option<Rc<Prototype>>,
 }
 /// Bounded VRML parser with shared definition lookup.
 struct Parser {
@@ -125,14 +217,25 @@ struct Parser {
     offset: usize,
     /// Named nodes available to subsequent USE references.
     definitions: HashMap<String, Rc<Node>>,
-    /// Number of parsed nodes for the allocation budget.
-    nodes: usize,
+    /// Lexically nested prototype declarations available after their complete definitions.
+    prototypes: Vec<HashMap<String, Rc<Prototype>>>,
+    /// Innermost prototype interface available to implementation IS statements.
+    interface: Option<Rc<Interface>>,
+    /// Prototype names whose implementations are still being parsed.
+    declaring: Vec<String>,
+    /// Cumulative token/template/instance item, node and byte accounting.
+    budget: Budget,
+    /// Expanded caller nodes preserving top-level DEF/USE sharing.
+    expanded: prototypes::Memo,
 }
 impl Parser {
     /// Consume one atom token or return a contextual syntax error.
     fn atom(&mut self) -> Result<String> {
-        match self.tokens.get(self.offset).cloned() {
+        match self.tokens.get(self.offset) {
             Some(Token::Atom(s)) => {
+                self.budget
+                    .charge(1, 0, s.len() + std::mem::size_of::<String>())?;
+                let s = s.clone();
                 self.offset += 1;
                 Ok(s)
             }
@@ -149,7 +252,7 @@ impl Parser {
     }
     /// Parse a node, definition, use or null reference with depth and node limits.
     fn node(&mut self, depth: usize) -> Result<Rc<Node>> {
-        if depth > 256 || self.nodes >= MAX_NODES {
+        if depth > 256 || self.budget.nodes >= MAX_NODES {
             return Err(error("VRML node/depth limit exceeded"));
         }
         let kind = self.atom()?;
@@ -163,48 +266,89 @@ impl Parser {
         }
         if kind == "DEF" {
             let name = self.atom()?;
+            // A repeated DEF replaces the preceding name. Self-referential
+            // graph cycles remain undefined and are rejected while parsing.
+            self.definitions.remove(&name);
             let node = self.node(depth + 1)?;
-            if self.definitions.insert(name, node.clone()).is_some() {
-                return Err(error("duplicate VRML DEF name"));
-            }
+            // A same-name DEF inside this body appears later in the lexical
+            // scope, so subsequent USE statements must retain that binding.
+            // The enclosing node still participates in the scene hierarchy.
+            self.definitions.entry(name).or_insert_with(|| node.clone());
             return Ok(node);
         }
         if matches!(kind.as_str(), "PROTO" | "EXTERNPROTO" | "Script") {
-            return Err(error("VRML prototypes and scripts are not supported"));
+            return Err(error(
+                "VRML Script and external prototypes are not supported",
+            ));
+        }
+        let prototype = self.prototype(&kind);
+        if prototype.is_none() && self.declaring.contains(&kind) {
+            return Err(error("recursive VRML prototype implementation"));
+        }
+        if prototype.is_none() && !self.declaring.is_empty() && !prototypes::builtin(&kind) {
+            return Err(error(format!("unknown VRML node type {kind} in prototype")));
         }
         self.symbol('{')?;
-        self.nodes += 1;
+        self.budget
+            .charge(1, 1, std::mem::size_of::<Node>() + kind.len() + 64)?;
         let mut fields = HashMap::new();
+        let mut associated = std::collections::HashSet::new();
         while self.tokens.get(self.offset) != Some(&Token::Symbol('}')) {
+            if self.statement_keyword(depth + 1)? {
+                continue;
+            }
             let name = self.atom()?;
-            let value = self.value(depth + 1)?;
+            self.budget
+                .charge(1, 0, 4 * std::mem::size_of::<(String, Value)>())?;
+            let value = if self.is_atom("IS") {
+                self.binding(&kind, prototype.as_deref(), &name, &mut associated)?
+            } else if let Some(prototype) = &prototype {
+                let declaration = prototype
+                    .interface
+                    .get(&name)
+                    .ok_or_else(|| error(format!("unknown VRML prototype field {name}")))?;
+                if !declaration.access.initializes() {
+                    return Err(error("VRML event values cannot be initialized in a node"));
+                }
+                self.typed_value(declaration.ty, depth + 1)?
+            } else {
+                self.value(depth + 1)?
+            };
             if fields.insert(name, value).is_some() {
                 return Err(error("duplicate VRML field"));
             }
         }
         self.symbol('}')?;
-        Ok(Rc::new(Node { kind, fields }))
+        Ok(Rc::new(Node {
+            kind,
+            fields,
+            prototype,
+        }))
     }
     /// Parse a field value, preserving bracketed values and shared node references.
     fn value(&mut self, depth: usize) -> Result<Value> {
         if depth > 256 {
             return Err(error("VRML nesting limit exceeded"));
         }
-        match self.tokens.get(self.offset).cloned() {
+        match self.tokens.get(self.offset) {
             Some(Token::Symbol('[')) => {
                 self.offset += 1;
                 let mut values = Vec::new();
                 while self.tokens.get(self.offset) != Some(&Token::Symbol(']')) {
+                    self.budget.charge(1, 0, 2 * std::mem::size_of::<Value>())?;
+                    self.budget.reserve(&mut values, 1)?;
                     values.push(self.value(depth + 1)?);
                 }
                 self.offset += 1;
                 Ok(Value::List(values))
             }
             Some(Token::String(_)) => {
+                let mut values = Vec::new();
                 while matches!(self.tokens.get(self.offset), Some(Token::String(_))) {
-                    self.offset += 1;
+                    self.budget.reserve(&mut values, 1)?;
+                    values.push(self.string()?);
                 }
-                Ok(Value::Strings)
+                Ok(Value::Strings(values))
             }
             Some(Token::Atom(s)) if s == "NULL" => {
                 self.offset += 1;
@@ -219,17 +363,19 @@ impl Parser {
             {
                 self.node(depth + 1).map(Value::Node)
             }
-            Some(Token::Atom(s)) => {
-                self.offset += 1;
+            Some(Token::Atom(_)) => {
+                let s = self.atom()?;
                 let numeric = s.parse::<f64>().is_ok() || s.starts_with("0x");
-                let mut values = vec![s];
+                let mut values = Vec::new();
+                self.budget.reserve(&mut values, 1)?;
+                values.push(s);
                 if numeric {
                     while let Some(Token::Atom(s)) = self.tokens.get(self.offset) {
                         if s.parse::<f64>().is_err() && !s.starts_with("0x") {
                             break;
                         }
-                        values.push(s.clone());
-                        self.offset += 1;
+                        self.budget.reserve(&mut values, 1)?;
+                        values.push(self.atom()?);
                     }
                 }
                 Ok(Value::Atoms(values))
@@ -575,6 +721,14 @@ impl Importer {
                 } else {
                     world
                 };
+                for child in node.nodes("children")? {
+                    self.walk(&child, world, depth + 1)?;
+                }
+            }
+            "Billboard" => {
+                node.check(&["children", "axisOfRotation", "bboxCenter", "bboxSize"])?;
+                let axis = node.vector("axisOfRotation", Vec3::new(0., 1., 0.))?;
+                let world = billboard::placement(world, axis)?;
                 for child in node.nodes("children")? {
                     self.walk(&child, world, depth + 1)?;
                 }
@@ -950,27 +1104,17 @@ fn vrml(source: &str) -> Result<Scene> {
         ));
     }
     let tokens = tokenize(source.trim_start_matches('\u{feff}'))?;
-    let mut parser = Parser {
-        tokens,
-        offset: 0,
-        definitions: HashMap::new(),
-        nodes: 0,
-    };
+    let mut parser = Parser::new(tokens)?;
     let mut importer = Importer {
         scene: Scene::default(),
         visits: 0,
     };
     while parser.offset < parser.tokens.len() {
-        if parser.tokens.get(parser.offset) == Some(&Token::Atom("ROUTE".into())) {
-            parser.offset += 1;
-            parser.atom()?;
-            if parser.atom()? != "TO" {
-                return Err(error("invalid VRML ROUTE"));
-            }
-            parser.atom()?;
+        if parser.statement_keyword(0)? {
             continue;
         }
         let node = parser.node(0)?;
+        let node = prototypes::expand(&node, &mut parser.expanded, &mut parser.budget)?;
         importer.walk(&node, Transform::IDENTITY, 0)?;
     }
     importer.scene.validate()?;
@@ -1042,6 +1186,143 @@ mod tests {
         )
         .unwrap();
         assert_eq!(scene.triangles.len(), 12);
+    }
+
+    /// Nested same-name definitions retain the closest preceding lexical binding.
+    #[test]
+    fn nested_def_shadowing_preserves_outer_geometry_and_later_inner_uses() {
+        let source = r"#VRML V2.0 utf8
+          DEF Same Transform {translation 10 0 0 children [
+            DEF Same Shape {geometry Box {size 2 2 2}}
+          ]}
+          USE Same";
+        let scene = vrml(source).unwrap();
+        assert_eq!(scene.triangles.len(), 24);
+        let x_bounds = |triangles: &[Triangle]| {
+            triangles
+                .iter()
+                .flat_map(|triangle| triangle.vertices)
+                .fold([f64::INFINITY, f64::NEG_INFINITY], |[low, high], point| {
+                    [low.min(point.x), high.max(point.x)]
+                })
+        };
+        assert_eq!(
+            x_bounds(&scene.triangles).map(f64::to_bits),
+            [-1_f64, 11.].map(f64::to_bits)
+        );
+        assert_eq!(
+            x_bounds(&scene.triangles[..12]).map(f64::to_bits),
+            [9_f64, 11.].map(f64::to_bits)
+        );
+        assert_eq!(
+            x_bounds(&scene.triangles[12..]).map(f64::to_bits),
+            [-1_f64, 1.].map(f64::to_bits)
+        );
+
+        // The preceding and nested Shape have identical content but distinct
+        // lexical definitions; content equality cannot decide which binding wins.
+        let identical = source.replace(
+            "DEF Same Transform",
+            "DEF Same Shape {geometry Box {size 2 2 2}}\nDEF Same Transform",
+        );
+        let scene = vrml(&identical).unwrap();
+        assert_eq!(scene.triangles.len(), 36);
+        for (triangles, expected) in
+            scene
+                .triangles
+                .as_chunks::<12>()
+                .0
+                .iter()
+                .zip([[-1_f64, 1.], [9., 11.], [-1., 1.]])
+        {
+            assert_eq!(
+                x_bounds(triangles).map(f64::to_bits),
+                expected.map(f64::to_bits)
+            );
+        }
+
+        let siblings = r"#VRML V2.0 utf8
+          DEF Same Transform {translation 10 0 0 children [
+            DEF Same Transform {translation 2 0 0 children [
+              DEF Same Shape {geometry Box {size 2 2 2}}
+            ]}
+            USE Same
+          ]}
+          USE Same";
+        let scene = vrml(siblings).unwrap();
+        assert_eq!(scene.triangles.len(), 36);
+        for (triangles, expected) in
+            scene
+                .triangles
+                .as_chunks::<12>()
+                .0
+                .iter()
+                .zip([[11_f64, 13.], [9., 11.], [-1., 1.]])
+        {
+            assert_eq!(
+                x_bounds(triangles).map(f64::to_bits),
+                expected.map(f64::to_bits)
+            );
+        }
+    }
+
+    /// Unshadowed definitions remain available, while active self references stay undefined.
+    #[test]
+    fn nested_def_names_preserve_unshadowed_uses_and_reject_cycles() {
+        let source = r"#VRML V2.0 utf8
+          DEF Same Transform {translation 10 0 0 children [
+            DEF Inner Shape {geometry Box {size 2 2 2}}
+          ]}
+          USE Same
+          USE Inner";
+        let scene = vrml(source).unwrap();
+        assert_eq!(scene.triangles.len(), 36);
+        for (triangles, center) in scene
+            .triangles
+            .as_chunks::<12>()
+            .0
+            .iter()
+            .zip([10., 10., 0.])
+        {
+            assert!(
+                triangles
+                    .iter()
+                    .flat_map(|triangle| triangle.vertices)
+                    .all(|point| (point.x - center).abs().to_bits() == 1_f64.to_bits())
+            );
+        }
+        let duplicate = vrml(
+            r"#VRML V2.0 utf8
+              DEF Same Shape {geometry Box {size 2 2 2}}
+              DEF Same Shape {geometry Box {size 4 4 4}}
+              USE Same",
+        )
+        .unwrap();
+        assert_eq!(duplicate.triangles.len(), 36);
+        for (triangles, extent) in duplicate
+            .triangles
+            .as_chunks::<12>()
+            .0
+            .iter()
+            .zip([1_f64, 2., 2.])
+        {
+            assert!(
+                triangles
+                    .iter()
+                    .flat_map(|triangle| triangle.vertices)
+                    .all(|point| point.x.abs().to_bits() == extent.to_bits())
+            );
+        }
+        for invalid in [
+            "DEF Same Group {children USE Same}",
+            "DEF Same Shape {geometry Box {}} DEF Same Group {children USE Same}",
+            "DEF Same Group {children [DEF Same Group {children USE Same}]}",
+        ] {
+            assert!(
+                vrml(&format!("#VRML V2.0 utf8\n{invalid}")).is_err(),
+                "{invalid}"
+            );
+        }
     }
     fn signed_volume(scene: &Scene) -> f64 {
         scene
