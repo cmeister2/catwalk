@@ -189,7 +189,7 @@ jobs:
           path: release-prepared
       - name: Apply prepared manifests
         run: cp release-prepared/Cargo.toml release-prepared/Cargo.lock .
-      - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2
+      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2
         with:
           tool: cargo-about@0.9.2
       - name: Prepare archive documentation
