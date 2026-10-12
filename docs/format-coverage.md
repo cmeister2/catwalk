@@ -1,16 +1,12 @@
-# F3D thumbnail format coverage
+# Thumbnail format coverage
 
-Catwalk has Rust thumbnail readers for every published F3D format family. Each importer supports the encoding and geometry described below; **full valid-file parity with F3D remains unfinished**. An extension listed as a subset means the stated encoding and geometry can be previewed, not that every valid file with that extension can be read.
+Catwalk provides Rust thumbnail readers for the model, image and application-document formats listed here. Each importer supports the encodings and geometry described below. **A listed extension does not imply support for every encoding, entity or scene feature in that format.**
 
-The baseline below covers every reader and extension in the [F3D 3.5 supported-format table](https://f3d.app/docs/user/SUPPORTED_FORMATS/), checked on 11 October 2026. Individual F3D builds vary with their plugins; the baseline here includes the whole published table. Reader identifiers and extension aliases are compatibility targets, not promises made by the CLI.
+The summary table groups format families and extension aliases. Each format section describes supported features, limits and shared renderer or codec policies.
 
-The CLI recognizes **all 76 published extension aliases**, covering all 57 reader rows below. Every row has a Rust reader for actual geometry or image data. Recognizing an alias does not mean full support for every encoding, entity or scene feature in that format.
+Fresh geometry readers support Blender, LightBurn and a DWG drawing subset. Inventor `.ipt`/`.iam` and Fusion `.f3d` support saved-image extraction only; their geometry rendering is unsupported in Catwalk. Saved-image extraction does not regenerate geometry or establish compatibility with every application release.
 
-Each section corresponds to a reader row in the summary table. Extension aliases sharing one format remain together, and shared renderer or codec policies are linked from the relevant section.
-
-AMF and the seven additional document extensions described below are outside the published F3D baseline. Fresh geometry readers support Blender, LightBurn and a DWG drawing subset. Inventor `.ipt`/`.iam` and Fusion `.f3d` support saved-image extraction only; their geometry rendering is unsupported in Catwalk. Saved-image extraction does not regenerate geometry or establish compatibility with every application release.
-
-| F3D reader | Extensions | Current Rust preview coverage |
+| Format family | Extensions | Current Rust preview coverage |
 | --- | --- | --- |
 | [VTKLegacy](#vtk-legacy) | `.vtk` | Subset: ASCII/big-endian binary, classic/version-5 topology, polygons/lines, linear and structured grid boundaries. |
 | [VTKXMLVTP](#vtk-polydata-xml) | `.vtp` | Subset: ASCII/binary/appended XML, zlib/LZ4; polygons, strips, vertices and polylines. |
@@ -55,6 +51,7 @@ AMF and the seven additional document extensions described below are outside the
 | [DXF](#dxf) | `.dxf` | Subset: ASCII/binary drawing faces, points, lines, sampled curves/splines, meshes and nested block instances. |
 | [DirectX](#directx) | `.x` | Subset: text/binary/MSZIP mesh scenes, static frames, bind geometry and colors. |
 | [3MF](#3mf) | `.3mf` | Subset: core/production multipart meshes, placements, units, colors and packaged PNG/JPEG textures. |
+| [AMF](#amf) | `.amf` | Subset: XML/single-model ZIP triangle volumes, units, constant colors and qualified constellation placements. |
 | [USD](#usd) | `.usd`, `.usda`, `.usdc`, `.usdz` | Subset: local composed stages, static meshes/primitives/points/curves, instances, transforms and diffuse colors. |
 | [VDB](#vdb) | `.vdb` | Subset: scalar sparse 5/4/3 trees, half-float values, density/level-set surfaces and affine transforms. |
 | [IFC](#ifc) | `.ifc` | Subset: Part 21 product placements, mapped/faceted/tessellated shapes, extruded/revolved profiles, primitives and bounded solid operations/openings. |
@@ -88,7 +85,7 @@ Scalar color maps, higher-order cells, legacy polyhedron face streams, platform-
 
 ### Scalar-volume rendering
 
-Scalar volume previews extract exposed faces of actual foreground voxels. Values are max-pooled to at most 32 cells per axis so a small bright feature survives reduction. The threshold is halfway through the finite scalar range, using zero as the lower baseline when the range crosses zero. Uniform nonzero data fills the extent; uniform zero data has no foreground. Coordinates, spacing, origin, direction and reflected axes are preserved. This produces a bounded density surface, including interior cavity walls, rather than an empty volume's bounding box. It is a fixed preview policy rather than F3D volume-transfer-function parity. Scalar payloads are capped at 16,777,216 samples and 128 MiB decoded data.
+Scalar volume previews extract exposed faces of actual foreground voxels. Values are max-pooled to at most 32 cells per axis so a small bright feature survives reduction. The threshold is halfway through the finite scalar range, using zero as the lower baseline when the range crosses zero. Uniform nonzero data fills the extent; uniform zero data has no foreground. Coordinates, spacing, origin, direction and reflected axes are preserved. This produces a bounded density surface, including interior cavity walls, rather than an empty volume's bounding box. It is a fixed preview policy; interactive volume transfer functions are unsupported. Scalar payloads are capped at 16,777,216 samples and 128 MiB decoded data.
 
 ### HDF5 and NetCDF backends
 
@@ -644,7 +641,7 @@ SLPK supports I3S PointCloud 1.6–1.9/2.0 packages, legacy and node-page hierar
 
 ## AMF
 
-**Extension:** `.amf`. **Status:** Additional Rust geometry reader outside the F3D baseline; a bounded subset.
+**Extension:** `.amf`. **Status:** Rust geometry reader; bounded XML/ZIP subset.
 
 The reader loads UTF-8 AMF XML and a ZIP containing one regular `.amf` model member, with stored or deflated compression. It preserves indexed flat triangles from every supported object volume, validates references, and normalizes millimeter, meter, micron, inch and feet units to millimeters. Only top-level, unreferenced object/constellation definitions render; referenced definitions contribute their placed instances without an extra copy at the origin. Nested constellations retain translation and qualified single-axis rotations. Standard angles use degrees within ±360°; mixed-axis rotations within one instance fail explicitly. Constant sRGB material, object, volume and triangle colors follow that precedence from least to most specific and retain alpha through the shared renderer.
 
@@ -696,7 +693,7 @@ Four licensed scenes with saved images and one gzip absence case are retained as
 
 Geometry rendering for `.f3d` is unsupported in Catwalk. This reader extracts an embedded PNG only.
 
-Autodesk defines F3D as a single-workspace archive; distributed F3Z archives contain one or more F3D files and require separate qualification. Fusion's `.f3d` is unrelated to the F3D viewer whose format list defines the main matrix. See [Autodesk archive documentation](https://help.autodesk.com/view/fusion360/ENU/?caas=caas%2Fsfdcarticles%2Fsfdcarticles%2FHow-to-make-a-local-archive-back-up-file-in-Fusion-360.html).
+Autodesk defines F3D as a single-workspace archive; distributed F3Z archives contain one or more F3D files and require separate qualification. See [Autodesk archive documentation](https://help.autodesk.com/view/fusion360/ENU/?caas=caas%2Fsfdcarticles%2Fsfdcarticles%2FHow-to-make-a-local-archive-back-up-file-in-Fusion-360.html).
 
 The Rust reader selects exactly `FusionAssetName[Active]/Previews/small.png` in single-disk ZIP32 archives, validates manifest tag `3-2-0-0`, document type `FusionDocType` and the active-asset manifest, and checks selected-member lengths and CRCs. Stored, Deflate and single-frame Zstandard members are supported. An absent preview returns `None`; malformed or unsupported carriers error. Other image blobs are not candidates. Limits cap the source at 512 MiB, the ZIP directory at 4 MiB and 4096 entries, selected members at 8 MiB, decoded images at 64 MiB and image axes at 4096 pixels, with a cooperative five-second budget.
 
@@ -722,6 +719,6 @@ The saved-preview reader does not parse geometry, verify whole-file CRCs or reco
 
 1. Broaden CAD compatibility against independent files. Remaining cases include missing face pcurves, difficult trimming/tessellation, additional STEP assembly operators and independent exporter coverage, and additional Open CASCADE document versions and cached geometry. Preserve genuine topology, placement and curved geometry when adding these variants.
 2. Broaden implemented encodings and geometry. Priorities include additional compression codecs, partial structured pieces, blanking, additional VTKHDF/Exodus/NetCDF schemas, broader CAD trimming and assembly operators, further USD/FBX/VRML/CityGML scene constructs, and supported scalar/DICOM/image codecs. Existing density and first-frame policies can stay fixed while missing valid encodings and geometry are added. Lidar schema/CRS coverage and CAD units also need corpus checks.
-3. Establish parity with a pinned F3D build and corpus. Record its reader list, gather valid examples for every reader and encoding, and compare geometry bounds, supported first-frame content and reference thumbnails. Include malformed/truncated files, external resources, transforms, holes/concave polygons, mixed blocks, large inputs and compressed variants. Current generated regression tests and independent reference files establish the documented subsets; they do not establish universal valid-file equivalence.
+3. Expand independent format verification. Add examples from more exporters and encoding variants, and compare geometry bounds, supported static content and reference thumbnails. Include malformed/truncated files, external resources, transforms, holes/concave polygons, mixed blocks, large inputs and compressed variants. Current generated regression tests and independent reference files establish the documented subsets; they do not establish universal valid-file compatibility.
 
-Matching all 76 aliases is necessary but insufficient for F3D file compatibility. Remaining work covers valid encodings and geometry outside the documented subsets. The implementation uses no subprocess converters or C/C++ model/codec bindings.
+Remaining work covers valid encodings and geometry outside the documented subsets. The implementation uses no subprocess converters or C/C++ model/codec bindings.

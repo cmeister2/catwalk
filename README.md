@@ -27,7 +27,7 @@ cd catwalk3d
 cargo run --release --locked -- examples/models/gear.obj --output thumbnail.png --size 256
 ```
 
-The importers, renderer, compression and image codecs use Rust implementations. Running Catwalk requires no graphics driver, display server, F3D installation or subprocess converter.
+The importers, renderer, compression and image codecs use Rust implementations. Running Catwalk requires no graphics driver, display server or subprocess converter.
 
 ## Which files can I preview?
 
@@ -42,9 +42,7 @@ Common inputs include:
 | Scientific data | `.vtk`, `.vtp`, `.vtu`, `.vtr`, `.vti`, `.vts`, `.vtm`, `.vtkhdf`, `.exo`, `.nc`, `.nrrd`, `.mhd`, `.mha`, `.dcm` |
 | Images | `.png`, `.jpg`, `.jpeg`, `.tif`, `.tiff`, `.bmp`, `.tga`, `.hdr`, `.webp`, `.exr` |
 
-Run `catwalk --list-formats` for the complete extension list. Catwalk has readers for all 76 extension aliases in F3D 3.5's published list, plus AMF and the seven native document extensions below. **Each reader supports a documented subset; full compatibility with every file F3D can read remains unfinished.** The [coverage matrix](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md) lists supported encodings, scene features and limitations for each format.
-
-AMF previews support plain XML and a single-model ZIP, triangle volumes, length units, constant colors and qualified constellation placements. The [AMF coverage entry](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#amf) describes the supported rotation and slicer dialects, and explicitly unsupported features.
+Run `catwalk --list-formats` for the complete extension list. Each reader supports a documented subset; the [coverage matrix](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md) lists supported encodings, scene features and limitations.
 
 Models use a fitted static view. Supported colors and materials are preserved; glTF/GLB and 3MF additionally support base-color textures. Animation files use a supported static pose or sample. Raster images are fitted to the canvas with their proportions preserved.
 
@@ -161,4 +159,4 @@ Maintainers supply a crates.io token through the GitHub secret `CARGO_REGISTRY_T
 
 ## License
 
-Catwalk's code and authored fixtures are MIT licensed. Retained upstream test assets keep their separately documented licenses and notices, including the AGPL-3.0 slicer examples. Catwalk is an independent thumbnail implementation; no F3D source code is included.
+Catwalk's code and authored fixtures are MIT licensed. Retained upstream test assets keep their separately documented licenses and notices, including the AGPL-3.0 slicer examples. Catwalk is an independent thumbnail implementation.
