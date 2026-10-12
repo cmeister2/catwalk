@@ -535,69 +535,6 @@ mod tests {
     }
 
     #[test]
-    fn licensed_blender_files_match_saved_pixel_snapshots() {
-        let directory =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/saved-previews/blend_dwg");
-        for name in ["blend-cube", "blend-280", "blend-extras", "blend-gzip-252"] {
-            let actual = extract_blend(&directory.join(format!("{name}.blend")))
-                .unwrap()
-                .unwrap();
-            let expected = image::open(directory.join(format!("{name}.png")))
-                .unwrap()
-                .into_rgba8();
-            assert_eq!(actual, expected, "saved-pixel snapshot: {name}");
-        }
-    }
-
-    #[test]
-    fn portable_authored_carriers_match_pixel_snapshots_and_absence() {
-        let directory =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/saved-previews/blend_dwg");
-        for name in [
-            "authored-legacy-32",
-            "authored-legacy-64",
-            "authored-format1",
-        ] {
-            let actual = extract_blend(&directory.join(format!("{name}.blend")))
-                .unwrap()
-                .unwrap();
-            let expected = image::open(directory.join(format!("{name}.png")))
-                .unwrap()
-                .into_rgba8();
-            assert_eq!(actual, expected, "authored Blend carrier: {name}");
-        }
-        for name in ["authored-dib", "authored-png"] {
-            let actual = extract_dwg(&directory.join(format!("{name}.dwg")))
-                .unwrap()
-                .unwrap();
-            let expected = image::open(directory.join(format!("{name}.png")))
-                .unwrap()
-                .into_rgba8();
-            assert_eq!(actual, expected, "authored DWG carrier: {name}");
-        }
-        assert!(
-            extract_blend(&directory.join("blend-gzip-no-preview.blend"))
-                .unwrap()
-                .is_none()
-        );
-        assert!(
-            extract_blend(&directory.join("authored-no-preview.blend"))
-                .unwrap()
-                .is_none()
-        );
-        assert!(
-            extract_dwg(&directory.join("authored-metadata-only.dwg"))
-                .unwrap()
-                .is_none()
-        );
-        assert!(
-            extract_dwg(&directory.join("authored-no-preview.dwg"))
-                .unwrap()
-                .is_none()
-        );
-    }
-
-    #[test]
     fn dwg_png_uses_the_declared_entry_and_preserves_pixels() {
         let expected = image::load_from_memory(&png()).unwrap().into_rgba8();
         assert_eq!(dwg_thumbnail(&dwg(6, &png())).unwrap().unwrap(), expected);

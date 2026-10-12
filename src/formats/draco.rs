@@ -567,45 +567,6 @@ mod tests {
         assert!(decode(b"DRACO\x02\x02\x02\x01\0\0").is_err());
     }
     #[test]
-    fn independent_google_mesh_encodings() {
-        for bytes in [
-            include_bytes!("../../tests/fixtures/draco/cube.drc").as_slice(),
-            include_bytes!("../../tests/fixtures/draco/cube-valence.drc").as_slice(),
-            include_bytes!("../../tests/fixtures/draco/cube-sequential.drc").as_slice(),
-        ] {
-            let decoded = decode_geometry(bytes).unwrap();
-            assert_eq!(decoded.faces.as_ref().unwrap().len(), 12);
-            let scene = decode(bytes).unwrap();
-            assert_eq!(scene.triangles.len(), 12);
-            assert!(
-                scene
-                    .positions()
-                    .all(|p| p.x.abs() <= 1.001 && p.y.abs() <= 1.001 && p.z.abs() <= 1.001)
-            );
-            assert!(decode(&bytes[..bytes.len() - 1]).is_err());
-            let mut trailing = bytes.to_vec();
-            trailing.push(42);
-            assert!(decode(&trailing).is_err());
-        }
-    }
-    #[test]
-    fn independent_google_point_clouds_and_color() {
-        let bytes = include_bytes!("../../tests/fixtures/draco/cube-points.drc");
-        let scene = decode(bytes).unwrap();
-        assert!(!scene.points.is_empty());
-        assert!(scene.triangles.is_empty());
-        let bytes = include_bytes!("../../tests/fixtures/draco/color-points.drc");
-        let scene = decode(bytes).unwrap();
-        assert!(scene.points.len() > 100);
-        assert!(scene.points.iter().all(|p| p.color.is_some()));
-        assert!(
-            scene
-                .points
-                .iter()
-                .any(|p| p.color != scene.points[0].color)
-        );
-    }
-    #[test]
     fn mapped_unique_ids_and_all_scalar_storage_types() {
         use draco_core::AttributeValueIndex;
         let mut attribute = PointAttribute::new();

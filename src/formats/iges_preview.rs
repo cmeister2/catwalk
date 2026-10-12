@@ -21,6 +21,10 @@ mod deck;
 mod geometry;
 #[path = "iges_poles.rs"]
 mod poles;
+/// Self-contained authored inputs for library unit tests.
+#[cfg(test)]
+#[path = "iges_test_input.rs"]
+mod test_input;
 use deck::{Deck, Entity};
 use geometry::{Geometry, Segment};
 
@@ -809,12 +813,7 @@ mod tests {
     fn pole_crossing_hemisphere() -> String {
         use std::fmt::Write;
 
-        let header = include_str!("../../tests/fixtures/formats/scientific_cad/iges-iges-box.iges");
-        let mut records: Vec<String> = header
-            .lines()
-            .filter(|line| matches!(line.as_bytes()[72], b'S' | b'G'))
-            .map(str::to_owned)
-            .collect();
+        let mut records = super::test_input::header();
         let global_count = records.len() - 1;
         let entities = [
             (116, 0, "0,0,0", 1),

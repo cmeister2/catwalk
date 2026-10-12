@@ -147,6 +147,8 @@ For custom scenes, `formats::load` produces a `scene::Scene` containing triangle
 
 ## Tests and example gallery
 
+Published Cargo packages exclude test fixture files and snapshots. Small library unit-test inputs are authored in memory; real-file checks run as integration tests from a Git checkout. CI also runs the library tests from the extracted crate to verify they work without repository fixtures.
+
 ```sh
 cargo fmt --all -- --check
 cargo clippy --locked --all-targets -- -D warnings

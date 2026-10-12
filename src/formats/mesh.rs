@@ -1670,13 +1670,24 @@ mod tests {
 
     #[test]
     fn obj_lines_use_materials_and_reject_invalid_or_unimplemented_geometry() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         let directory =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/formats/mesh_scene");
-        let scene = obj(
-            "mtllib obj-palette.mtl\nv 0 0 0 0 1 0\nv 1 0 0 0 1 0\nusemtl face0\nl 1 2\n",
-            &directory,
+            std::env::temp_dir().join(format!("catwalk-obj-unit-{}-{nonce}", std::process::id()));
+        std::fs::create_dir(&directory).unwrap();
+        std::fs::write(
+            directory.join("obj-palette.mtl"),
+            "newmtl face0\nKd 0.9019607843137255 0.4117647058823529 0.21568627450980393\n",
         )
         .unwrap();
+        let loaded = obj(
+            "mtllib obj-palette.mtl\nv 0 0 0 0 1 0\nv 1 0 0 0 1 0\nusemtl face0\nl 1 2\n",
+            &directory,
+        );
+        std::fs::remove_dir_all(&directory).unwrap();
+        let scene = loaded.unwrap();
         assert_eq!(scene.lines[0].color, Some([230, 105, 55]));
         for element in [
             "l",

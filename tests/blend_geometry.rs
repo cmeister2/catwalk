@@ -3,7 +3,7 @@
 use catwalk3d::{formats, geometry_thumbnail, render::RenderOptions, saved_preview, scene::Scene};
 use std::{
     fs,
-    io::Write,
+    io::{Read, Write},
     path::{Path, PathBuf},
     process::Command,
     sync::atomic::{AtomicU64, Ordering},
@@ -258,4 +258,19 @@ fn required_modifiers_are_explicitly_rejected() {
         error.contains("modifiers") && error.contains("evaluation"),
         "{error}"
     );
+}
+
+#[test]
+fn real_zstandard_frames_keep_modern_geometry_and_modifier_validation() {
+    let original = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/saved-previews/blend_dwg/blend-extras.blend");
+    let source = fs::File::open(&original).unwrap();
+    let mut decoder = ruzstd::decoding::StreamingDecoder::new(source).unwrap();
+    let mut header = [0_u8; 17];
+    decoder.read_exact(&mut header).unwrap();
+    assert_eq!(&header, b"BLENDER17-01v0502");
+    // The public geometry reader must decode all frames and the seek-table trailer
+    // before rejecting the original's required, unevaluated modifiers.
+    let error = formats::load(&original).unwrap_err().to_string();
+    assert!(error.contains("modifiers"), "{error}");
 }

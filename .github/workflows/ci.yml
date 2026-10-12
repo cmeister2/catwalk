@@ -44,11 +44,12 @@ jobs:
           archive="target/package/$(cargo metadata --format-version 1 --no-deps --locked | jq -r '.packages[] | select(.name == "catwalk3d") | "\(.name)-\(.version).crate"')"
           test "$(stat --format=%s "$archive")" -lt 10000000
           tar -tzf "$archive" > target/package/contents.txt
-          if rg -v '^catwalk3d-[^/]+/(src/|docs/|examples/|tests/|README\.md$|LICENSE$|Cargo\.toml(\.orig)?$|Cargo\.lock$|\.cargo_vcs_info\.json$)' target/package/contents.txt \
-            || rg '/(node_modules|\.env(\.[^/]+)?)(/|$)' target/package/contents.txt; then
+          if rg -v '^catwalk3d-[^/]+/(src/|docs/|examples/|README\.md$|LICENSE$|Cargo\.toml(\.orig)?$|Cargo\.lock$|\.cargo_vcs_info\.json$)' target/package/contents.txt \
+            || rg '/(tests|fixtures|snapshots|node_modules|\.env(\.[^/]+)?)(/|$)' target/package/contents.txt; then
             echo 'Unexpected files in the crate archive.' >&2
             exit 1
           fi
+          cargo test --manifest-path "${archive%.crate}/Cargo.toml" --lib --locked --target-dir target
       - name: Check runtime geometry and compression backends
         shell: bash
         run: |

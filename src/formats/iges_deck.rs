@@ -404,8 +404,8 @@ mod tests {
 
     /// Change one retained point's leading type spelling without changing record widths.
     fn alternate_type(spelling: &str) -> (String, i64) {
-        let source = include_str!("../../tests/fixtures/formats/scientific_cad/iges-iges-box.iges");
-        let deck = Deck::read(source).unwrap();
+        let source = super::super::test_input::point().unwrap();
+        let deck = Deck::read(&source).unwrap();
         let (&id, entity) = deck
             .entities
             .iter()
