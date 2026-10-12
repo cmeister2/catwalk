@@ -1,0 +1,26 @@
+#VRML V2.0 utf8
+# Catwalk authored typed prototype control; MIT.
+PROTO ColoredMesh [
+  field MFVec3f positions [0 0 0, 2 0 0, 0 3 0]
+  field MFInt32 indices [0 1 2 -1]
+  field MFColor hues [1 0 0, 1 0 0, 1 0 0]
+] {
+  Shape {
+    appearance Appearance { material Material { diffuseColor 1 1 1 } }
+    geometry IndexedFaceSet {
+      coord Coordinate { point IS positions }
+      coordIndex IS indices
+      color Color { color IS hues }
+    }
+  }
+}
+Transform { translation -3 0 0 children [ColoredMesh {}] }
+Transform {
+  translation 2 1 0
+  children [
+    ColoredMesh {
+      positions [0 0 0, 1 0 0, 0 0 2]
+      hues [1 0 0, 0 1 0, 0 0 1]
+    }
+  ]
+}

@@ -1441,6 +1441,14 @@
       "title": "VRML indexed faces and authored vertex colors"
     },
     {
+      "extension": "vrml",
+      "id": "vrml-proto-typed-arrays",
+      "input": "vrml_prototypes/vrml-proto-typed-arrays.vrml",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "VRML typed coordinate/color defaults and overrides"
+    },
+    {
       "extension": "vti",
       "id": "vti-oriented-density",
       "input": "scientific_cad/vti-oriented-density.vti",
@@ -1570,11 +1578,51 @@
     },
     {
       "extension": "wrl",
+      "id": "wrl-billboard-occurrences",
+      "input": "vrml_prototypes/wrl-billboard-occurrences.wrl",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "VRML constrained/free billboards and transformed shared instances"
+    },
+    {
+      "extension": "wrl",
       "id": "wrl-primitives",
       "input": "mesh_scene/wrl-primitives.wrl",
       "kind": "model",
       "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
       "title": "VRML sphere, box and cone hierarchy"
+    },
+    {
+      "extension": "wrl",
+      "id": "wrl-proto-first-body",
+      "input": "vrml_prototypes/wrl-proto-first-body.wrl",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "VRML first-body geometry and material wrappers"
+    },
+    {
+      "extension": "wrl",
+      "id": "wrl-proto-nested-scopes",
+      "input": "vrml_prototypes/wrl-proto-nested-scopes.wrl",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "VRML nested templates, body-local definitions and caller nodes"
+    },
+    {
+      "extension": "wrl",
+      "id": "wrl-web3d-proto-instance",
+      "input": "vrml_prototypes/ProtoInstanceExample.wrl",
+      "kind": "model",
+      "provenance": "Unmodified original Web3D Consortium VRML97 example, with its embedded author/date/license metadata preserved. Explicit Web3D Consortium open-source BSD-style redistribution terms retained as vrml_prototypes/WEB3D-LICENSE.txt; exact source URLs, original SHA-256 hashes and independent static geometry expectations in vrml_prototypes/README.md. https://www.web3d.org/x3d/content/examples/",
+      "title": "Web3D original typed cylinder prototype and billboard"
+    },
+    {
+      "extension": "wrl",
+      "id": "wrl-web3d-spingroup",
+      "input": "vrml_prototypes/Figure31_9SpinGroupPrototype.wrl",
+      "kind": "model",
+      "provenance": "Unmodified original Web3D Consortium VRML97 example, with its embedded author/date/license metadata preserved. Explicit Web3D Consortium open-source BSD-style redistribution terms retained as vrml_prototypes/WEB3D-LICENSE.txt; exact source URLs, original SHA-256 hashes and independent static geometry expectations in vrml_prototypes/README.md. https://www.web3d.org/x3d/content/examples/",
+      "title": "Web3D original nested SpinGroup prototype"
     },
     {
       "extension": "x",

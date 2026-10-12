@@ -1,0 +1,36 @@
+#VRML V2.0 utf8
+# Catwalk authored prototype scope and repeated-instance control; MIT.
+PROTO Pair [
+  field SFVec3f move 0 0 0
+  field MFNode extras []
+] {
+  PROTO LocalTriangle [field SFColor tint 1 0 0] {
+    Shape {
+      appearance Appearance { material Material { diffuseColor IS tint } }
+      geometry IndexedFaceSet {
+        coord Coordinate { point [0 0 0, 1 0 0, 0 1 0] }
+        coordIndex [0 1 2 -1]
+      }
+    }
+  }
+  Transform {
+    translation IS move
+    children [
+      DEF LocalInstance LocalTriangle {}
+      Transform { translation 2 0 0 children [USE LocalInstance] }
+      Group { children IS extras }
+    ]
+  }
+  Shape { geometry Box { size 100 100 100 } }
+}
+Pair {
+  move -4 0 0
+  extras [
+    DEF CallerShape Shape {
+      appearance Appearance { material Material { diffuseColor 0 1 0 } }
+      geometry Box { size 1 1 1 }
+    }
+  ]
+}
+Pair { move 2 1 1 }
+Transform { translation -4 0 2 children [USE CallerShape] }

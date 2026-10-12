@@ -15,6 +15,11 @@ const MAX_SAMPLE_PIXELS: usize = 16 * 1024 * 1024;
 const MAX_APPEARANCE_SAMPLES: u64 = 256 * 1024 * 1024;
 /// Maximum retained translucent samples before depth-sorted compositing.
 const MAX_TRANSPARENT_FRAGMENTS: usize = 4 * 1024 * 1024;
+/// Z-up direction from the scene toward the viewer in the primary orthographic view.
+///
+/// Importers use this reference to freeze camera-dependent geometry. Surface-only
+/// scenes may subsequently select one of the renderer's deterministic fallback views.
+pub(crate) const PRIMARY_VIEW_DIRECTION: Vec3 = Vec3::new(1.0, -1.0, 1.0);
 
 #[derive(Clone, Debug)]
 /// Output dimensions, background, fallback model color and antialiasing settings.
@@ -212,7 +217,7 @@ impl Camera {
     /// Select the first deterministic view that exposes a valid surface or non-surface primitive.
     fn choose(scene: &Scene, geometry: Geometry) -> Self {
         let directions = [
-            Vec3::new(1.0, -1.0, 1.0),
+            PRIMARY_VIEW_DIRECTION,
             Vec3::new(1.0, -1.0, 0.6),
             Vec3::new(1.0, -0.6, 1.0),
         ];
