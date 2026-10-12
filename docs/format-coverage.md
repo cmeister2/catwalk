@@ -4,7 +4,7 @@ Catwalk provides Rust thumbnail readers for the model, image and application-doc
 
 The summary table groups format families and extension aliases. Each format section describes supported features, limits and shared renderer or codec policies.
 
-Fresh geometry readers support Blender, LightBurn and a DWG drawing subset. Inventor `.ipt`/`.iam` and Fusion `.f3d` support saved-image extraction only; their geometry rendering is unsupported in Catwalk. Saved-image extraction does not regenerate geometry or establish compatibility with every application release.
+Fresh geometry readers support Blender, LightBurn and a DWG drawing subset. Inventor `.ipt`/`.iam`, Fusion `.f3d` and Lychee `.lys` support saved-image extraction only; their geometry rendering is unsupported in Catwalk. Saved-image extraction does not regenerate geometry or establish compatibility with every application release.
 
 | Format family | Extensions | Current Rust preview coverage |
 | --- | --- | --- |
@@ -66,6 +66,7 @@ Fresh geometry readers support Blender, LightBurn and a DWG drawing subset. Inve
 | [QFIT](#qfit) | `.qi` | Subset: supported 10/12/14-word records and endianness, longitude/latitude/elevation points. |
 | [SBET](#sbet) | `.sbet` | Subset: little-endian 17-double trajectory records rendered as geographic points. |
 | [SLPK](#slpk) | `.slpk` | Subset: I3S point-cloud packages, hierarchy and Rust LEPCC XYZ/RGB decoding. |
+| [Lychee](#lychee) | `.lys` | Subset: addressed saved PNG in flat Mango/ASAR manifest 3.1.0 scenes; original Lychee 5.4.3 saves qualified. |
 
 ## Shared preview policies
 
@@ -680,6 +681,18 @@ Curved-patch vertex normals, edge tangents, vertex color gradients, textures, co
 The [unchanged original Slic3r XML export and compressed reference](../tests/fixtures/formats/amf/README.md) are separately licensed AGPL-3.0 assets with the full original license and source notice. Their XML payloads are byte-identical. Independent assertions check twelve triangles, placed bounds, surface area and signed volume; both encodings also have CLI PNG comparisons. The compressed reference is an upstream ZIP-reader test around exporter XML, rather than evidence that Slic3r wrote that ZIP container. Authored controls independently check units, individual rotation axes, nested placement, scale, color precedence and explicit malformed/unsupported errors.
 
 Inputs and expanded XML are limited to 64 MiB, XML nodes to two million, scalar fields to 128 bytes, resource/instance records to 100,000, source vertices/source triangles/placed triangles to one million each, nested constellations to 64 levels, cumulative geometry accounting to 256 MiB and charged instance work to fifty million operations. ZIP paths are validated without writing extracted files. Multiple members, unsafe or nonregular members, unsupported compression and failed CRC/length validation are rejected.
+
+## Lychee
+
+**Extension:** `.lys`. **Status:** qualified saved-PNG extraction; fresh geometry is unsupported.
+
+The owned Rust reader validates Mango's ASAR/Pickle framing, exact JSON length and zero alignment padding, then addresses the root `preview.png` member. Flat manifest version `3.1.0` is qualified by two unchanged, MIT-licensed Lychee **5.4.3** keyboard-case scenes. Their original saved PNGs, literal source and pixel hashes, CLI output snapshots and license are retained in the [fixture corpus](../tests/fixtures/formats/lychee/README.md). Saved output preserves the prepared image and can be stale; it does not regenerate model geometry, support structures, hollowing or placement.
+
+Member offsets are decimal strings relative to the end of the header (`8 + headerSize`), with checked integer sizes and nonoverlapping source-bounded spans. Declared whole and block SHA-256 digests for the selected member are verified with the pure Rust `sha2` dependency before decoding; optional integrity metadata can be absent. PNG decoding still validates its supported carrier and checksums. Arbitrary image signatures and unrelated note images are not selected. A valid qualified container without `preview.png` returns no saved preview; corrupt PNGs and malformed or unsupported containers return errors. Automatic mode fits the saved image to the canvas; `--extract-saved-preview` keeps its original dimensions. `--render-geometry` remains unsupported for `.lys`.
+
+Legacy ZIP `.lys`, `.lyt`, nested directory tables, linked or unpacked resources, other manifest versions and external library assets are unsupported. These fixtures do not qualify every newer Lychee release or scene variant. The [official export documentation](https://doc.mango3d.io/doc/resin-documentation/resin-export/export-scene/) distinguishes self-contained `.lys` scenes from `.lyt` scenes requiring original model files; Catwalk does not fetch those resources.
+
+Primary input uses the shared 512 MiB limit. The JSON index is limited to 2 MiB, 4096 flat members, eight nested levels, 50,000 cumulative values and 4096 encoded bytes per string. The selected encoded PNG is limited to 8 MiB; decoded axes are at most 4096 pixels, the image at most 16 million pixels, and codec allocation at most 64 MiB. Duplicate decoded JSON keys, preview case/path aliases, invalid framing/padding/spans, overlaps, unsupported fields, integrity failures and exceeded image budgets fail explicitly. No desktop application, native dependency or subprocess converter is required.
 
 ## Autodesk Inventor
 

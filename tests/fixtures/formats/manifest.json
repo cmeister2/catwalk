@@ -961,6 +961,22 @@
       "title": "LightBurn native rectangle, no thumbnail"
     },
     {
+      "extension": "lys",
+      "id": "lychee-delphi-hp-saved-thumbnail",
+      "input": "lychee/delphi-edge-case-hp.lys",
+      "kind": "saved-preview",
+      "provenance": "Unmodified JRiggles/DELPHI-kbd cases/DELPHI%20Edge%20Case%20HP.lys, commit a666598d5916b73f8a3fac796e569878de18bb79; MIT, Copyright (c) 2022-25 John Riggles; original license retained as lychee/DELPHI-LICENSE. Actual Lychee 5.4.3 scene, flat Mango manifest 3.1.0; exact saved PNG extraction preserves the prepared image and does not regenerate geometry or supports. https://github.com/JRiggles/DELPHI-kbd/blob/a666598d5916b73f8a3fac796e569878de18bb79/cases/DELPHI%20Edge%20Case%20HP.lys",
+      "title": "Lychee 5.4.3 DELPHI high-profile keyboard case saved PNG"
+    },
+    {
+      "extension": "lys",
+      "id": "lychee-delphi-lp-saved-thumbnail",
+      "input": "lychee/delphi-edge-case-lp.lys",
+      "kind": "saved-preview",
+      "provenance": "Unmodified JRiggles/DELPHI-kbd cases/DELPHI%20-%20Edge%20Case%20LP.lys, commit a666598d5916b73f8a3fac796e569878de18bb79; MIT, Copyright (c) 2022-25 John Riggles; original license retained as lychee/DELPHI-LICENSE. Actual Lychee 5.4.3 scene, flat Mango manifest 3.1.0; exact saved PNG extraction preserves the prepared image and does not regenerate geometry or supports. https://github.com/JRiggles/DELPHI-kbd/blob/a666598d5916b73f8a3fac796e569878de18bb79/cases/DELPHI%20-%20Edge%20Case%20LP.lys",
+      "title": "Lychee 5.4.3 DELPHI low-profile keyboard case saved PNG"
+    },
+    {
       "extension": "mdl",
       "id": "mdl-native-frame",
       "input": "mesh_scene/mdl-native-frame.mdl",
