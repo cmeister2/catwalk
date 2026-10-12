@@ -1401,6 +1401,14 @@
       "title": "USD generic extension with authored binary crate"
     },
     {
+      "extension": "usd",
+      "id": "usd-nurbs-family",
+      "input": "usd_nurbs/usd-nurbs-family.usd",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license. Curve widths are omitted from the centerline preview.",
+      "title": "USD generic binary NURBS family"
+    },
+    {
       "extension": "usda",
       "id": "usda-authored-mesh",
       "input": "mesh_scene/usda-authored-mesh.usda",
@@ -1417,6 +1425,46 @@
       "title": "USD point instancing, analytic primitives and Bezier curve"
     },
     {
+      "extension": "usda",
+      "id": "usda-maya-nurbs-circles",
+      "input": "usd_nurbs/usda-maya-nurbs-circles.usda",
+      "kind": "model",
+      "provenance": "Unmodified Autodesk Maya USD test/testSamples/basisCurves/nurbsCircleExport.usda at commit 48eae123cabec8e671f0779b03c22fa30631a781; SHA-256 17b9eab67f027d314e4de32cd01d1c383068768d8b9a49c7a72ea5abc0b6057b. Apache-2.0; original license and source attribution retained in usd_nurbs/MAYA-USD-LICENSE.md and usd_nurbs/MAYA-USD-NOTICE.txt. Two exported periodic cubic NURBS centerlines, including the second curve's authored placement; width geometry is not rendered. https://github.com/Autodesk/maya-usd/blob/48eae123cabec8e671f0779b03c22fa30631a781/test/testSamples/basisCurves/nurbsCircleExport.usda",
+      "title": "Maya-exported periodic NURBS circle pair"
+    },
+    {
+      "extension": "usda",
+      "id": "usda-nurbs-family",
+      "input": "usd_nurbs/usda-nurbs-family.usda",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license. Curve widths are omitted from the centerline preview.",
+      "title": "USD ASCII rational, trimmed, disconnected and instanced NURBS"
+    },
+    {
+      "extension": "usda",
+      "id": "usda-nurbs-placed-instances",
+      "input": "usd_nurbs/usda-nurbs-placed-instances.usda",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license. Curve widths are omitted from the centerline preview.",
+      "title": "Placed rational NURBS and transformed point instances"
+    },
+    {
+      "extension": "usda",
+      "id": "usda-nurbs-rational-weights",
+      "input": "usd_nurbs/usda-nurbs-rational-weights.usda",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license. Curve widths are omitted from the centerline preview.",
+      "title": "Rational NURBS with positive, zero and signed weights"
+    },
+    {
+      "extension": "usda",
+      "id": "usda-nurbs-trimmed-discontinuous",
+      "input": "usd_nurbs/usda-nurbs-trimmed-discontinuous.usda",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license. Curve widths are omitted from the centerline preview.",
+      "title": "Variable-order trimmed NURBS and a disconnected knot boundary"
+    },
+    {
       "extension": "usdc",
       "id": "usdc-native-crate",
       "input": "mesh_scene/usdc-native-crate.usdc",
@@ -1425,12 +1473,28 @@
       "title": "USD authored binary crate encoding"
     },
     {
+      "extension": "usdc",
+      "id": "usdc-nurbs-family",
+      "input": "usd_nurbs/usdc-nurbs-family.usdc",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license. Curve widths are omitted from the centerline preview.",
+      "title": "USD binary rational, trimmed, disconnected and instanced NURBS"
+    },
+    {
       "extension": "usdz",
       "id": "usdz-aligned-binary-package",
       "input": "mesh_scene/usdz-aligned-binary-package.usdz",
       "kind": "model",
       "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
       "title": "USDZ 64-byte-aligned stored ZIP with binary USD reference"
+    },
+    {
+      "extension": "usdz",
+      "id": "usdz-nurbs-family",
+      "input": "usd_nurbs/usdz-nurbs-family.usdz",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license. Curve widths are omitted from the centerline preview.",
+      "title": "USDZ aligned binary NURBS family"
     },
     {
       "extension": "vdb",

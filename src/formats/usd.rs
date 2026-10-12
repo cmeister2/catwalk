@@ -26,6 +26,9 @@ const MAX_ELEMENTS: usize = 5_000_000;
 /// Maximum traversed composed stage prims.
 const MAX_PRIMS: usize = 100_000;
 
+/// Rational NURBS centerline evaluation and whole-span denominator certification.
+mod nurbs;
+
 /// Every layer and every decompressed ZIP member passes through this resolver.
 /// In particular, opening USDZ's root through `package[root.usdc]` prevents the
 /// upstream package-format decoder from performing an unbounded ZIP read.
@@ -349,6 +352,8 @@ pub(super) fn load(path: &Path) -> Result<Scene> {
     }
     let mut states: HashMap<sdf::Path, State> = HashMap::new();
     let mut scene = Scene::default();
+    let mut nurbs_budget = nurbs::Budget::default();
+    let mut output_capacity = nurbs::OutputCapacity::default();
     for path in paths {
         let prim = stage.prim(path.clone()).map_err(|e| e.to_string())?;
         let view = View(prim.clone());
@@ -389,9 +394,24 @@ pub(super) fn load(path: &Path) -> Result<Scene> {
             .unwrap_or_default();
         let world = basis.then(world);
         if kind == "PointInstancer" {
-            instancer(&prim, time, world, &mut scene)?;
+            instancer(
+                &prim,
+                time,
+                world,
+                &mut scene,
+                &mut nurbs_budget,
+                &mut output_capacity,
+            )?;
         } else {
-            append_geometry(&prim, &kind, time, world, &mut scene)?;
+            append_geometry(
+                &prim,
+                &kind,
+                time,
+                world,
+                &mut scene,
+                &mut nurbs_budget,
+                &mut output_capacity,
+            )?;
         }
         geometry_limit(&scene)?;
     }
@@ -431,13 +451,24 @@ fn append_geometry(
     time: usd::TimeCode,
     world: Transform,
     scene: &mut Scene,
+    nurbs_budget: &mut nurbs::Budget,
+    output_capacity: &mut nurbs::OutputCapacity,
 ) -> Result<()> {
     match kind {
-        "Mesh" => mesh(prim, time, world, scene)?,
-        "Points" => points(prim, time, world, scene)?,
-        "BasisCurves" => curves(prim, time, world, scene)?,
+        "Mesh" => mesh(prim, time, world, scene, nurbs_budget, output_capacity)?,
+        "Points" => points(prim, time, world, scene, nurbs_budget, output_capacity)?,
+        "BasisCurves" => curves(prim, time, world, scene, nurbs_budget, output_capacity)?,
+        "NurbsCurves" => nurbs::append(prim, time, world, scene, nurbs_budget, output_capacity)?,
         "Cube" | "Sphere" | "Cylinder" | "Cone" | "Capsule" | "Plane" => {
-            primitive(prim, kind, time, world, scene)?;
+            primitive(
+                prim,
+                kind,
+                time,
+                world,
+                scene,
+                nurbs_budget,
+                output_capacity,
+            )?;
         }
         "" | "Xform" | "Scope" | "Material" | "Shader" | "NodeGraph" | "GeomSubset" | "Camera" => {}
         other if other.ends_with("Light") || other.ends_with("LightFilter") => {}
@@ -819,7 +850,14 @@ fn check_skin(prim: &Prim) -> Result<()> {
 }
 
 /// Triangulate visible non-hole mesh faces with winding, transforms and colors.
-fn mesh(prim: &Prim, time: usd::TimeCode, world: Transform, scene: &mut Scene) -> Result<()> {
+fn mesh(
+    prim: &Prim,
+    time: usd::TimeCode,
+    world: Transform,
+    scene: &mut Scene,
+    budget: &mut nurbs::Budget,
+    output_capacity: &mut nurbs::OutputCapacity,
+) -> Result<()> {
     check_skin(prim)?;
     let positions = vectors(prim, "points", time)?;
     let counts = ints(prim, "faceVertexCounts", time)?;
@@ -889,6 +927,7 @@ fn mesh(prim: &Prim, time: usd::TimeCode, world: Transform, scene: &mut Scene) -
             .or(colors.face(&ids, face, offset)?);
         if !holes.contains(&face) {
             for vertices in triangulate_polygon(&polygon)? {
+                budget.reserve_output(scene, output_capacity, [1, 0, 0])?;
                 scene.triangles.push(Triangle {
                     vertices: vertices.map(|v| world.apply(v)),
                     color,
@@ -904,10 +943,18 @@ fn mesh(prim: &Prim, time: usd::TimeCode, world: Transform, scene: &mut Scene) -
 }
 
 /// Append transformed point geometry with optional display colors.
-fn points(prim: &Prim, time: usd::TimeCode, world: Transform, scene: &mut Scene) -> Result<()> {
+fn points(
+    prim: &Prim,
+    time: usd::TimeCode,
+    world: Transform,
+    scene: &mut Scene,
+    budget: &mut nurbs::Budget,
+    output_capacity: &mut nurbs::OutputCapacity,
+) -> Result<()> {
     check_skin(prim)?;
     let colors = Colors::new(prim, time)?;
     for (i, position) in vectors(prim, "points", time)?.into_iter().enumerate() {
+        budget.reserve_output(scene, output_capacity, [0, 1, 0])?;
         scene.points.push(Point {
             position: world.apply(position),
             color: colors.fallback.or(colors.at(i, i, i)?.map(rgb)),
@@ -922,7 +969,14 @@ fn points(prim: &Prim, time: usd::TimeCode, world: Transform, scene: &mut Scene)
     clippy::manual_midpoint,
     reason = "Curve basis and wrap validation share one bounded evaluator; polynomial arithmetic keeps its established rounding order."
 )]
-fn curves(prim: &Prim, time: usd::TimeCode, world: Transform, scene: &mut Scene) -> Result<()> {
+fn curves(
+    prim: &Prim,
+    time: usd::TimeCode,
+    world: Transform,
+    scene: &mut Scene,
+    budget: &mut nurbs::Budget,
+    output_capacity: &mut nurbs::OutputCapacity,
+) -> Result<()> {
     check_skin(prim)?;
     let positions = vectors(prim, "points", time)?;
     let counts = ints(prim, "curveVertexCounts", time)?;
@@ -946,6 +1000,7 @@ fn curves(prim: &Prim, time: usd::TimeCode, world: Transform, scene: &mut Scene)
         let color = colors.face(&ids, curve, offset)?;
         let mut add = |a: Vec3, b: Vec3| -> Result<()> {
             if a != b {
+                budget.reserve_output(scene, output_capacity, [0, 0, 1])?;
                 scene.lines.push(Line {
                     vertices: [world.apply(a), world.apply(b)],
                     color,
@@ -1042,7 +1097,12 @@ fn long_ints(prim: &Prim, attr: &str, time: usd::TimeCode) -> Result<Vec<i64>> {
 }
 
 /// Build a nonempty local prototype scene with inherited transforms and visibility.
-fn prototype_scene(stage: &usd::Stage, root: &sdf::Path, time: usd::TimeCode) -> Result<Scene> {
+fn prototype_scene(
+    stage: &usd::Stage,
+    root: &sdf::Path,
+    time: usd::TimeCode,
+    nurbs_budget: &mut nurbs::Budget,
+) -> Result<Scene> {
     let mut paths = Vec::new();
     stage
         .traverse(usd::PrimPredicate::DEFAULT_PROXIES, |p| {
@@ -1053,6 +1113,7 @@ fn prototype_scene(stage: &usd::Stage, root: &sdf::Path, time: usd::TimeCode) ->
         .map_err(|e| e.to_string())?;
     let mut states = HashMap::<sdf::Path, State>::new();
     let mut scene = Scene::default();
+    let mut output_capacity = nurbs::OutputCapacity::default();
     for path in paths {
         let prim = stage.prim(path.clone()).map_err(|e| e.to_string())?;
         let view = View(prim.clone());
@@ -1091,7 +1152,15 @@ fn prototype_scene(stage: &usd::Stage, root: &sdf::Path, time: usd::TimeCode) ->
             .map_err(|e| e.to_string())?
             .map(|t| t.to_string())
             .unwrap_or_default();
-        append_geometry(&prim, &kind, time, world, &mut scene)?;
+        append_geometry(
+            &prim,
+            &kind,
+            time,
+            world,
+            &mut scene,
+            nurbs_budget,
+            &mut output_capacity,
+        )?;
     }
     if scene.triangles.is_empty() && scene.points.is_empty() && scene.lines.is_empty() {
         return Err(format!("USD prototype {root} contains no supported geometry").into());
@@ -1105,7 +1174,14 @@ fn prototype_scene(stage: &usd::Stage, root: &sdf::Path, time: usd::TimeCode) ->
     clippy::cast_possible_wrap,
     reason = "The bounded instance loop validates and expands prototypes together; implicit IDs are indices bounded by five million."
 )]
-fn instancer(prim: &Prim, time: usd::TimeCode, world: Transform, scene: &mut Scene) -> Result<()> {
+fn instancer(
+    prim: &Prim,
+    time: usd::TimeCode,
+    world: Transform,
+    scene: &mut Scene,
+    nurbs_budget: &mut nurbs::Budget,
+    output_capacity: &mut nurbs::OutputCapacity,
+) -> Result<()> {
     let targets = prim
         .relationship("prototypes")
         .targets()
@@ -1170,9 +1246,18 @@ fn instancer(prim: &Prim, time: usd::TimeCode, world: Transform, scene: &mut Sce
             continue;
         }
         if let std::collections::hash_map::Entry::Vacant(entry) = cache.entry(prototype) {
-            entry.insert(prototype_scene(prim.stage(), target, time)?);
+            entry.insert(prototype_scene(prim.stage(), target, time, nurbs_budget)?);
         }
         let source = &cache[&prototype];
+        nurbs_budget.reserve_output(
+            scene,
+            output_capacity,
+            [
+                source.triangles.len(),
+                source.points.len(),
+                source.lines.len(),
+            ],
+        )?;
         let total = scene.triangles.len()
             + scene.points.len()
             + scene.lines.len()
@@ -1235,6 +1320,8 @@ fn primitive(
     time: usd::TimeCode,
     world: Transform,
     scene: &mut Scene,
+    budget: &mut nurbs::Budget,
+    output_capacity: &mut nurbs::OutputCapacity,
 ) -> Result<()> {
     let colors = Colors::new(prim, time)?;
     let color = colors.fallback.or(colors.at(0, 0, 0)?.map(rgb));
@@ -1248,6 +1335,7 @@ fn primitive(
         }))
     };
     let mut add = |v: [Vec3; 3]| -> Result<()> {
+        budget.reserve_output(scene, output_capacity, [1, 0, 0])?;
         scene.triangles.push(Triangle {
             vertices: [orient(v[0])?, orient(v[1])?, orient(v[2])?],
             color,

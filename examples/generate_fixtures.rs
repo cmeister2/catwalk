@@ -38,6 +38,9 @@ mod vtk_lines;
 /// Register original plain and compressed AMF exporter references.
 mod amf;
 
+#[path = "fixtures/usd_nurbs.rs"]
+/// Generate authored NURBS layers and register a licensed Maya-exported reference.
+mod usd_nurbs;
 #[path = "fixtures/vtk_quadratic.rs"]
 /// Register retained VTK geometry and generate curved fixed-node cell representations.
 mod vtk_quadratic;
@@ -102,6 +105,7 @@ fn main() -> Result<()> {
     cases.extend(obj_appearance::generate(&root)?);
     cases.extend(collada_primitives::generate(&root)?);
     cases.extend(vtk_quadratic::generate(&root)?);
+    cases.extend(usd_nurbs::generate(&root)?);
     cases.sort_by(|a, b| a.extension.cmp(&b.extension).then(a.id.cmp(&b.id)));
     let mut ids = BTreeSet::new();
     for case in &cases {
