@@ -25,7 +25,7 @@ struct Args {
     binary: Option<PathBuf>,
 }
 
-/// Collect fixture license and notice files recursively for the published gallery.
+/// Collect fixture license, copyright and notice files for the published gallery.
 fn collect_licenses(path: &Path, files: &mut Vec<PathBuf>) -> Result<()> {
     for entry in std::fs::read_dir(path)? {
         let entry = entry?;
@@ -33,7 +33,7 @@ fn collect_licenses(path: &Path, files: &mut Vec<PathBuf>) -> Result<()> {
             collect_licenses(&entry.path(), files)?;
         } else if entry.file_type()?.is_file() {
             let name = entry.file_name().to_string_lossy().to_ascii_uppercase();
-            if name.contains("LICENSE") || name.contains("NOTICE") {
+            if name.contains("LICENSE") || name.contains("COPYRIGHT") || name.contains("NOTICE") {
                 files.push(entry.path());
             }
         }

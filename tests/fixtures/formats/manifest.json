@@ -1466,6 +1466,22 @@
     },
     {
       "extension": "vtk",
+      "id": "vtk-quadratic-family-ascii",
+      "input": "vtk_quadratic/vtk-quadratic-family-ascii.vtk",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license. Role-ordered curved fixed-node VTK cells and exact Float64 cross-encoding geometry; fixture details in vtk_quadratic/README.md.",
+      "title": "VTK curved cell family, legacy ASCII"
+    },
+    {
+      "extension": "vtk",
+      "id": "vtk-quadratic-family-binary",
+      "input": "vtk_quadratic/vtk-quadratic-family-binary.vtk",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license. Role-ordered curved fixed-node VTK cells and exact Float64 cross-encoding geometry; fixture details in vtk_quadratic/README.md.",
+      "title": "VTK curved cell family, big-endian binary"
+    },
+    {
+      "extension": "vtk",
       "id": "vtk-shared-tetrahedra",
       "input": "scientific_cad/vtk-shared-tetrahedra.vtk",
       "kind": "model",
@@ -1495,6 +1511,14 @@
       "kind": "model",
       "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
       "title": "VTKHDF shuffle/deflate shared-cell boundary"
+    },
+    {
+      "extension": "vtkhdf",
+      "id": "vtkhdf-quadratic-family",
+      "input": "vtk_quadratic/vtkhdf-quadratic-family.vtkhdf",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license. Role-ordered curved fixed-node VTK cells and exact Float64 cross-encoding geometry; fixture details in vtk_quadratic/README.md.",
+      "title": "VTKHDF curved cell family, one static partition"
     },
     {
       "extension": "vtkhdf",
@@ -1546,11 +1570,163 @@
     },
     {
       "extension": "vtu",
+      "id": "vtu-biquadratic-quad",
+      "input": "vtk_quadratic/vtu-biquadratic-quad.vtu",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license. Role-ordered curved fixed-node VTK cells and exact Float64 cross-encoding geometry; fixture details in vtk_quadratic/README.md.",
+      "title": "VTK biquadratic quad"
+    },
+    {
+      "extension": "vtu",
+      "id": "vtu-biquadratic-quadratic-hexahedron",
+      "input": "vtk_quadratic/vtu-biquadratic-quadratic-hexahedron.vtu",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license. Role-ordered curved fixed-node VTK cells and exact Float64 cross-encoding geometry; fixture details in vtk_quadratic/README.md.",
+      "title": "VTK biquadratic quadratic hexahedron"
+    },
+    {
+      "extension": "vtu",
+      "id": "vtu-biquadratic-quadratic-wedge",
+      "input": "vtk_quadratic/vtu-biquadratic-quadratic-wedge.vtu",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license. Role-ordered curved fixed-node VTK cells and exact Float64 cross-encoding geometry; fixture details in vtk_quadratic/README.md.",
+      "title": "VTK biquadratic quadratic wedge"
+    },
+    {
+      "extension": "vtu",
+      "id": "vtu-biquadratic-triangle",
+      "input": "vtk_quadratic/vtu-biquadratic-triangle.vtu",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license. Role-ordered curved fixed-node VTK cells and exact Float64 cross-encoding geometry; fixture details in vtk_quadratic/README.md.",
+      "title": "VTK biquadratic triangle"
+    },
+    {
+      "extension": "vtu",
+      "id": "vtu-cubic-line",
+      "input": "vtk_quadratic/vtu-cubic-line.vtu",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license. Role-ordered curved fixed-node VTK cells and exact Float64 cross-encoding geometry; fixture details in vtk_quadratic/README.md.",
+      "title": "VTK cubic line"
+    },
+    {
+      "extension": "vtu",
       "id": "vtu-f3d-persistence-diagram-lines",
       "input": "vtk_lines/pdiag.vtu",
       "kind": "model",
       "provenance": "Unmodified f3d-app/f3d testing/data/pdiag.vtu at commit 09ba978ad03eb40466548f340c0db7c18843a354; SHA-256 61152cf6369593d3cb4d7213496cd0fc0da298e37de156f93f965e8585b2e342. BSD-3-Clause under the original F3D license and DATA_LICENSES mapping retained in vtk_lines/F3D-LICENSE.md and vtk_lines/F3D-DATA_LICENSES.md. Original base64-appended zlib VTU contains 6992 points and 3497 line cells. https://github.com/f3d-app/f3d/blob/09ba978ad03eb40466548f340c0db7c18843a354/testing/data/pdiag.vtu",
       "title": "F3D original persistence diagram with 3497 line cells"
+    },
+    {
+      "extension": "vtu",
+      "id": "vtu-kitware-quadratic-tetra",
+      "input": "vtk_quadratic/quadraticTetra01.vtu",
+      "kind": "model",
+      "provenance": "Unmodified Kitware VTK Testing/Data/quadraticTetra01.vtu, resolved from the SHA-512 pointer at commit 4b0325a981d1f5cfad9d4da4909a8230881b2bf4. BSD-3-Clause; original VTK-Copyright.txt retained unchanged. SHA-256 6bebfc84f0c342a867e6c50f849aa532f075d99b6ea980c0140966fb96d520ad. Contains one curved quadratic tetrahedron and two curved quadratic surface triangles; scalar arrays are not preview colors. https://github.com/Kitware/VTK/blob/4b0325a981d1f5cfad9d4da4909a8230881b2bf4/Testing/Data/quadraticTetra01.vtu.sha512",
+      "title": "Kitware original curved tetrahedron and surface triangles"
+    },
+    {
+      "extension": "vtu",
+      "id": "vtu-quadratic-edge",
+      "input": "vtk_quadratic/vtu-quadratic-edge.vtu",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license. Role-ordered curved fixed-node VTK cells and exact Float64 cross-encoding geometry; fixture details in vtk_quadratic/README.md.",
+      "title": "VTK quadratic edge"
+    },
+    {
+      "extension": "vtu",
+      "id": "vtu-quadratic-family-appended-zlib",
+      "input": "vtk_quadratic/vtu-quadratic-family-appended-zlib.vtu",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license. Role-ordered curved fixed-node VTK cells and exact Float64 cross-encoding geometry; fixture details in vtk_quadratic/README.md.",
+      "title": "VTK curved cell family, raw appended zlib"
+    },
+    {
+      "extension": "vtu",
+      "id": "vtu-quadratic-family-binary",
+      "input": "vtk_quadratic/vtu-quadratic-family-binary.vtu",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license. Role-ordered curved fixed-node VTK cells and exact Float64 cross-encoding geometry; fixture details in vtk_quadratic/README.md.",
+      "title": "VTK curved cell family, XML UInt64 inline binary"
+    },
+    {
+      "extension": "vtu",
+      "id": "vtu-quadratic-hexahedron",
+      "input": "vtk_quadratic/vtu-quadratic-hexahedron.vtu",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license. Role-ordered curved fixed-node VTK cells and exact Float64 cross-encoding geometry; fixture details in vtk_quadratic/README.md.",
+      "title": "VTK quadratic hexahedron"
+    },
+    {
+      "extension": "vtu",
+      "id": "vtu-quadratic-linear-quad",
+      "input": "vtk_quadratic/vtu-quadratic-linear-quad.vtu",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license. Role-ordered curved fixed-node VTK cells and exact Float64 cross-encoding geometry; fixture details in vtk_quadratic/README.md.",
+      "title": "VTK quadratic linear quad"
+    },
+    {
+      "extension": "vtu",
+      "id": "vtu-quadratic-linear-wedge",
+      "input": "vtk_quadratic/vtu-quadratic-linear-wedge.vtu",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license. Role-ordered curved fixed-node VTK cells and exact Float64 cross-encoding geometry; fixture details in vtk_quadratic/README.md.",
+      "title": "VTK quadratic linear wedge"
+    },
+    {
+      "extension": "vtu",
+      "id": "vtu-quadratic-pyramid",
+      "input": "vtk_quadratic/vtu-quadratic-pyramid.vtu",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license. Role-ordered curved fixed-node VTK cells and exact Float64 cross-encoding geometry; fixture details in vtk_quadratic/README.md.",
+      "title": "VTK quadratic pyramid"
+    },
+    {
+      "extension": "vtu",
+      "id": "vtu-quadratic-quad",
+      "input": "vtk_quadratic/vtu-quadratic-quad.vtu",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license. Role-ordered curved fixed-node VTK cells and exact Float64 cross-encoding geometry; fixture details in vtk_quadratic/README.md.",
+      "title": "VTK quadratic quad"
+    },
+    {
+      "extension": "vtu",
+      "id": "vtu-quadratic-tetra",
+      "input": "vtk_quadratic/vtu-quadratic-tetra.vtu",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license. Role-ordered curved fixed-node VTK cells and exact Float64 cross-encoding geometry; fixture details in vtk_quadratic/README.md.",
+      "title": "VTK quadratic tetra"
+    },
+    {
+      "extension": "vtu",
+      "id": "vtu-quadratic-triangle",
+      "input": "vtk_quadratic/vtu-quadratic-triangle.vtu",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license. Role-ordered curved fixed-node VTK cells and exact Float64 cross-encoding geometry; fixture details in vtk_quadratic/README.md.",
+      "title": "VTK quadratic triangle"
+    },
+    {
+      "extension": "vtu",
+      "id": "vtu-quadratic-wedge",
+      "input": "vtk_quadratic/vtu-quadratic-wedge.vtu",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license. Role-ordered curved fixed-node VTK cells and exact Float64 cross-encoding geometry; fixture details in vtk_quadratic/README.md.",
+      "title": "VTK quadratic wedge"
+    },
+    {
+      "extension": "vtu",
+      "id": "vtu-triquadratic-hexahedron",
+      "input": "vtk_quadratic/vtu-triquadratic-hexahedron.vtu",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license. Role-ordered curved fixed-node VTK cells and exact Float64 cross-encoding geometry; fixture details in vtk_quadratic/README.md.",
+      "title": "VTK triquadratic hexahedron"
+    },
+    {
+      "extension": "vtu",
+      "id": "vtu-triquadratic-pyramid",
+      "input": "vtk_quadratic/vtu-triquadratic-pyramid.vtu",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license. Role-ordered curved fixed-node VTK cells and exact Float64 cross-encoding geometry; fixture details in vtk_quadratic/README.md.",
+      "title": "VTK triquadratic pyramid"
     },
     {
       "extension": "vtu",

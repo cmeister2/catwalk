@@ -8,14 +8,14 @@ Fresh geometry readers support Blender, LightBurn and a DWG drawing subset. Inve
 
 | Format family | Extensions | Current Rust preview coverage |
 | --- | --- | --- |
-| [VTKLegacy](#vtk-legacy) | `.vtk` | Subset: ASCII/big-endian binary, classic/version-5 topology, polygons/lines, linear and structured grid boundaries. |
+| [VTKLegacy](#vtk-legacy) | `.vtk` | Subset: ASCII/big-endian binary, classic/version-5 topology, polygons/lines, linear/fixed-node higher-order and structured grid boundaries. |
 | [VTKXMLVTP](#vtk-polydata-xml) | `.vtp` | Subset: ASCII/binary/appended XML, zlib/LZ4; polygons, strips, vertices and polylines. |
-| [VTKXMLVTU](#vtk-unstructuredgrid-xml) | `.vtu` | Subset: ASCII/binary/appended XML, zlib/LZ4; linear cells and closed convex polyhedra. |
+| [VTKXMLVTU](#vtk-unstructuredgrid-xml) | `.vtu` | Subset: ASCII/binary/appended XML, zlib/LZ4; linear/fixed-node higher-order cells and closed convex polyhedra. |
 | [VTKXMLVTR](#vtk-rectilineargrid-xml) | `.vtr` | Subset: ASCII/binary/appended, zlib/LZ4; single-piece rectilinear grid boundary geometry. |
 | [VTKXMLVTI](#vtk-imagedata-xml) | `.vti` | Subset: scalar image data, ASCII/base64/zlib, voxel density surface. |
 | [VTKXMLVTS](#vtk-structuredgrid-xml) | `.vts` | Subset: ASCII/binary/appended, zlib/LZ4; single-piece structured grid boundary geometry. |
 | [VTKXMLVTM](#vtk-multiblock-xml) | `.vtm` | Subset: nested multiblock hierarchy and supported relative child datasets. |
-| [VTKHDF](#vtkhdf) | `.vtkhdf` | Subset: static polygon/linear-cell/convex-polyhedron meshes, structured grids, scalar images and local composite assemblies. |
+| [VTKHDF](#vtkhdf) | `.vtkhdf` | Subset: static polygon/linear/fixed-node higher-order/convex-polyhedron meshes, structured grids, scalar images and local composite assemblies. |
 | [ExodusII](#exodus-ii) | `.e`, `.ex2`, `.exo`, `.g` | Subset: CDF1/2/5 and NetCDF4 undeformed linear element-block boundary geometry. |
 | [NetCDF](#netcdf) | `.nc`, `.cdf`, `.ncdf` | Subset: rectilinear 2D scalar sheets, 3D scalar density and first time sample; Exodus schema detection. |
 | [PLYReader](#ply) | `.ply` | Subset: ASCII/binary polygons, standard edges and point geometry with RGB. |
@@ -79,9 +79,13 @@ Raster images are decoded by the enabled Rust codecs, fitted to the requested ca
 
 ### Scientific arrays and cell limits
 
-XML mesh arrays accept ASCII, inline base64, base64 appended and raw appended bytes, either byte order, UInt32/UInt64 headers, zlib and LZ4 compression. Binary lengths, block headers, decompressed sizes, connectivity offsets and indices are checked, with an aggregate 512 MiB decoded-array limit.
+XML mesh arrays accept ASCII, inline base64, base64 appended and raw appended bytes, either byte order, UInt32/UInt64 headers, zlib and LZ4 compression. Binary lengths, block headers, decompressed sizes, connectivity offsets and indices are checked, with an aggregate 512 MiB decoded-array limit. ASCII Float32 positions currently retain the decimal Float64 parse, while binary coordinates follow the encoded scalar width; cross-encoding exact-output fixtures therefore use Float64.
 
-Scalar color maps, higher-order cells, legacy polyhedron face streams, platform-dependent legacy `long` words and XML LZMA compression remain unsupported; mixed unsupported cell types fail explicitly. Thirteen regression tests include pixel-identical results across 36 binary XML encoding combinations and malformed payload checks. Thirteen independent fixtures from [Kitware VTK](https://github.com/Kitware/VTK/tree/master/Testing/Data) and [vtkio](https://github.com/elrnv/vtkio/tree/master/assets) verify legacy binary grids, inline/appended arrays, compression and polyhedra against the primary [VTK format specification](https://docs.vtk.org/en/latest/vtk_file_formats/index.html) and [VTK cell identifiers](https://github.com/Kitware/VTK/blob/master/Common/DataModel/vtkCellType.h).
+Scalar color maps, variable-node quadratic polygons (type 36), unsupported higher-order families including arbitrary-order Lagrange/Bezier cells, legacy polyhedron face streams, platform-dependent legacy `long` words and XML LZMA compression remain unsupported; mixed unsupported cell types fail explicitly. Thirteen regression tests include pixel-identical results across 36 binary XML encoding combinations and malformed payload checks. Thirteen independent fixtures from [Kitware VTK](https://github.com/Kitware/VTK/tree/master/Testing/Data) and [vtkio](https://github.com/elrnv/vtkio/tree/master/assets) verify legacy binary grids, inline/appended arrays, compression and polyhedra against the primary [VTK format specification](https://docs.vtk.org/en/latest/vtk_file_formats/index.html) and [VTK cell identifiers](https://github.com/Kitware/VTK/blob/master/Common/DataModel/vtkCellType.h).
+
+Fixed-node higher-order cell types 21–35 and 37 use their authored extra nodes and standard interpolation functions rather than reducing them to corner-only polygons. The supported family includes quadratic edges, triangles, quadrilaterals, tetrahedra, hexahedra, wedges and pyramids; biquadratic triangles/quadrilaterals; quadratic-linear quadrilaterals/wedges; biquadratic-quadratic wedges/hexahedra; triquadratic hexahedra/pyramids; and cubic lines. Volume cells contribute their exposed boundary faces, not a volumetric scalar visualization. Triangle and quadrilateral faces use six subdivisions per quadratic edge; quadratic-linear quadrilaterals use six along the quadratic direction and one along the linear direction. Both edge families use up to twelve line segments, omitting coincident sampled endpoints. This fixed sampling policy is for preview thumbnails, without an adaptive geometric error guarantee. Boundary output counts are computed after matching shared faces are removed. The shared dispatcher caps combined visible triangles, lines and points at five million; conservative 512 MiB accounting preflights topology, curved face descriptors, temporary samples and emitted geometry. The shared grid limit also caps positions, cells and referenced connectivity indices at five million each; VTKHDF retains its stricter one-million point/cell limits.
+
+A separate image case for each of the sixteen fixed-node types, the unchanged Kitware `quadraticTetra01.vtu`, and five full-family Float64 legacy/XML/VTKHDF encodings have [fixture details and retained licensing](../tests/fixtures/formats/vtk_quadratic/README.md). Independent regressions check source identity, literal curved geometry and primitive orientation; full-image comparisons qualify the static output. The original contributes one curved tetrahedron and two curved surface triangles. This covers the documented fixed-node subset rather than all higher-order VTK elements.
 
 ### Scalar-volume rendering
 
@@ -107,9 +111,9 @@ Topology, placed vertices and nested geometry records are validated. Surface tes
 
 **Extensions:** `.vtk`.
 
-**Coverage:** Subset: ASCII/big-endian binary, classic/version-5 topology, polygons/lines, linear and structured grid boundaries.
+**Coverage:** Subset: ASCII/big-endian binary, classic/version-5 topology, polygons/lines, linear/fixed-node higher-order and structured grid boundaries.
 
-The legacy VTK reader accepts ASCII and standard big-endian binary geometry, classic cell lists and version-5 offsets/connectivity sections. POLYDATA supports polygons, triangle strips, vertices and polylines; linear UNSTRUCTURED_GRID and structured/rectilinear/structured-point boundaries are rendered.
+The legacy VTK reader accepts ASCII and standard big-endian binary geometry, classic cell lists and version-5 offsets/connectivity sections. POLYDATA supports polygons, triangle strips, vertices and polylines; supported linear and fixed-node higher-order UNSTRUCTURED_GRID cells and structured/rectilinear/structured-point boundaries are rendered.
 
 Grid boundaries are extracted for tetrahedra, voxels, hexahedra, wedges and pyramids, removing shared faces. Vertex/polyvertex, line/polyline, triangle, triangle-strip, polygon, pixel and quadrilateral cells are also accepted. Type-3 lines require exactly two vertices, and type-4 polylines require at least two; ordered adjacent endpoint pairs become segments, including repeated or explicitly closing endpoints. Polygons use concave-aware triangulation. Legacy polyhedron face streams remain unsupported.
 
@@ -129,7 +133,7 @@ PolyData XML preserves polygons, triangle strips, vertices and polylines. Polygo
 
 **Extensions:** `.vtu`.
 
-**Coverage:** Subset: ASCII/binary/appended XML, zlib/LZ4; linear cells and closed convex polyhedra.
+**Coverage:** Subset: ASCII/binary/appended XML, zlib/LZ4; linear/fixed-node higher-order cells and closed convex polyhedra.
 
 Grid boundaries are extracted for tetrahedra, voxels, hexahedra, wedges and pyramids, removing shared faces. XML type-42 convex polyhedra require closed face topology. Vertex/polyvertex, line/polyline, triangle, triangle-strip, polygon, pixel and quadrilateral cells are also accepted. Type-3 lines require two vertices, and type-4 polylines expand adjacent endpoint pairs in their stored order; repeated/closing endpoints are retained. Polygons use concave-aware triangulation.
 
@@ -179,9 +183,9 @@ VTM traverses inline blocks and nested references to `.vtk`, `.vtp`, `.vtu`, `.v
 
 **Extensions:** `.vtkhdf`.
 
-**Coverage:** Subset: static polygon/linear-cell/convex-polyhedron meshes, structured grids, scalar images and local composite assemblies.
+**Coverage:** Subset: static polygon/linear/fixed-node higher-order/convex-polyhedron meshes, structured grids, scalar images and local composite assemblies.
 
-VTKHDF accepts supported static version-1/2 PolyData, UnstructuredGrid, ImageData, RectilinearGrid and StructuredGrid schemas, and local MultiBlockDataSet/PartitionedDataSetCollection assemblies. Polygon/strip/polyvertex/polyline geometry and supported linear cells are rendered; convex type-42 polyhedra require closed, consistent face topology. Partition-local indices and offsets are validated; shared interior faces are removed across partitions and mixed cell kinds. Scalar ImageData uses the density policy above, including cell-centered arrays and direction matrices. Local assembly links and repeated blocks are followed with depth/cycle/count bounds. Temporal Steps, AMR/HyperTreeGrid, nonconvex polyhedra, higher-order cells, nonzero ghosts and other schemas fail. Thirteen container tests and four independent [Kitware VTKHDF fixtures](https://github.com/Kitware/VTK/tree/master/Testing/Data/vtkHDF) cover real polyhedra, composite spheres, PolyData and Mandelbrot image density. The schema follows the [VTKHDF specification](https://docs.vtk.org/en/latest/vtk_file_formats/vtkhdf_file_format/vtkhdf_specifications.html).
+VTKHDF accepts supported static version-1/2 PolyData, UnstructuredGrid, ImageData, RectilinearGrid and StructuredGrid schemas, and local MultiBlockDataSet/PartitionedDataSetCollection assemblies. Polygon/strip/polyvertex/polyline geometry and supported linear/fixed-node higher-order cells are rendered; convex type-42 polyhedra require closed, consistent face topology. Partition-local indices and offsets are validated; matching shared interior faces are removed within each partition, including supported mixed cell kinds. Scalar ImageData uses the density policy above, including cell-centered arrays and direction matrices. Local assembly links and repeated blocks are followed with depth/cycle/count bounds. Temporal Steps, AMR/HyperTreeGrid, nonconvex polyhedra, unsupported higher-order cells, nonzero ghosts and other schemas fail. Thirteen container tests and four independent [Kitware VTKHDF fixtures](https://github.com/Kitware/VTK/tree/master/Testing/Data/vtkHDF) cover real polyhedra, composite spheres, PolyData and Mandelbrot image density. The schema follows the [VTKHDF specification](https://docs.vtk.org/en/latest/vtk_file_formats/vtkhdf_file_format/vtkhdf_specifications.html).
 
 See [HDF5 and NetCDF backends](#hdf5-and-netcdf-backends) for codecs, validation and the local filtered-chunk fix.
 
