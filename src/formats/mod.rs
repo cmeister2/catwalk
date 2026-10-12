@@ -35,6 +35,12 @@ mod legacy_scene;
 mod lidar;
 /// LightBurn XML vector paths, shared resources and planar placements.
 mod lightburn;
+/// Original stored Lychee model triangles and qualified native object placements.
+pub mod lychee;
+/// Shared selected Lychee geometry, decode-work and allocation accounting.
+mod lychee_budget;
+/// Bounded scene-state MessagePack and the qualified public byte transform.
+mod lychee_scene;
 /// Polygon, triangle, point and wire interchange readers.
 mod mesh;
 /// Indexed OBJ corner attributes and local Wavefront material resources.
@@ -88,7 +94,7 @@ pub const MODEL_EXTENSIONS: &[&str] = &[
     "3ds", "wrl", "vrml", "gml", "usd", "usda", "usdc", "usdz", "spz", "vti", "nrrd", "nhdr",
     "mhd", "mha", "dxf", "bpf", "bin", "qi", "sbet", "csd", "x", "drc", "fbx", "vtkhdf", "e",
     "ex2", "exo", "g", "nc", "cdf", "ncdf", "slpk", "abc", "ifc", "vdb", "iges", "igs", "brep",
-    "xbf", "amf",
+    "xbf", "amf", "lys",
 ];
 /// Advertised extension aliases decoded as fitted two-dimensional images.
 pub const IMAGE_EXTENSIONS: &[&str] = &[
@@ -96,7 +102,7 @@ pub const IMAGE_EXTENSIONS: &[&str] = &[
 ];
 
 /// Document formats with geometry readers in addition to saved-image extraction.
-pub const NATIVE_GEOMETRY_EXTENSIONS: &[&str] = &["blend", "lbrn", "lbrn2", "dwg"];
+pub const NATIVE_GEOMETRY_EXTENSIONS: &[&str] = &["blend", "lbrn", "lbrn2", "dwg", "lys"];
 
 /// Return the path's extension in ASCII lowercase, without its leading dot.
 ///
@@ -120,6 +126,7 @@ pub fn load(path: &Path) -> Result<Scene> {
         "blend" => blend::load(path)?,
         "lbrn" | "lbrn2" => lightburn::load(path)?,
         "dwg" => dwg::load(path)?,
+        "lys" => lychee::load(path)?,
         "stl" | "obj" | "ply" | "off" | "pts" | "ptx" | "pcd" | "splat" => mesh::load(path)?,
         "gltf" | "glb" => gltf::load(path)?,
         "dae" => legacy_scene::load(path)?,
