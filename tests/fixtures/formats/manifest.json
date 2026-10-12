@@ -1426,11 +1426,59 @@
     },
     {
       "extension": "tif",
+      "id": "tif-big-endian-signed-volume",
+      "input": "tiff_volumes/tif-big-endian-signed-volume.tif",
+      "kind": "image",
+      "provenance": "Author-created deterministic Rust scalar TIFF page chain; MIT, matching the project license. Manual classic/BigTIFF carriers, an asymmetric voxel shape, orientations, scalar types and rational spacing are qualified by independent literal geometry in tests/tiff_volumes.rs; these controls do not claim a desktop exporter.",
+      "title": "Big-endian signed TIFF volume"
+    },
+    {
+      "extension": "tif",
       "id": "tif-pattern",
       "input": "images_points/tif-pattern.tif",
       "kind": "image",
       "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
       "title": "TIF RGBA chart with soft edge"
+    },
+    {
+      "extension": "tif",
+      "id": "tif-scalar-asymmetric-volume",
+      "input": "tiff_volumes/tif-scalar-asymmetric-volume.tif",
+      "kind": "image",
+      "provenance": "Author-created deterministic Rust scalar TIFF page chain; MIT, matching the project license. Manual classic/BigTIFF carriers, an asymmetric voxel shape, orientations, scalar types and rational spacing are qualified by independent literal geometry in tests/tiff_volumes.rs; these controls do not claim a desktop exporter.",
+      "title": "TIFF asymmetric scalar volume"
+    },
+    {
+      "extension": "tiff",
+      "id": "tiff-bigtiff-rotated-volume",
+      "input": "tiff_volumes/tiff-bigtiff-rotated-volume.tiff",
+      "kind": "image",
+      "provenance": "Author-created deterministic Rust scalar TIFF page chain; MIT, matching the project license. Manual classic/BigTIFF carriers, an asymmetric voxel shape, orientations, scalar types and rational spacing are qualified by independent literal geometry in tests/tiff_volumes.rs; these controls do not claim a desktop exporter.",
+      "title": "BigTIFF rotated scalar volume"
+    },
+    {
+      "extension": "tiff",
+      "id": "tiff-deflate-scalar-volume",
+      "input": "tiff_volumes/tiff-deflate-scalar-volume.tiff",
+      "kind": "image",
+      "provenance": "Author-created deterministic Rust scalar TIFF page chain; MIT, matching the project license. Manual classic/BigTIFF carriers, an asymmetric voxel shape, orientations, scalar types and rational spacing are qualified by independent literal geometry in tests/tiff_volumes.rs; these controls do not claim a desktop exporter.",
+      "title": "Deflate-compressed TIFF scalar volume"
+    },
+    {
+      "extension": "tiff",
+      "id": "tiff-float32-physical-volume",
+      "input": "tiff_volumes/tiff-float32-physical-volume.tiff",
+      "kind": "image",
+      "provenance": "Author-created deterministic Rust scalar TIFF page chain; MIT, matching the project license. Manual classic/BigTIFF carriers, an asymmetric voxel shape, orientations, scalar types and rational spacing are qualified by independent literal geometry in tests/tiff_volumes.rs; these controls do not claim a desktop exporter.",
+      "title": "TIFF float32 volume with physical spacing"
+    },
+    {
+      "extension": "tiff",
+      "id": "tiff-original-three-page-volume",
+      "input": "tiff_volumes/seq-1c-8b-multipage-adeefdcc.tiff",
+      "kind": "image",
+      "provenance": "Unmodified image-rs/image-tiff tests/images/seq/seq-1c-8b-multipage-adeefdcc.tiff at commit 3302936b08e2260d4c66f40f51170efbb1fded4c; SHA-256 f9dd5eb92e193f121b2afcb3575d2be5566adb6198afcb5009516a77972d6428. MIT, Copyright (c) 2018 PistonDevelopers; original notice retained as tiff_volumes/IMAGE-TIFF-LICENSE. The repository's libtiff producer writes three actual 16x16 uint8 pages; every decoded sample and independent surface facts are qualified in tests/tiff_volumes.rs. https://github.com/image-rs/image-tiff/blob/3302936b08e2260d4c66f40f51170efbb1fded4c/tests/images/seq/seq-1c-8b-multipage-adeefdcc.tiff",
+      "title": "Original libtiff three-page scalar volume"
     },
     {
       "extension": "tiff",
@@ -1439,6 +1487,14 @@
       "kind": "image",
       "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
       "title": "TIFF mirrored RGBA chart"
+    },
+    {
+      "extension": "tiff",
+      "id": "tiff-whiteiszero-gray16-volume",
+      "input": "tiff_volumes/tiff-whiteiszero-gray16-volume.tiff",
+      "kind": "image",
+      "provenance": "Author-created deterministic Rust scalar TIFF page chain; MIT, matching the project license. Manual classic/BigTIFF carriers, an asymmetric voxel shape, orientations, scalar types and rational spacing are qualified by independent literal geometry in tests/tiff_volumes.rs; these controls do not claim a desktop exporter.",
+      "title": "TIFF WhiteIsZero 16-bit volume"
     },
     {
       "extension": "usd",

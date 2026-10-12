@@ -297,6 +297,7 @@ dependencies = [
  "ruzstd",
  "serde_json",
  "sha2",
+ "tiff",
  "truck-meshalgo",
  "truck-modeling",
  "truck-stepio",

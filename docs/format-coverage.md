@@ -23,7 +23,7 @@ Fresh geometry readers support Blender, LightBurn, a DWG drawing subset and orig
 | [DICOM](#dicom) | `.dcm` | Subset: first scalar/RGB image frame with native, deflated, JPEG or RLE pixel decoding. |
 | [Nrrd](#nrrd) | `.nrrd`, `.nhdr` | Subset: raw/ASCII/hex/gzip scalar density, attached or one detached payload. |
 | [MetaImage](#metaimage) | `.mhd`, `.mha` | Subset: raw/ASCII/zlib scalar density, attached or one detached payload. |
-| [TIFF](#tiff) | `.tif`, `.tiff` | Subset: 2D image preview; no 3D stack rendering. |
+| [TIFF](#tiff) | `.tif`, `.tiff` | Fitted 2D images and bounded scalar page-stack density surfaces. |
 | [PNG](#png) | `.png` | Implemented: 2D image preview. |
 | [JPEG](#jpeg) | `.jpg`, `.jpeg` | Implemented: 2D image preview. |
 | [BMP](#bmp) | `.bmp` | Implemented: 2D image preview. |
@@ -138,7 +138,7 @@ PolyData XML preserves polygons, triangle strips, vertices and polylines. Polygo
 
 Grid boundaries are extracted for tetrahedra, voxels, hexahedra, wedges and pyramids, removing shared faces. XML type-42 convex polyhedra require closed face topology. Vertex/polyvertex, line/polyline, triangle, triangle-strip, polygon, pixel and quadrilateral cells are also accepted. Type-3 lines require two vertices, and type-4 polylines expand adjacent endpoint pairs in their stored order; repeated/closing endpoints are retained. Polygons use concave-aware triangulation.
 
-The unchanged [F3D `pdiag.vtu` dataset](../tests/fixtures/formats/vtk_lines/README.md) retains its original BSD-3-Clause notice and license mapping. It qualifies 3,497 ordered line cells, including 282 coincident-endpoint segments, from appended zlib-compressed arrays. Independent geometry checks preserve every endpoint association, bounds and total segment length `141.33120573828802`; its snapshot uses the stored geometry and fallback color. Simulation/scalar attributes are not rendered as a color map. Higher-order cells remain unsupported.
+The unchanged [F3D `pdiag.vtu` dataset](../tests/fixtures/formats/vtk_lines/README.md) retains its original BSD-3-Clause notice and license mapping. It qualifies 3,497 ordered line cells, including 282 coincident-endpoint segments, from appended zlib-compressed arrays. Independent geometry checks preserve every endpoint association, bounds and total segment length `141.33120573828802`; its snapshot uses the stored geometry and fallback color. Simulation/scalar attributes are not rendered as a color map. Higher-order cells outside the fixed-node families listed above remain unsupported.
 
 See [scientific arrays and cell limits](#scientific-arrays-and-cell-limits) for supported encodings, compression and validation.
 
@@ -262,9 +262,19 @@ See [scalar-volume rendering](#scalar-volume-rendering) for density extraction a
 
 **Extensions:** `.tif`, `.tiff`.
 
-**Coverage:** Subset: 2D image preview; no 3D stack rendering.
+**Coverage:** Fitted 2D images and bounded scalar page-stack density surfaces.
 
-TIFF produces a 2D image preview. Reconstructing volume geometry from a TIFF stack remains unsupported.
+Single-page TIFF produces an aspect-preserving 2D image preview. Homogeneous grayscale stacks in classic TIFF or BigTIFF produce a fitted 3D density surface using the same threshold and bounded pooling policy as the scientific volume readers. Automatic thumbnails use every selected addressed page; `--render-geometry` requires a supported multipage scalar stack.
+
+Volume samples support unsigned/signed 8-, 16-, 32- and 64-bit integers and IEEE float16/32/64. WhiteIsZero supports unsigned integers and float32/64; signed and float16 WhiteIsZero volumes fail explicitly. Qualified volume compression is uncompressed, LZW, Deflate or PackBits. JPEG-compressed volumes remain unsupported. These scalar-volume restrictions do not replace the existing single-page raster codecs.
+
+The reader traverses the actual linked image directories in order. When explicit `NewSubfileType=0` full-resolution pages exist, it selects those pages; otherwise ordinary/page-tagged grayscale directories form the stack. Reduced-image or mask-only chains fail. Dimensions, scalar representation, photometric interpretation, orientation and spacing must agree across selected pages. A heterogeneous image series fails rather than silently rendering its first frame. An isolated full-resolution page behind a reduced first directory is currently unsupported.
+
+TIFF orientations 1–8 map stored columns and rows into a Cartesian XY frame, including reflected and transposed axes. Rational inch/centimetre resolution determines XY spacing in millimetres. Absent/unitless resolution uses unit spacing; Z spacing uses stored X spacing because these ordinary page chains contain no qualified slice-spacing field. This placement policy is explicit, rather than inferred from page numbers or image-description text. WhiteIsZero follows the codec's normalization once.
+
+An unchanged MIT-licensed [libtiff-produced three-page file](https://github.com/image-rs/image-tiff/blob/3302936b08e2260d4c66f40f51170efbb1fded4c/tests/images/seq/seq-1c-8b-multipage-adeefdcc.tiff) supplies independent byte, voxel, surface area and volume checks. Authored nonsymmetric controls qualify scalar types, BigTIFF, byte order, orientation, resolution and compression, with committed PNG comparisons. Linked directory counts, cycles, duplicate tags and source spans are checked before initializing the codec. During pixel decoding, the owned reader restricts reads to each declared strip/tile span. Limits include 4,096 directories, 4,096 entries per directory, 65,536 entries total, 1 MiB per metadata value, 32 MiB of declared metadata, 16,777,216 scalar samples, 128 MiB expanded samples, a conservative 512 MiB aggregate source/decode/geometry allowance, and 512 MiB of cumulative encoded plus padded decode work, counting reused chunks each time.
+
+RGB/multichannel stacks, palette volumes, heterogeneous image series, SubIFD pyramids, OME hyperstack axes and ImageJ planes without independently addressed directories remain unsupported. A TIFF filename alone does not establish compatibility with every scientific TIFF layout.
 
 See [raster-image rendering](#raster-image-rendering) for sizing and decoding limits.
 
