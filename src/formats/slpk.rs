@@ -64,7 +64,7 @@ impl Package {
             if file.is_dir() {
                 continue;
             }
-            let path = file.name().to_ascii_lowercase();
+            let path = file.name()?.to_ascii_lowercase();
             if path.starts_with('/')
                 || path.contains(['\\', ':', '\0'])
                 || path
@@ -409,6 +409,27 @@ mod tests {
     }
     fn bytes(value: &Value) -> Vec<u8> {
         serde_json::to_vec(value).unwrap()
+    }
+
+    /// Preserve decoded Unicode names and CP437 fallback when indexing package resources.
+    #[test]
+    fn package_member_names_keep_utf8_and_cp437_fallback() {
+        let unicode = Package::new(zip(&[("caf\u{e9}.json", vec![])])).unwrap();
+        assert!(unicode.files.contains_key("caf\u{e9}.json"));
+        let mut encoded = zip(&[("cafX.json", vec![])]);
+        // ASCII placeholder and CP437 filename have identical byte lengths.
+        // Rewrite both local and central names; file payload and CRC stay empty.
+        let names: Vec<_> = encoded
+            .windows(b"cafX.json".len())
+            .enumerate()
+            .filter_map(|(index, name)| (name == b"cafX.json").then_some(index))
+            .collect();
+        assert_eq!(names.len(), 2);
+        for index in names {
+            encoded[index + 3] = 0x82; // CP437 e-acute; invalid as a standalone UTF8 byte.
+        }
+        let cp437 = Package::new(encoded).unwrap();
+        assert!(cp437.files.contains_key("caf\u{e9}.json"));
     }
 
     #[test]

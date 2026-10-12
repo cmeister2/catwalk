@@ -219,7 +219,7 @@ fn xml_bytes(encoded: Vec<u8>) -> Result<Vec<u8>> {
         return Err("AMF ZIP must contain exactly one model file".into());
     }
     let mut member = archive.by_index(0)?;
-    let name = member.name();
+    let name = member.name()?;
     if member.is_dir()
         || member.is_symlink()
         || name.starts_with('/')

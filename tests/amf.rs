@@ -1,4 +1,8 @@
 //! AMF exporter qualification and independently calculated placement regressions.
+#[path = "support/digest_hex.rs"]
+/// Format digest bytes with the unchanged lowercase hexadecimal comparison protocol.
+mod digest_hex;
+
 use catwalk3d::{
     formats,
     render::{RenderOptions, render},
@@ -119,17 +123,17 @@ fn original_slic3r_export_and_compressed_reference_have_exact_independent_geomet
     let plain = std::fs::read(reference("amf-slic3r-plain.amf")).unwrap();
     let compressed = std::fs::read(reference("amf-slic3r-deflated.amf")).unwrap();
     assert_eq!(
-        format!("{:x}", Sha256::digest(&plain)),
+        format!("{:x}", digest_hex::Hex(Sha256::digest(&plain))),
         "ff3be11c5dc4f31e683afeab1008400c95170ea99008e37c6dfab4be30e157c3"
     );
     assert_eq!(
-        format!("{:x}", Sha256::digest(&compressed)),
+        format!("{:x}", digest_hex::Hex(Sha256::digest(&compressed))),
         "f707308b505efe4572b80febc707bdc0b8dac03a014d4a85e5f73b9f8bf8944f"
     );
     let mut archive = zip::ZipArchive::new(Cursor::new(&compressed)).unwrap();
     assert_eq!(archive.len(), 1);
     let mut member = archive.by_index(0).unwrap();
-    assert_eq!(member.name(), "20mmbox.amf");
+    assert_eq!(member.name().unwrap(), "20mmbox.amf");
     let mut expanded = Vec::new();
     member.read_to_end(&mut expanded).unwrap();
     assert_eq!(expanded, plain);

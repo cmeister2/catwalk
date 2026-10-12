@@ -1,5 +1,9 @@
 //! Independent standalone binary BREP topology, source integrity and placement qualification.
 
+#[path = "support/digest_hex.rs"]
+/// Format digest bytes with the unchanged lowercase hexadecimal comparison protocol.
+mod digest_hex;
+
 use catwalk3d::{
     formats,
     render::{RenderOptions, render},
@@ -151,7 +155,10 @@ fn lines(scene: &Scene, expected: &[[[f64; 3]; 2]], length: f64) {
 fn retained_original_pair_and_required_licenses_have_exact_source_hashes() {
     for (name, expected) in ORIGINAL_HASHES {
         assert_eq!(
-            format!("{:x}", Sha256::digest(fs::read(fixture(name)).unwrap())),
+            format!(
+                "{:x}",
+                digest_hex::Hex(Sha256::digest(fs::read(fixture(name)).unwrap()))
+            ),
             expected,
             "{name}"
         );

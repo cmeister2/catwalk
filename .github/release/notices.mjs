@@ -7,6 +7,27 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const repository = fileURLToPath(new URL('../../', import.meta.url));
 const aboutVersion = 'cargo-about 0.9.2';
+
+// The handwritten wrapper is MIT; bundled OpenUSD schemas and generated schema
+// code have separate terms.
+// cargo-about 0.9.2's custom LicenseRef text filter drops matching clarified
+// files (src/generate.rs:158-163), so preserve these verified originals explicitly.
+const schemaNotices = new Map([
+  ['0.8.0', {
+    commit: '9c007a00fd2ca243a7b6812dd0bf34eca01ee878',
+    files: [
+      {
+        path: 'third-party/LICENSE',
+        sha256: 'ce5cb334bff4a1c576be24069eec3e49ff6eeba1ccccc45c33607655d347ae75',
+      },
+      {
+        path: 'third-party/NOTICE.txt',
+        sha256: '2949534cb3ef969acbaf52342aabea7adff97e1e0d09e44b5538c3a54625155b',
+      },
+    ],
+  }],
+]);
+const schemaLicenseId = 'LicenseRef-Tomorrow-Open-Source-Technology-License-1.0';
 const maximumNoticeBytes = 1024 * 1024;
 
 // These are upstream notice bytes, not a copy of the dependency or its source.
@@ -98,16 +119,77 @@ export async function fetchMuslCopyright(version, load = sourceBytes) {
 }
 
 /** Keep mandatory combined-license clauses and executable-distribution notices. */
-export function verifyCargoNotices(html) {
+export function verifyCargoNotices(html, acadrustVersion) {
   for (const id of ['MPL-2.0', 'BSD-3-Clause', 'IJG', 'Unicode-3.0']) {
     if (!html.includes(`data-license="${id}"`)) throw new Error(`Generated notices omit ${id}`);
   }
   if (!html.includes('This software is based in part on the work of the Independent JPEG Group.')) {
     throw new Error('Generated notices omit the IJG acknowledgment');
   }
-  if (!html.includes('https://crates.io/api/v1/crates/acadrust/0.6.3/download')) {
+  if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(acadrustVersion)) {
+    throw new Error('The resolved acadrust version is invalid');
+  }
+  const source = `https://crates.io/api/v1/crates/acadrust/${acadrustVersion}/download`;
+  const sections = [...html.matchAll(/<section\b[^>]*\bdata-license="MPL-2\.0"[^>]*>([\s\S]*?)<\/section>/g)];
+  const linked = sections.some((section) => [...section[1].matchAll(/<li\b[^>]*>([\s\S]*?)<\/li>/g)]
+    .some((item) => item[1].trimStart().startsWith(`acadrust ${acadrustVersion}:`)
+      && [...item[1].matchAll(/<a\b[^>]*\bhref="([^"]+)"[^>]*>/g)]
+        .some((anchor) => anchor[1] === source)));
+  if (!linked) {
     throw new Error('Generated notices omit the pinned acadrust source-availability link');
   }
+}
+
+/** Bind version-specific source links and schema notices to published locked packages. */
+export function lockedNoticeVersions(lockfile) {
+  const versions = {};
+  for (const name of ['acadrust', 'openusd-schemas']) {
+    const matches = lockfile.split(/^\[\[package\]\]\s*$/m).slice(1)
+      .filter((block) => new RegExp(`^name\\s*=\\s*"${name}"\\s*$`, 'm').test(block));
+    if (matches.length !== 1) throw new Error(`Release notices require one resolved ${name} package`);
+    const version = /^version\s*=\s*"([^"]+)"\s*$/m.exec(matches[0])?.[1];
+    const source = /^source\s*=\s*"([^"]+)"\s*$/m.exec(matches[0])?.[1];
+    if (!version || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(version)
+      || source !== 'registry+https://github.com/rust-lang/crates.io-index') {
+      throw new Error(`Release notices require a published crates.io ${name} package`);
+    }
+    versions[name] = version;
+  }
+  return versions;
+}
+
+/** Resolve immutable notice URLs for the exact published schema package. */
+export function schemaNoticeSources(version) {
+  const notice = schemaNotices.get(version);
+  if (!notice) throw new Error(`openusd-schemas ${version} requires verified original license and notice bytes`);
+  return notice.files.map((file) => ({ ...file,
+    url: `https://raw.githubusercontent.com/mxpv/openusd/${notice.commit}/crates/openusd-schemas/${file.path}`,
+  }));
+}
+
+/** Escape complete verified upstream notice text without changing its displayed bytes. */
+export function renderVerifiedNotice(file, bytes) {
+  if (!Buffer.isBuffer(bytes) || bytes.length > maximumNoticeBytes
+    || createHash('sha256').update(bytes).digest('hex') !== file.sha256) {
+    throw new Error('Original third-party notice checksum or size differs');
+  }
+  const text = bytes.toString('utf8');
+  if (!Buffer.from(text).equals(bytes)) throw new Error('Original third-party notice is not UTF-8');
+  const escape = (value) => value.replace(/[&<>"']/g,
+    (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
+  return `<h3>${escape(file.path)}</h3>\n<p><a href="${escape(file.url)}">Original upstream notice</a></p>\n<pre data-notice="${escape(file.path)}" data-sha256="${file.sha256}">${escape(text)}</pre>`;
+}
+
+/** Include both original schema terms and attribution, refusing partial or substituted bytes. */
+export function appendSchemaNotices(html, version, contents) {
+  const sources = schemaNoticeSources(version);
+  if (!Array.isArray(contents) || contents.length !== sources.length
+    || !/<\/html>\s*$/i.test(html) || html.includes(`data-license="${schemaLicenseId}"`)) {
+    throw new Error('Schema notice appendix needs one complete original license/notice pair and HTML document');
+  }
+  const texts = sources.map((source, index) => renderVerifiedNotice(source, contents[index])).join('\n');
+  const appendix = `<section data-license="${schemaLicenseId}">\n<h2>Bundled OpenUSD schemas and generated schema code</h2>\n<p>openusd-schemas ${version} bundles OpenUSD schemas and generated schema code covered by the Tomorrow Open Source Technology License 1.0. The handwritten crate implementation has separate MIT terms above. These are the complete original license and attribution bytes from the published package.</p>\n<p><a href="https://crates.io/api/v1/crates/openusd-schemas/${version}/download">Exact published package source</a></p>\n${texts}\n</section>\n`;
+  return html.replace(/<\/html>\s*$/i, () => `${appendix}</html>\n`);
 }
 
 /** Fetch a bounded public source file without credentials or local configuration. */
@@ -139,6 +221,8 @@ function command(executable, args) {
 /** Generate all three notice files after validating the prepared compiler. */
 export async function generateNotices(output) {
   const plan = JSON.parse(await readFile(join(output, 'plan.json'), 'utf8'));
+  const versions = lockedNoticeVersions(await readFile(join(repository, 'Cargo.lock'), 'utf8'));
+  const schemaSources = schemaNoticeSources(versions['openusd-schemas']);
   const compiler = compilerIdentity(plan, command('rustc', ['-vV']));
   if (command('cargo-about', ['--version']) !== aboutVersion) {
     throw new Error(`Notice generation requires ${aboutVersion}`);
@@ -149,7 +233,10 @@ export async function generateNotices(output) {
   if (!rustHtml.includes('Rust Project')) throw new Error('Rust library copyright notice is incomplete');
 
   const scriptUrl = `https://raw.githubusercontent.com/rust-lang/rust/${compiler.commit}/src/ci/docker/scripts/musl-toolchain.sh`;
-  const muslVersion = bundledMuslVersion((await sourceBytes(scriptUrl)).toString('utf8'));
+  const [script, ...schemaContents] = await Promise.all([
+    sourceBytes(scriptUrl), ...schemaSources.map((source) => sourceBytes(source.url)),
+  ]);
+  const muslVersion = bundledMuslVersion(script.toString('utf8'));
   const musl = await fetchMuslCopyright(muslVersion);
 
   await mkdir(output, { recursive: true });
@@ -160,7 +247,10 @@ export async function generateNotices(output) {
       '--manifest-path', join(repository, 'Cargo.toml'), '--output-file', temporary,
       join(repository, '.github', 'release', 'licenses.hbs'),
     ]);
-    verifyCargoNotices(await readFile(temporary, 'utf8'));
+    const html = appendSchemaNotices(await readFile(temporary, 'utf8'),
+      versions['openusd-schemas'], schemaContents);
+    verifyCargoNotices(html, versions.acadrust);
+    await writeFile(temporary, html);
     await copyFile(rustNotice, join(output, 'RUST-LICENSES.html'));
     await writeFile(join(output, 'MUSL-COPYRIGHT'), musl);
     await rename(temporary, join(output, 'THIRD_PARTY_LICENSES.html'));

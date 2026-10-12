@@ -7,13 +7,12 @@ use crate::{
 };
 use openusd::{
     ar::{self, Resolver},
-    gf,
-    schemas::{
-        geom::{Imageable, Xformable},
-        shade,
-    },
-    sdf,
+    gf, sdf,
     usd::{self, Prim, SchemaBase},
+};
+use openusd_schemas::{
+    geom::{ImageableSchema, XformableExt, XformableSchema},
+    shade,
 };
 use std::{
     cell::Cell,
@@ -143,10 +142,12 @@ fn package_root(path: &Path) -> Result<String> {
         return Err("USDZ package is empty".into());
     }
     let member = archive.by_index(0)?;
-    let name = member.name();
-    if !safe_member(name)
+    let name = member.name()?;
+    if !safe_member(&name)
         || !matches!(
-            Path::new(name).extension().and_then(|e| e.to_str()),
+            Path::new(name.as_ref())
+                .extension()
+                .and_then(|e| e.to_str()),
             Some("usd" | "usda" | "usdc")
         )
     {
@@ -155,7 +156,7 @@ fn package_root(path: &Path) -> Result<String> {
     if member.size() > MAX_INPUT_BYTES {
         return Err("USDZ root layer exceeds 512 MiB".into());
     }
-    Ok(name.to_owned())
+    Ok(name.into_owned())
 }
 
 /// Validate bounded USDC sections before handing a layer to the stage reader.
@@ -244,8 +245,9 @@ impl SchemaBase for View {
         &self.0
     }
 }
-impl Imageable for View {}
-impl Xformable for View {}
+impl usd::Typed for View {}
+impl ImageableSchema for View {}
+impl XformableSchema for View {}
 
 #[derive(Clone)]
 /// Inherited transform, visibility and purpose during composed stage traversal.
@@ -289,6 +291,7 @@ pub(super) fn load(path: &Path) -> Result<Scene> {
         identifier = format!("{identifier}[{name}]");
     }
     let stage = usd::Stage::builder()
+        .schema_registry(openusd_schemas::schema_registry())
         .resolver(LocalResolver {
             root,
             total: Cell::new(0),
@@ -331,7 +334,7 @@ pub(super) fn load(path: &Path) -> Result<Scene> {
     }
     let mut prototypes = HashSet::new();
     for path in &paths {
-        let prim = stage.prim(path.clone());
+        let prim = stage.prim(path.clone()).map_err(|e| e.to_string())?;
         if prim
             .type_name()
             .map_err(|e| e.to_string())?
@@ -347,7 +350,7 @@ pub(super) fn load(path: &Path) -> Result<Scene> {
     let mut states: HashMap<sdf::Path, State> = HashMap::new();
     let mut scene = Scene::default();
     for path in paths {
-        let prim = stage.prim(path.clone());
+        let prim = stage.prim(path.clone()).map_err(|e| e.to_string())?;
         let view = View(prim.clone());
         let parent = path
             .parent()
@@ -359,10 +362,7 @@ pub(super) fn load(path: &Path) -> Result<Scene> {
                 purpose: "default".into(),
             });
         validate_ops(&view, time)?;
-        let local = matrix(
-            view.local_to_parent_transform(time)
-                .map_err(|e| e.to_string())?,
-        )?;
+        let local = matrix(view.local_transformation(time).map_err(|e| e.to_string())?)?;
         let world = if view.resets_xform_stack().map_err(|e| e.to_string())? {
             local
         } else {
@@ -450,7 +450,13 @@ fn append_geometry(
 
 /// Read an optional authored attribute value at the selected time.
 fn value(prim: &Prim, attr: &str, time: usd::TimeCode) -> Result<Option<sdf::Value>> {
-    prim.attribute(attr)
+    let attribute = prim.attribute(attr);
+    // Schema defaults are not authored opinions. Keep the loader's own
+    // inheritance and omitted-value policies when the registry supplies one.
+    if !attribute.has_authored_value().map_err(|e| e.to_string())? {
+        return Ok(None);
+    }
+    attribute
         .get_at::<sdf::Value>(time)
         .map_err(|e| e.to_string().into())
 }
@@ -581,6 +587,42 @@ fn rgb(v: Vec3) -> [u8; 3] {
     [srgb(v.x), srgb(v.y), srgb(v.z)]
 }
 
+/// Select the universal surface, then authored context surfaces in stable name order.
+///
+/// # Errors
+/// Returns an error for failed material-property composition or terminal resolution.
+fn surface_terminal(material: &shade::Material) -> Result<Option<shade::ResolvedTerminal>> {
+    if let Some(terminal) = material
+        .compute_surface_source(&[])
+        .map_err(|error| error.to_string())?
+    {
+        return Ok(Some(terminal));
+    }
+    let mut contexts: Vec<_> = material
+        .prim()
+        .authored_property_names()
+        .map_err(|error| error.to_string())?
+        .into_iter()
+        .filter_map(|property| {
+            property
+                .strip_prefix("outputs:")
+                .and_then(|name| name.strip_suffix(":surface"))
+                .filter(|context| !context.is_empty())
+                .map(str::to_owned)
+        })
+        .collect();
+    contexts.sort();
+    for context in contexts {
+        if let Some(terminal) = material
+            .compute_surface_source(&[&context])
+            .map_err(|error| error.to_string())?
+        {
+            return Ok(Some(terminal));
+        }
+    }
+    Ok(None)
+}
+
 /// Resolve preview material bindings and read a finite preview-surface diffuse color.
 fn material(prim: &Prim, time: usd::TimeCode) -> Result<Option<[u8; 3]>> {
     let stage = prim.stage();
@@ -598,7 +640,10 @@ fn material(prim: &Prim, time: usd::TimeCode) -> Result<Option<[u8; 3]>> {
         for rel_name in ["material:binding:preview", "material:binding"] {
             let mut path = Some(prim.path().clone());
             while let Some(p) = path {
-                let rel = stage.prim(p.clone()).relationship(rel_name);
+                let rel = stage
+                    .prim(p.clone())
+                    .map_err(|e| e.to_string())?
+                    .relationship(rel_name);
                 let targets = rel.targets().map_err(|e| e.to_string())?;
                 if targets.len() > 1 {
                     return Err("USD direct material binding has multiple targets".into());
@@ -606,6 +651,7 @@ fn material(prim: &Prim, time: usd::TimeCode) -> Result<Option<[u8; 3]>> {
                 if let Some(target) = targets.first() {
                     let strength = stage
                         .attribute(rel.path().clone())
+                        .map_err(|e| e.to_string())?
                         .get_metadata::<sdf::Value>("bindMaterialAs")
                         .map_err(|e| e.to_string())?;
                     if bound.is_none()
@@ -628,7 +674,14 @@ fn material(prim: &Prim, time: usd::TimeCode) -> Result<Option<[u8; 3]>> {
     let Some(mat) = shade::Material::get(stage, bound).map_err(|e| e.to_string())? else {
         return Err("USD material binding targets a non-material prim".into());
     };
-    let Some(shader) = mat.compute_surface_source().map_err(|e| e.to_string())? else {
+    let Some(terminal) = surface_terminal(&mat)? else {
+        return Ok(None);
+    };
+    let Some(shader) = terminal
+        .sources()
+        .first()
+        .and_then(shade::TerminalSource::shader)
+    else {
         return Ok(None);
     };
     if shader.id().map_err(|e| e.to_string())?.as_deref() != Some("UsdPreviewSurface") {
@@ -664,7 +717,7 @@ impl Colors {
         if value(prim, "primvars:displayColor", time)?.is_none() {
             let mut ancestor = prim.path().parent();
             while let Some(path) = ancestor {
-                let candidate = prim.stage().prim(path.clone());
+                let candidate = prim.stage().prim(path.clone()).map_err(|e| e.to_string())?;
                 if value(&candidate, "primvars:displayColor", time)?.is_some() {
                     let interpolation = candidate
                         .attribute("primvars:displayColor")
@@ -1001,7 +1054,7 @@ fn prototype_scene(stage: &usd::Stage, root: &sdf::Path, time: usd::TimeCode) ->
     let mut states = HashMap::<sdf::Path, State>::new();
     let mut scene = Scene::default();
     for path in paths {
-        let prim = stage.prim(path.clone());
+        let prim = stage.prim(path.clone()).map_err(|e| e.to_string())?;
         let view = View(prim.clone());
         let parent = path
             .parent()
@@ -1013,10 +1066,7 @@ fn prototype_scene(stage: &usd::Stage, root: &sdf::Path, time: usd::TimeCode) ->
                 purpose: "default".into(),
             });
         validate_ops(&view, time)?;
-        let local = matrix(
-            view.local_to_parent_transform(time)
-                .map_err(|e| e.to_string())?,
-        )?;
+        let local = matrix(view.local_transformation(time).map_err(|e| e.to_string())?)?;
         let world = if view.resets_xform_stack().map_err(|e| e.to_string())? {
             local
         } else {
@@ -1087,6 +1137,7 @@ fn instancer(prim: &Prim, time: usd::TimeCode, world: Transform, scene: &mut Sce
     if let Some(v) = prim
         .stage()
         .attribute(prim.path().clone())
+        .map_err(|e| e.to_string())?
         .get_metadata::<sdf::Value>("inactiveIds")
         .map_err(|e| e.to_string())?
     {
@@ -1391,6 +1442,70 @@ def Cube "Guide" { token purpose = "guide" }
         assert_eq!(s.points[1].color, Some([0, 255, 0]));
     }
 
+    /// Registered fallbacks remain distinct from authored values used for inherited state.
+    #[test]
+    fn registered_schema_defaults_preserve_authored_purpose_and_color_inheritance() {
+        let temp = Temp::new();
+        let input = temp.write(
+            "schema-inheritance.usda",
+            r#"#usda 1.0
+(upAxis = "Z")
+def Xform "Guides" {
+ token purpose = "guide"
+ color3f[] primvars:displayColor = [(1,0,0)] (interpolation = "constant")
+ double3 xformOp:translate = (10,0,0)
+ uniform token[] xformOpOrder = ["xformOp:translate"]
+ def Cube "Inherited" {}
+ def Cube "VisibleOverride" {
+  token purpose = "default"
+  double size = 1
+ }
+}
+def Cube "Uncolored" { double size = 2 }
+"#,
+        );
+        let stage = usd::Stage::builder()
+            .schema_registry(openusd_schemas::schema_registry())
+            .open(input.to_str().unwrap())
+            .unwrap();
+        let child = stage.prim("/Guides/Inherited").unwrap();
+        let fallback = child
+            .attribute("purpose")
+            .get_at::<sdf::Value>(usd::TimeCode::EARLIEST)
+            .unwrap()
+            .unwrap();
+        assert_eq!(fallback.as_str(), Some("default"));
+        assert!(
+            value(&child, "purpose", usd::TimeCode::EARLIEST)
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            number(&child, "size", 7., usd::TimeCode::EARLIEST)
+                .unwrap()
+                .to_bits(),
+            7_f64.to_bits()
+        );
+        let scene = load(&input).unwrap();
+        assert_eq!(scene.triangles.len(), 24);
+        assert!(
+            scene.triangles[..12]
+                .iter()
+                .all(|triangle| triangle.color == Some([255, 0, 0]))
+        );
+        assert!(
+            scene.triangles[12..]
+                .iter()
+                .all(|triangle| triangle.color.is_none())
+        );
+        assert!(
+            scene.triangles[..12]
+                .iter()
+                .flat_map(|triangle| triangle.vertices)
+                .all(|point| (point.x - 10.).abs().to_bits() == 0.5_f64.to_bits())
+        );
+    }
+
     #[test]
     fn indexed_uniform_colors_concave_polygons_and_holes() {
         let temp = Temp::new();
@@ -1464,6 +1579,78 @@ def Mesh "Square" (prepend apiSchemas = ["MaterialBindingAPI"]) {
         assert_eq!(s.triangles.len(), 2);
         assert_eq!(s.triangles[0].color, Some([0, 255, 0]));
         assert_eq!(s.triangles[1].color, Some([0, 0, 255]));
+    }
+
+    /// Universal output wins; fallback contexts are sorted, and the first selected shader stays authoritative.
+    #[test]
+    fn preview_material_contexts_preserve_universal_then_sorted_fallback() {
+        let temp = Temp::new();
+        let template = r#"#usda 1.0
+(upAxis = "Z")
+def Material "Mat" {
+ $CONNECTIONS
+ def Shader "Green" {
+  uniform token info:id = "UsdPreviewSurface"
+  color3f inputs:diffuseColor = (0,1,0)
+  token outputs:surface
+ }
+ def Shader "Red" {
+  uniform token info:id = "UsdPreviewSurface"
+  color3f inputs:diffuseColor = (1,0,0)
+  token outputs:surface
+ }
+ def Shader "Other" {
+  uniform token info:id = "OtherSurface"
+  token outputs:surface
+ }
+}
+def Cube "Box" (prepend apiSchemas = ["MaterialBindingAPI"]) {
+ double size = 1
+ color3f[] primvars:displayColor = [(0,0,1)]
+ rel material:binding = </Mat>
+}
+"#;
+        for (index, (connections, color)) in [
+            (
+                "token outputs:preview:surface.connect = </Mat/Green.outputs:surface>",
+                [0, 255, 0],
+            ),
+            (
+                "token outputs:renderer:preview:surface.connect = </Mat/Green.outputs:surface>",
+                [0, 255, 0],
+            ),
+            (
+                "token outputs:z:surface.connect = </Mat/Red.outputs:surface>\n token outputs:a:surface.connect = </Mat/Green.outputs:surface>",
+                [0, 255, 0],
+            ),
+            (
+                "token outputs:surface.connect = </Mat/Red.outputs:surface>\n token outputs:a:surface.connect = </Mat/Green.outputs:surface>",
+                [255, 0, 0],
+            ),
+            (
+                "token outputs:a:surface\n token outputs:z:surface.connect = </Mat/Green.outputs:surface>",
+                [0, 255, 0],
+            ),
+            (
+                "token outputs:a:surface.connect = </Mat/Other.outputs:surface>\n token outputs:z:surface.connect = </Mat/Green.outputs:surface>",
+                [0, 0, 255],
+            ),
+            (
+                "token outputs:surface.connect = </Mat/Other.outputs:surface>\n token outputs:a:surface.connect = </Mat/Green.outputs:surface>",
+                [0, 0, 255],
+            ),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let input = temp.write(
+                &format!("context-{index}.usda"),
+                &template.replace("$CONNECTIONS", connections),
+            );
+            let scene = load(&input).unwrap();
+            assert_eq!(scene.triangles.len(), 12);
+            assert!(scene.triangles.iter().all(|triangle| triangle.color == Some(color)));
+        }
     }
 
     #[test]

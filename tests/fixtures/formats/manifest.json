@@ -1382,7 +1382,7 @@
       "input": "mesh_scene/usd-native-crate.usd",
       "kind": "model",
       "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
-      "title": "USD generic extension with genuine binary crate"
+      "title": "USD generic extension with authored binary crate"
     },
     {
       "extension": "usda",
@@ -1406,7 +1406,7 @@
       "input": "mesh_scene/usdc-native-crate.usdc",
       "kind": "model",
       "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
-      "title": "USD genuine binary crate encoding"
+      "title": "USD authored binary crate encoding"
     },
     {
       "extension": "usdz",

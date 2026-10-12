@@ -1807,18 +1807,18 @@ def Mesh "Tetra" {{
         .export(binary.to_str().ok_or("fixture path is not UTF-8")?)?;
     let bytes = fs::read(binary)?;
     if !bytes.starts_with(b"PXR-USDC") {
-        return Err("USD writer did not create a genuine binary crate".into());
+        return Err("USD writer did not create a binary crate".into());
     }
     f.register(
         "usdc-native-crate",
         "usdc",
-        "USD genuine binary crate encoding",
+        "USD authored binary crate encoding",
         AUTHORED,
     )?;
     f.add(
         "usd-native-crate",
         "usd",
-        "USD generic extension with genuine binary crate",
+        "USD generic extension with authored binary crate",
         &bytes,
     )?;
     let root=b"#usda 1.0\n(upAxis = \"Z\"; defaultPrim = \"Assembly\")\ndef Mesh \"Assembly\" (prepend references = @parts/tetra.usdc@) {}\n";

@@ -1,5 +1,9 @@
 //! Independent AP242 triangle, representation ownership and assembly qualification.
 
+#[path = "support/digest_hex.rs"]
+/// Format digest bytes with the unchanged lowercase hexadecimal comparison protocol.
+mod digest_hex;
+
 use catwalk3d::{
     Result, formats,
     scene::{Scene, Triangle, Vec3},
@@ -110,7 +114,7 @@ fn unchanged_nist_part_preserves_facets_bounds_area_and_selected_ownership() -> 
     let bytes = fs::read(&path)?;
     assert_eq!(bytes.len(), 2_120_559);
     assert_eq!(
-        format!("{:x}", Sha256::digest(&bytes)),
+        format!("{:x}", digest_hex::Hex(Sha256::digest(&bytes))),
         "40cd4e5e2e02b5742e0884ba5b132f2e37d2215c45f57afb48962a05a060c384"
     );
     let scene = formats::load(&path)?;

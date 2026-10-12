@@ -1,5 +1,9 @@
 //! Retained `LightBurn` vector geometry, source provenance and headless thumbnail qualification.
 
+#[path = "support/digest_hex.rs"]
+/// Format digest bytes with the unchanged lowercase hexadecimal comparison protocol.
+mod digest_hex;
+
 use catwalk3d::{formats, scene::Vec3};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
@@ -49,7 +53,7 @@ fn licensed_external_sources_are_unchanged_and_have_no_thumbnail_carrier() {
         let input = fixture(name);
         let bytes = std::fs::read(&input).unwrap();
         assert_eq!(
-            format!("{:x}", Sha256::digest(&bytes)),
+            format!("{:x}", digest_hex::Hex(Sha256::digest(&bytes))),
             entry["sha256"].as_str().unwrap(),
             "fixture source was changed: {name}"
         );

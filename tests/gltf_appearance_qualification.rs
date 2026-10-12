@@ -1,5 +1,9 @@
 //! Appearance and placement qualification against authored controls and
 //! unchanged independently exported Khronos sample assets.
+#[path = "support/digest_hex.rs"]
+/// Format digest bytes with the unchanged lowercase hexadecimal comparison protocol.
+mod digest_hex;
+
 use catwalk3d::{
     formats,
     render::{RenderOptions, render},
@@ -365,7 +369,10 @@ fn unchanged_khronos_models_match_exact_hashes_and_independent_geometry_referenc
     ];
     for (name, hash, triangles, low, high, expected_area) in references {
         let original = fs::read(fixture(name)).unwrap();
-        assert_eq!(format!("{:x}", Sha256::digest(&original)), hash);
+        assert_eq!(
+            format!("{:x}", digest_hex::Hex(Sha256::digest(&original))),
+            hash
+        );
         let scene = formats::load(&fixture(name)).unwrap();
         assert_eq!(scene.triangles.len(), triangles, "{name}");
         assert!(scene.points.is_empty() && scene.lines.is_empty());
@@ -391,7 +398,10 @@ fn unchanged_khronos_models_match_exact_hashes_and_independent_geometry_referenc
         ),
     ] {
         assert_eq!(
-            format!("{:x}", Sha256::digest(fs::read(fixture(name)).unwrap())),
+            format!(
+                "{:x}",
+                digest_hex::Hex(Sha256::digest(fs::read(fixture(name)).unwrap()))
+            ),
             hash
         );
     }

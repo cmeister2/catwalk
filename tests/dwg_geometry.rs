@@ -1,5 +1,9 @@
 //! Retained DWG line coordinates, provenance and native thumbnail fallback qualification.
 
+#[path = "support/digest_hex.rs"]
+/// Format digest bytes with the unchanged lowercase hexadecimal comparison protocol.
+mod digest_hex;
+
 use catwalk3d::{formats, render::RenderOptions, saved_preview, scene::Vec3};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
@@ -18,7 +22,10 @@ fn real_dwg_lines_match_independent_autocad_coordinates_and_source_hashes() {
     for row in provenance.as_array().unwrap() {
         let path = fixture(row["file"].as_str().unwrap());
         assert_eq!(
-            format!("{:x}", Sha256::digest(std::fs::read(&path).unwrap())),
+            format!(
+                "{:x}",
+                digest_hex::Hex(Sha256::digest(std::fs::read(&path).unwrap()))
+            ),
             row["sha256"].as_str().unwrap()
         );
         let scene = formats::load(&path).unwrap();

@@ -1,5 +1,9 @@
 //! Independent texture, geometry, packaging, and retained-source qualification for 3MF.
 
+#[path = "support/digest_hex.rs"]
+/// Format digest bytes with the unchanged lowercase hexadecimal comparison protocol.
+mod digest_hex;
+
 use catwalk3d::{
     Result, formats, render,
     scene::{AlphaMode, Scene, TextureFilter, TextureInterpolationSpace, TextureWrap, Vec3},
@@ -226,7 +230,7 @@ fn retained_official_png_texture_preserves_source_hash_geometry_uvs_and_pixels()
     let path = fixture("3mf-lib3mf-png-texture.3mf");
     let bytes = fs::read(&path).unwrap();
     assert_eq!(
-        format!("{:x}", Sha256::digest(&bytes)),
+        format!("{:x}", digest_hex::Hex(Sha256::digest(&bytes))),
         "52f787357062da8bfbb14c1b5258a11513717b4beb072b00aa0161aa76a34b36"
     );
     let scene = formats::load(&path).unwrap();
@@ -237,7 +241,7 @@ fn retained_official_png_texture_preserves_source_hash_geometry_uvs_and_pixels()
     assert_eq!(image.dimensions(), (87, 93));
     // Pixel bytes independently decoded with Pillow from the retained PNG.
     assert_eq!(
-        format!("{:x}", Sha256::digest(image.as_raw())),
+        format!("{:x}", digest_hex::Hex(Sha256::digest(image.as_raw()))),
         "fe4bc33c5da98314bfc72291f3c245bf38f69f22e46802001c73a7eb22b3fd7f"
     );
     assert!(
@@ -253,7 +257,7 @@ fn retained_escaped_image_names_keep_all_six_distinct_png_textures() {
     let path = fixture("3mf-lib3mf-escaped-textures.3mf");
     let bytes = fs::read(&path).unwrap();
     assert_eq!(
-        format!("{:x}", Sha256::digest(&bytes)),
+        format!("{:x}", digest_hex::Hex(Sha256::digest(&bytes))),
         "55fe819e98ab5377a9cfeaf295f30ae8a046259a022349cde86110b8b03c095e"
     );
     let scene = formats::load(&path).unwrap();
@@ -293,7 +297,10 @@ fn retained_escaped_image_names_keep_all_six_distinct_png_textures() {
     ] {
         let image = &scene.appearances[&index].texture.as_ref().unwrap().image;
         assert_eq!(image.dimensions(), dimensions);
-        assert_eq!(format!("{:x}", Sha256::digest(image.as_raw())), hash);
+        assert_eq!(
+            format!("{:x}", digest_hex::Hex(Sha256::digest(image.as_raw()))),
+            hash
+        );
         assert!(Arc::ptr_eq(
             image,
             &scene.appearances[&(index + 1)]
@@ -310,7 +317,7 @@ fn retained_two_jpeg_textures_preserve_independent_geometry_and_source_samples()
     let path = fixture("3mf-consortium-jpeg-textures.3mf");
     let bytes = fs::read(&path).unwrap();
     assert_eq!(
-        format!("{:x}", Sha256::digest(&bytes)),
+        format!("{:x}", digest_hex::Hex(Sha256::digest(&bytes))),
         "1024c33276043c5ef25bf111496056d87bf5a816ae2f6eb6a6804d75ced02d59"
     );
     let scene = formats::load(&path).unwrap();
@@ -559,7 +566,7 @@ fn unqualified_original_composite_materials_remain_rejected() {
         .join("tests/fixtures/threemf-materials/lib3mf-composite-materials.3mf");
     let bytes = fs::read(&path).unwrap();
     assert_eq!(
-        format!("{:x}", Sha256::digest(&bytes)),
+        format!("{:x}", digest_hex::Hex(Sha256::digest(&bytes))),
         "0c6aebf96558689a3ea8d40d5f62ea03278b89178ff97dce6cd25a96b180af36"
     );
     let error = formats::load(&path).unwrap_err().to_string();

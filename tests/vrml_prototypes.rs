@@ -1,5 +1,9 @@
 //! Independent geometry, source and headless-image checks for VRML prototypes and billboards.
 
+#[path = "support/digest_hex.rs"]
+/// Format digest bytes with the unchanged lowercase hexadecimal comparison protocol.
+mod digest_hex;
+
 use catwalk3d::{
     formats,
     render::{RenderOptions, render, write_png},
@@ -309,7 +313,11 @@ fn web3d_models_and_license_retain_original_published_bytes() {
     ] {
         let bytes = fs::read(fixture(name)).unwrap();
         assert_eq!(bytes.len(), size, "{name}");
-        assert_eq!(format!("{:x}", Sha256::digest(bytes)), hash, "{name}");
+        assert_eq!(
+            format!("{:x}", digest_hex::Hex(Sha256::digest(bytes))),
+            hash,
+            "{name}"
+        );
     }
 }
 
