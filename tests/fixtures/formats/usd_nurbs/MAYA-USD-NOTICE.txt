@@ -1,0 +1,27 @@
+Autodesk Maya USD NURBS curve test asset
+
+usda-maya-nurbs-circles.usda is an unchanged copy of
+test/testSamples/basisCurves/nurbsCircleExport.usda from Autodesk/maya-usd
+at commit 48eae123cabec8e671f0779b03c22fa30631a781. Only the corpus filename
+has changed; the original layer, points, knots, transforms, metadata and
+widths remain byte for byte unchanged.
+
+Original file:
+https://github.com/Autodesk/maya-usd/blob/48eae123cabec8e671f0779b03c22fa30631a781/test/testSamples/basisCurves/nurbsCircleExport.usda
+Bytes: 1638
+SHA-256: 17b9eab67f027d314e4de32cd01d1c383068768d8b9a49c7a72ea5abc0b6057b
+
+Exporter qualification:
+https://github.com/Autodesk/maya-usd/blob/48eae123cabec8e671f0779b03c22fa30631a781/test/lib/mayaUsd/render/vp2RenderDelegate/testVP2RenderDelegateBasisCurves.py#L108
+The upstream testExportedNURBS control loads this exact exported layer.
+
+The upstream repository distributes this asset under Apache-2.0. Its
+complete original doc/LICENSE.md is retained as MAYA-USD-LICENSE.md.
+License SHA-256: 8173d5c29b4f956d532781d2b86e4e30f83e6b7878dce18c919451d6ba707c90
+This source-attribution record was written for Catwalk; there is no separate
+upstream NOTICE file applicable to this test asset at the pinned revision.
+
+The reviewed thumbnail is a generated rendering of the separately licensed
+asset. Catwalk previews the actual NURBS centerlines and authored placement,
+not the source's width-expanded extent. This asset does not establish full
+Maya exporter compatibility or ribbon/tube/surface rendering.
