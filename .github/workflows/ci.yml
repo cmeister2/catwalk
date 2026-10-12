@@ -17,7 +17,7 @@ jobs:
   checks:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
         with:
           components: rustfmt, clippy
@@ -30,7 +30,7 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
         run: cargo doc --no-deps --document-private-items --locked
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: lts/*
           cache: npm
@@ -68,7 +68,7 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
@@ -84,7 +84,7 @@ jobs:
         run: cargo run --locked --example gallery -- --report target/format-snapshots --output target/gallery
       - name: Retain snapshot comparisons
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: format-snapshots-${{ runner.os }}
           path: target/format-snapshots
@@ -92,7 +92,7 @@ jobs:
           retention-days: 14
       - name: Retain gallery preview
         if: runner.os == 'Linux' && success()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: thumbnail-gallery
           path: target/gallery
@@ -122,7 +122,7 @@ jobs:
 
   release-plan:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: write
     outputs:
@@ -132,11 +132,11 @@ jobs:
       rust-version: ${{ steps.plan.outputs.rust-version }}
       matrix: ${{ steps.plan.outputs.matrix }}
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: lts/*
           cache: npm
@@ -147,7 +147,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node .github/release/plan.mjs --release
       - name: Retain planned manifests
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: release-plan
           path: release-prepared
@@ -156,7 +156,7 @@ jobs:
   prepare-binaries:
     needs: release-plan
     if: ${{ always() && !cancelled() && (needs.release-plan.result == 'success' || needs.release-plan.result == 'skipped') }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     outputs:
       version: ${{ needs.release-plan.outputs.version || steps.ci-plan.outputs.version }}
       releasing: ${{ needs.release-plan.outputs.releasing || steps.ci-plan.outputs.releasing }}
@@ -164,7 +164,7 @@ jobs:
       rust-version: ${{ needs.release-plan.outputs.rust-version || steps.ci-plan.outputs.rust-version }}
       matrix: ${{ needs.release-plan.outputs.matrix || steps.ci-plan.outputs.matrix }}
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
         with:
           toolchain: ${{ needs.release-plan.outputs.rust-version || 'stable' }}
@@ -172,7 +172,7 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           shared-key: release-notices
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: lts/*
           cache: npm
@@ -183,7 +183,7 @@ jobs:
         run: node .github/release/plan.mjs --ci
       - name: Download planned manifests
         if: needs.release-plan.result == 'success'
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: release-plan
           path: release-prepared
@@ -197,7 +197,7 @@ jobs:
       - name: Generate runtime license notices
         run: node .github/release/notices.mjs --output release-prepared
       - name: Retain prepared binary inputs
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: binary-prepared
           path: release-prepared
@@ -217,7 +217,7 @@ jobs:
       RUSTFLAGS: ${{ matrix.musl && '-C target-feature=+crt-static -C link-self-contained=yes -C linker=rust-lld' || contains(matrix.target, 'windows') && '-C target-feature=+crt-static' || '' }}
       CATWALK_SNAPSHOT_ARTIFACTS: ${{ github.workspace }}/target/release-snapshots
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
         with:
           toolchain: ${{ needs.prepare-binaries.outputs.rust-version }}
@@ -225,13 +225,13 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           shared-key: release-${{ matrix.target }}
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: lts/*
           cache: npm
       - run: npm ci --ignore-scripts
       - name: Download prepared manifests and notices
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: binary-prepared
           path: release-prepared
@@ -250,14 +250,14 @@ jobs:
           TARGET: ${{ matrix.target }}
         run: node .github/release/package.mjs "$TARGET"
       - name: Retain release archives
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: release-binary-${{ matrix.target }}
           path: release-assets
           if-no-files-found: error
       - name: Retain release snapshot comparisons
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: release-snapshots-${{ matrix.target }}
           path: target/release-snapshots
@@ -271,16 +271,16 @@ jobs:
       pages: read
     steps:
       - name: Download verified Linux gallery
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: thumbnail-gallery
           path: target/gallery
       - name: Configure GitHub Pages
         if: github.event.repository.private == false && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
       - name: Upload GitHub Pages artifact
         if: github.event.repository.private == false && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:
           path: target/gallery
 
@@ -300,7 +300,7 @@ jobs:
     steps:
       - name: Deploy verified gallery
         id: deployment
-        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5
 
   release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.prepare-binaries.outputs.releasing == 'true'
@@ -314,20 +314,20 @@ jobs:
     env:
       CARGO_PUBLISH_READY: ${{ secrets.CARGO_REGISTRY_TOKEN != '' || secrets.PUBLISH_SECRET != '' }}
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
         with:
           toolchain: ${{ needs.prepare-binaries.outputs.rust-version }}
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: lts/*
           cache: npm
       - run: npm ci --ignore-scripts
       - name: Download verified release archives
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           pattern: release-binary-*
           path: release-assets
