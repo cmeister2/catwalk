@@ -5,7 +5,7 @@
 use super::{extension, hdf5_owned as hdf, read_file, scientific, volume};
 use crate::{
     Result,
-    scene::{Line, Scene, Triangle, Vec3},
+    scene::{Scene, Triangle, Vec3},
 };
 use hdf::{Dataset, Hdf5File, NcFile};
 use hdf5_reader::{Attribute, Datatype};
@@ -427,57 +427,21 @@ fn grid_scene(positions: &[Vec3], cells: &[Vec<usize>], types: &[usize]) -> Resu
     grid_scene_poly(positions, cells, types, &BTreeMap::new())
 }
 
-/// Extract an unstructured boundary with explicitly described polyhedron faces.
+/// Use the shared VTK point, ordered-line and exterior-face extractor with an aggregate budget.
 fn grid_scene_poly(
     positions: &[Vec3],
     cells: &[Vec<usize>],
     types: &[usize],
     polyhedra: &BTreeMap<usize, Vec<Vec<usize>>>,
 ) -> Result<Scene> {
-    if cells.len() != types.len() {
-        return Err("scientific cell/type counts disagree".into());
+    let scene = if polyhedra.is_empty() {
+        scientific::grid_scene(positions, cells, types)?
+    } else {
+        scientific::grid_scene_with_polyhedra(positions, cells, types, polyhedra)?
+    };
+    if scene.triangles.len() + scene.points.len() + scene.lines.len() > 5_000_000 {
+        return Err("scientific scene exceeds five million primitives".into());
     }
-    let mut scene = Scene::default();
-    let mut faces = Vec::new();
-    let mut face_types = Vec::new();
-    let mut face_polyhedra = BTreeMap::new();
-    for (i, (cell, &kind)) in cells.iter().zip(types).enumerate() {
-        if matches!(kind, 3 | 4) {
-            if cell.len() < 2 || (kind == 3 && cell.len() != 2) {
-                return Err("invalid scientific line vertex count".into());
-            }
-            for pair in cell.windows(2) {
-                let a = *positions
-                    .get(pair[0])
-                    .ok_or("scientific line index out of bounds")?;
-                let b = *positions
-                    .get(pair[1])
-                    .ok_or("scientific line index out of bounds")?;
-                scene.lines.push(Line {
-                    vertices: [a, b],
-                    color: None,
-                });
-                if scene.lines.len() > 5_000_000 {
-                    return Err("scientific lines exceed five million segments".into());
-                }
-            }
-        } else if kind != 0 {
-            if let Some(poly) = polyhedra.get(&i) {
-                face_polyhedra.insert(faces.len(), poly.clone());
-            }
-            faces.push(cell.clone());
-            face_types.push(kind);
-        }
-    }
-    if !faces.is_empty() {
-        let child = if face_polyhedra.is_empty() {
-            scientific::grid_scene(positions, &faces, &face_types)?
-        } else {
-            scientific::grid_scene_with_polyhedra(positions, &faces, &face_types, &face_polyhedra)?
-        };
-        merge(&mut scene, child)?;
-    }
-    scene.validate()?;
     Ok(scene)
 }
 

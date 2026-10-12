@@ -541,20 +541,33 @@ fn xml_polyhedra(
 
 /// Validate a polyline and append its consecutive finite segments.
 fn append_line(positions: &[Vec3], indices: &[usize], scene: &mut Scene) -> Result<()> {
-    if indices.len() < 2 {
-        return Err("VTK polyline needs at least two vertices".into());
-    }
+    line_segment_count(indices.len(), scene.lines.len())?;
     let points = checked_positions(positions, indices)?;
     for pair in points.windows(2) {
-        if scene.lines.len() >= MAX_ITEMS {
-            return Err("VTK output line count exceeds geometry limit".into());
-        }
         scene.lines.push(Line {
             vertices: [pair[0], pair[1]],
             color: None,
         });
     }
     Ok(())
+}
+
+/// Preflight a complete ordered line cell against the shared output segment budget.
+///
+/// # Errors
+/// A cell has fewer than two vertices, its output count overflows, or its segments exceed the limit.
+fn line_segment_count(vertices: usize, existing: usize) -> Result<usize> {
+    let segments = vertices
+        .checked_sub(1)
+        .filter(|&count| count != 0)
+        .ok_or("VTK polyline needs at least two vertices")?;
+    if existing
+        .checked_add(segments)
+        .is_none_or(|count| count > MAX_ITEMS)
+    {
+        return Err("VTK output line count exceeds geometry limit".into());
+    }
+    Ok(segments)
 }
 
 /// Resolve cell indices into finite point coordinates.
@@ -648,7 +661,7 @@ fn append_polydata(
     Ok(())
 }
 
-/// Internal volume faces occur twice and are discarded before triangulation.
+/// Preserve point and ordered line cells, and discard internal volume faces before triangulation.
 ///
 /// # Errors
 /// Returns an error for mismatched cell/type arrays, unsupported cell types, invalid indices,
@@ -664,7 +677,7 @@ pub(super) fn grid_scene(
     Ok(scene)
 }
 
-/// Extract exposed unstructured-cell faces, including explicitly described closed polyhedra.
+/// Extract unstructured points, ordered lines and exposed faces, including closed polyhedra.
 ///
 /// # Errors
 /// Returns an error for mismatched cell/type/face arrays, unsupported cells, invalid vertex
@@ -681,7 +694,7 @@ pub(super) fn grid_scene_with_polyhedra(
     Ok(scene)
 }
 
-/// Append visible faces from standard unstructured-cell topology.
+/// Append points, ordered lines and visible faces from standard unstructured-cell topology.
 fn append_grid(
     positions: &[Vec3],
     cells: &[Vec<usize>],
@@ -691,7 +704,7 @@ fn append_grid(
     append_grid_with_polyhedra(positions, cells, types, scene, None)
 }
 
-/// Count shared cell faces and emit only the exterior boundary with validated topology.
+/// Preserve authored point/line cells and emit exterior cell faces with validated topology.
 #[allow(
     clippy::cast_precision_loss,
     reason = "Cell vertex counts are bounded by supported topology; f64 averaging computes an approximate face center."
@@ -712,10 +725,15 @@ fn append_grid_with_polyhedra(
     }
     let mut volume_faces: BTreeMap<Vec<usize>, (usize, Vec<usize>)> = BTreeMap::new();
     for (cell_index, (indices, &cell_type)) in cells.iter().zip(types).enumerate() {
-        checked_positions(positions, indices)?;
+        // The line helper validates every index after preflighting the entire
+        // segment output; avoid allocating a second endpoint copy for lines.
+        if !matches!(cell_type, 3 | 4) {
+            checked_positions(positions, indices)?;
+        }
         let expected = match cell_type {
             0 => Some(0),
             1 => Some(1),
+            3 => Some(2),
             5 => Some(3),
             8..=10 => Some(4),
             11 | 12 => Some(8),
@@ -743,6 +761,7 @@ fn append_grid_with_polyhedra(
                     append_point(positions[index], scene)?;
                 }
             }
+            3 | 4 => append_line(positions, indices, scene)?,
             5 | 7 | 9 => append_polygon(positions, indices, scene)?,
             6 => append_strip(positions, indices, scene)?,
             8 => append_polygon(
@@ -914,6 +933,144 @@ mod tests {
                 .iter()
                 .all(|t| t.vertices.iter().any(|p| p.z != 0.0))
         );
+    }
+
+    #[test]
+    fn unstructured_lines_preserve_order_closed_paths_repeats_and_signed_zero() {
+        let positions = [
+            Vec3::new(0., -0.0, 1.),
+            Vec3::new(2., 1., 0.),
+            Vec3::new(-1., 3., 2.),
+            Vec3::new(5., -2., 4.),
+        ];
+        let cells = [vec![3, 1], vec![1, 0, 0, 2, 1], vec![2, 3]];
+        let scene = grid_scene(&positions, &cells, &[3, 4, 3]).unwrap();
+        let expected = [[3, 1], [1, 0], [0, 0], [0, 2], [2, 1], [2, 3]]
+            .map(|pair| pair.map(|index| positions[index]));
+        assert_eq!(scene.lines.len(), 6);
+        for (line, vertices) in scene.lines.iter().zip(expected) {
+            assert_eq!(line.vertices, vertices);
+            assert!(line.color.is_none());
+        }
+        assert_eq!(scene.lines[1].vertices[1].y.to_bits(), (-0.0_f64).to_bits());
+        assert_eq!(scene.lines[2].vertices[0], scene.lines[2].vertices[1]);
+        assert!(scene.triangles.is_empty());
+        assert!(scene.points.is_empty());
+        let two_point_polyline = grid_scene(&positions, &[vec![1, 2]], &[4]).unwrap();
+        assert_eq!(two_point_polyline.lines.len(), 1);
+        assert_eq!(
+            two_point_polyline.lines[0].vertices,
+            [positions[1], positions[2]]
+        );
+    }
+
+    #[test]
+    fn unstructured_mixed_primitives_retain_lines_and_cancel_only_volume_faces() {
+        let positions = [
+            Vec3::new(0., 0., 0.),
+            Vec3::new(1., 0., 0.),
+            Vec3::new(0., 1., 0.),
+            Vec3::new(0., 0., 1.),
+            Vec3::new(0., 0., -1.),
+            Vec3::new(7., 4., 2.),
+            Vec3::new(8., 3., 1.),
+            Vec3::new(9., 5., 0.),
+            Vec3::new(7., 8., 1.),
+        ];
+        let cells = [
+            vec![5],
+            vec![5, 6],
+            vec![0, 1],
+            vec![1, 2, 0],
+            vec![5, 7, 8],
+            vec![0, 1, 2, 3],
+            vec![0, 2, 1, 4],
+        ];
+        let scene = grid_scene(&positions, &cells, &[1, 2, 3, 4, 5, 10, 10]).unwrap();
+        assert_eq!(scene.points.len(), 3);
+        assert_eq!(scene.lines.len(), 3);
+        assert_eq!(scene.triangles.len(), 7);
+        assert_eq!(scene.points[0].position, positions[5]);
+        assert_eq!(scene.points[1].position, positions[5]);
+        assert_eq!(scene.points[2].position, positions[6]);
+        for (line, pair) in scene.lines.iter().zip([[0, 1], [1, 2], [2, 0]]) {
+            assert_eq!(line.vertices, pair.map(|index| positions[index]));
+        }
+        assert_eq!(
+            scene.triangles[0].vertices,
+            [positions[5], positions[7], positions[8]]
+        );
+        assert!(
+            scene.triangles[1..]
+                .iter()
+                .all(|triangle| { triangle.vertices.iter().any(|position| position.z != 0.) })
+        );
+    }
+
+    #[test]
+    fn unstructured_line_siblings_preserve_original_polyhedron_cell_indices() {
+        let positions = [
+            Vec3::new(0., 0., 0.),
+            Vec3::new(1., 0., 0.),
+            Vec3::new(0., 1., 0.),
+            Vec3::new(0., 0., 1.),
+            Vec3::new(4., 5., 6.),
+        ];
+        let cells = [vec![0, 1], vec![], vec![0, 1, 2, 3], vec![4]];
+        let faces = BTreeMap::from([(
+            2,
+            vec![vec![0, 2, 1], vec![0, 1, 3], vec![1, 2, 3], vec![2, 0, 3]],
+        )]);
+        let scene = grid_scene_with_polyhedra(&positions, &cells, &[3, 0, 42, 1], &faces).unwrap();
+        assert_eq!(scene.triangles.len(), 4);
+        assert_eq!(scene.lines.len(), 1);
+        assert_eq!(scene.points.len(), 1);
+        assert_eq!(scene.lines[0].vertices, [positions[0], positions[1]]);
+        assert_eq!(scene.points[0].position, positions[4]);
+        assert!(grid_scene(&positions, &[vec![0], vec![0, 1]], &[0, 3]).is_err());
+    }
+
+    #[test]
+    fn unstructured_lines_reject_bad_cardinalities_indices_and_nonfinite_geometry() {
+        let positions = [
+            Vec3::new(0., 0., 0.),
+            Vec3::new(1., 0., 0.),
+            Vec3::new(0., 1., 0.),
+        ];
+        for cell in [vec![], vec![0], vec![0, 1, 2]] {
+            let error = grid_scene(&positions, &[cell], &[3])
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains("invalid vertex count"));
+        }
+        for cell in [vec![], vec![0]] {
+            let error = grid_scene(&positions, &[cell], &[4])
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains("at least two"));
+        }
+        for (cell, kind) in [(vec![0, 3], 3), (vec![0, 1, usize::MAX], 4)] {
+            assert!(grid_scene(&positions, &[cell], &[kind]).is_err());
+        }
+        let mut scene = grid_scene(&positions, &[vec![0, 1]], &[3]).unwrap();
+        assert!(append_line(&positions, &[0, 1, 9], &mut scene).is_err());
+        assert_eq!(scene.lines.len(), 1);
+        let nonfinite = [positions[0], Vec3::new(f64::NAN, 0., 0.)];
+        assert!(grid_scene(&nonfinite, &[vec![0, 1]], &[3]).is_err());
+        assert!(grid_scene(&positions, &[vec![0, 1]], &[]).is_err());
+        assert!(grid_scene(&positions, &[vec![0, 1]], &[21]).is_err());
+    }
+
+    #[test]
+    fn ordered_line_output_budget_is_checked_before_endpoint_expansion() {
+        assert_eq!(line_segment_count(2, MAX_ITEMS - 1).unwrap(), 1);
+        assert_eq!(line_segment_count(3, MAX_ITEMS - 2).unwrap(), 2);
+        assert_eq!(line_segment_count(MAX_ITEMS + 1, 0).unwrap(), MAX_ITEMS);
+        assert!(line_segment_count(2, MAX_ITEMS).is_err());
+        assert!(line_segment_count(3, MAX_ITEMS - 1).is_err());
+        assert!(line_segment_count(MAX_ITEMS + 2, 0).is_err());
+        assert!(line_segment_count(2, usize::MAX).is_err());
+        assert!(line_segment_count(usize::MAX, 2).is_err());
     }
 
     #[test]
