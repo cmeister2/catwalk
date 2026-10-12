@@ -24,6 +24,9 @@ mod saved_previews;
 #[path = "fixtures/scientific_cad.rs"]
 /// Generate scientific datasets and CAD boundary representations.
 mod scientific_cad;
+#[path = "fixtures/vtk_lines.rs"]
+/// Register scientific line cells and generate equivalent mixed unstructured grids.
+mod vtk_lines;
 
 #[path = "fixtures/amf.rs"]
 /// Register original plain and compressed AMF exporter references.
@@ -82,6 +85,7 @@ fn main() -> Result<()> {
     cases.extend(saved_previews::generate_fusion(&root)?);
     cases.extend(saved_previews::generate_inventor(&root)?);
     cases.extend(native_geometry::generate(&root)?);
+    cases.extend(vtk_lines::generate(&root)?);
     cases.extend(binary_brep::generate(&root)?);
     cases.extend(obj_appearance::generate(&root)?);
     cases.extend(collada_primitives::generate(&root)?);

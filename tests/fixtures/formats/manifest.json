@@ -1465,12 +1465,36 @@
       "title": "VTK legacy ASCII shared tetrahedral surface"
     },
     {
+      "extension": "vtk",
+      "id": "vtk-unstructured-lines-ascii",
+      "input": "vtk_lines/vtk-unstructured-lines-ascii.vtk",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "Legacy VTK ASCII mixed line, point and surface cells"
+    },
+    {
+      "extension": "vtk",
+      "id": "vtk-unstructured-lines-binary-v5",
+      "input": "vtk_lines/vtk-unstructured-lines-binary-v5.vtk",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "Legacy VTK big-endian V5 mixed line cells"
+    },
+    {
       "extension": "vtkhdf",
       "id": "vtkhdf-filtered-tetrahedra",
       "input": "scientific_cad/vtkhdf-filtered-tetrahedra.vtkhdf",
       "kind": "model",
       "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
       "title": "VTKHDF shuffle/deflate shared-cell boundary"
+    },
+    {
+      "extension": "vtkhdf",
+      "id": "vtkhdf-unstructured-lines",
+      "input": "vtk_lines/vtkhdf-unstructured-lines.vtkhdf",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "VTKHDF mixed line, point and surface cells"
     },
     {
       "extension": "vtm",
@@ -1511,6 +1535,22 @@
       "kind": "model",
       "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
       "title": "VTK XML indexed tetrahedron"
+    },
+    {
+      "extension": "vtu",
+      "id": "vtu-f3d-persistence-diagram-lines",
+      "input": "vtk_lines/pdiag.vtu",
+      "kind": "model",
+      "provenance": "Unmodified f3d-app/f3d testing/data/pdiag.vtu at commit 09ba978ad03eb40466548f340c0db7c18843a354; SHA-256 61152cf6369593d3cb4d7213496cd0fc0da298e37de156f93f965e8585b2e342. BSD-3-Clause under the original F3D license and DATA_LICENSES mapping retained in vtk_lines/F3D-LICENSE.md and vtk_lines/F3D-DATA_LICENSES.md. Original base64-appended zlib VTU contains 6992 points and 3497 line cells. https://github.com/f3d-app/f3d/blob/09ba978ad03eb40466548f340c0db7c18843a354/testing/data/pdiag.vtu",
+      "title": "F3D original persistence diagram with 3497 line cells"
+    },
+    {
+      "extension": "vtu",
+      "id": "vtu-unstructured-lines-ascii",
+      "input": "vtk_lines/vtu-unstructured-lines-ascii.vtu",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
+      "title": "VTU ASCII mixed line, point and surface cells"
     },
     {
       "extension": "vtu",

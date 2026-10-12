@@ -111,7 +111,9 @@ Topology, placed vertices and nested geometry records are validated. Surface tes
 
 The legacy VTK reader accepts ASCII and standard big-endian binary geometry, classic cell lists and version-5 offsets/connectivity sections. POLYDATA supports polygons, triangle strips, vertices and polylines; linear UNSTRUCTURED_GRID and structured/rectilinear/structured-point boundaries are rendered.
 
-Grid boundaries are extracted for tetrahedra, voxels, hexahedra, wedges and pyramids, removing shared faces. Vertex/polyvertex, triangle, triangle-strip, polygon, pixel and quadrilateral cells are also accepted. Polygons use concave-aware triangulation. Legacy polyhedron face streams remain unsupported.
+Grid boundaries are extracted for tetrahedra, voxels, hexahedra, wedges and pyramids, removing shared faces. Vertex/polyvertex, line/polyline, triangle, triangle-strip, polygon, pixel and quadrilateral cells are also accepted. Type-3 lines require exactly two vertices, and type-4 polylines require at least two; ordered adjacent endpoint pairs become segments, including repeated or explicitly closing endpoints. Polygons use concave-aware triangulation. Legacy polyhedron face streams remain unsupported.
+
+[Four equivalent authored mixed-cell grids](../tests/fixtures/formats/vtk_lines/README.md) check line, polyline, point and surface geometry across classic ASCII, version-5 big-endian offsets/connectivity, XML and the already-supported VTKHDF line path. Independent tests compare literal coordinates, cell associations, bounds, line lengths, triangle area and complete rendered pixels. Shared point/connectivity/output caps and decoded-array limits apply to line cells as well.
 
 See [scientific arrays and cell limits](#scientific-arrays-and-cell-limits) for validation, shared limits and reference checks.
 
@@ -129,7 +131,9 @@ PolyData XML preserves polygons, triangle strips, vertices and polylines. Polygo
 
 **Coverage:** Subset: ASCII/binary/appended XML, zlib/LZ4; linear cells and closed convex polyhedra.
 
-Grid boundaries are extracted for tetrahedra, voxels, hexahedra, wedges and pyramids, removing shared faces. XML type-42 convex polyhedra require closed face topology. Vertex/polyvertex, triangle, triangle-strip, polygon, pixel and quadrilateral cells are also accepted. Polygons use concave-aware triangulation.
+Grid boundaries are extracted for tetrahedra, voxels, hexahedra, wedges and pyramids, removing shared faces. XML type-42 convex polyhedra require closed face topology. Vertex/polyvertex, line/polyline, triangle, triangle-strip, polygon, pixel and quadrilateral cells are also accepted. Type-3 lines require two vertices, and type-4 polylines expand adjacent endpoint pairs in their stored order; repeated/closing endpoints are retained. Polygons use concave-aware triangulation.
+
+The unchanged [F3D `pdiag.vtu` dataset](../tests/fixtures/formats/vtk_lines/README.md) retains its original BSD-3-Clause notice and license mapping. It qualifies 3,497 ordered line cells, including 282 coincident-endpoint segments, from appended zlib-compressed arrays. Independent geometry checks preserve every endpoint association, bounds and total segment length `141.33120573828802`; its snapshot uses the stored geometry and fallback color. Simulation/scalar attributes are not rendered as a color map. Higher-order cells remain unsupported.
 
 See [scientific arrays and cell limits](#scientific-arrays-and-cell-limits) for supported encodings, compression and validation.
 
