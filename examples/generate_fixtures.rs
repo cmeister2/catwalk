@@ -1,5 +1,8 @@
 //! Regenerate the authored, portable format corpus. PNG baselines are updated
 //! separately so fixture regeneration can never silently approve a new image.
+#[path = "fixtures/binary_brep.rs"]
+/// Register original BREP counterparts and generate native table placement controls.
+mod binary_brep;
 #[path = "fixtures/collada_primitives.rs"]
 /// Generate COLLADA static primitive controls and register licensed conformance models.
 mod collada_primitives;
@@ -79,6 +82,7 @@ fn main() -> Result<()> {
     cases.extend(saved_previews::generate_fusion(&root)?);
     cases.extend(saved_previews::generate_inventor(&root)?);
     cases.extend(native_geometry::generate(&root)?);
+    cases.extend(binary_brep::generate(&root)?);
     cases.extend(obj_appearance::generate(&root)?);
     cases.extend(collada_primitives::generate(&root)?);
     cases.sort_by(|a, b| a.extension.cmp(&b.extension).then(a.id.cmp(&b.id)));

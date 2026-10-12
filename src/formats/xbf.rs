@@ -1,4 +1,4 @@
-//! Static XCAF documents, decoded from native OCAF/BinTools binary records.
+//! Static XCAF documents and standalone BREP, decoded from native OCAF/BinTools binary records.
 //! Layout facts follow the primary OCCT serializers, not an ASCII alias:
 //! <https://github.com/Open-Cascade-SAS/OCCT/tree/V7_9_0/src/BinTools>
 //! <https://github.com/Open-Cascade-SAS/OCCT/tree/V7_9_0/src/BinLDrivers>
@@ -784,6 +784,54 @@ pub(super) fn load(path: &Path) -> Result<Scene> {
     parse(&bytes)
 }
 
+/// Recognize the native binary topology header without reinterpreting arbitrary input as BREP.
+pub(super) fn is_binary_brep(bytes: &[u8]) -> bool {
+    bytes
+        .trim_ascii_start()
+        .starts_with(b"Open CASCADE Topology V")
+}
+
+/// Decode one standalone native binary BREP root using the shared XCAF geometry tables.
+///
+/// # Errors
+///
+/// Input size, topology version, tables, root reference, exact file extent or geometry is invalid or unsupported.
+pub(super) fn load_binary_brep(bytes: &[u8]) -> Result<Scene> {
+    if bytes.len() > MAX_BYTES {
+        return Err("binary BREP input exceeds the 16 MiB preview limit".into());
+    }
+    if !is_binary_brep(bytes) {
+        return Err("binary BREP lacks a native topology header".into());
+    }
+    let mut cursor = Cursor::new(bytes);
+    let mut tables = Tables::default();
+    tables.read_native_tables(&mut cursor)?;
+    let root = tables
+        .table_reference(&mut cursor, tables.shapes.len())?
+        .ok_or("binary BREP root is null")?;
+    if cursor.pos != bytes.len() {
+        return Err("binary BREP contains trailing data after its root".into());
+    }
+    let faces = tables.containing_faces()?;
+    let mut primitives = Vec::new();
+    let mut occurrences = 0;
+    collect_primitives(
+        &tables,
+        root,
+        Transform::IDENTITY,
+        None,
+        &HashMap::new(),
+        &faces,
+        &mut primitives,
+        &mut occurrences,
+        0,
+    )?;
+    if primitives.is_empty() {
+        return Err("binary BREP has no renderable geometry".into());
+    }
+    tables.render_primitives(&primitives)
+}
+
 /// Document label attributes needed for shape ownership, placement and color.
 #[derive(Default)]
 struct Label {
@@ -942,10 +990,6 @@ impl Tables {
     /// # Errors
     ///
     /// Table schemas, references, numeric data or limits are invalid or unsupported.
-    #[allow(
-        clippy::too_many_lines,
-        reason = "Keep the format record dispatch, validation and its resource checks together without changing geometry evaluation."
-    )]
     fn read_old(&mut self, cursor: &mut Cursor<'_>) -> Result<()> {
         let start = cursor.pos;
         let prefix = cursor
@@ -956,6 +1000,19 @@ impl Tables {
             return Err("XBF document lacks a native shape section".into());
         }
         cursor.take(13)?;
+        self.read_native_tables(cursor)
+    }
+
+    /// Read shared native version, placement, geometry and backward-referenced topology tables.
+    ///
+    /// # Errors
+    ///
+    /// Native table schemas, numeric values, references or resource limits are invalid or unsupported.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Keep the bounded native table dispatch and its reference validation together."
+    )]
+    fn read_native_tables(&mut self, cursor: &mut Cursor<'_>) -> Result<()> {
         while cursor
             .bytes
             .get(cursor.pos)
@@ -1029,31 +1086,11 @@ impl Tables {
                 flags |= cursor.boolean()? << bit;
             }
             let mut children = Vec::new();
-            loop {
-                let orientation = cursor.byte()?;
-                if orientation == b'*' {
-                    break;
-                }
-                if orientation > 3 {
-                    return Err("invalid XBF table orientation".into());
-                }
-                let reverse_id = cursor.count(total)?;
-                if reverse_id == 0 {
-                    return Err("zero XBF topology reference".into());
-                }
-                let node = total - reverse_id;
-                if node >= self.shapes.len() {
-                    return Err("forward/cyclic XBF topology reference".into());
-                }
-                let location = cursor.count(self.locations.len())?;
+            while let Some(reference) = self.table_reference(cursor, total)? {
                 if children.len() >= MAX_RECORDS {
                     return Err("XBF shape has too many children".into());
                 }
-                children.push(ShapeRef {
-                    node,
-                    location,
-                    orientation,
-                });
+                children.push(reference);
             }
             self.shapes.push(Shape {
                 kind,
@@ -1063,6 +1100,55 @@ impl Tables {
             });
         }
         Ok(())
+    }
+
+    /// Decode one native occurrence or null marker using reverse table indices.
+    ///
+    /// # Errors
+    ///
+    /// Orientation, shape/location indices or backward-reference ordering is invalid or truncated.
+    fn table_reference(&self, cursor: &mut Cursor<'_>, total: usize) -> Result<Option<ShapeRef>> {
+        let orientation = cursor.byte()?;
+        if orientation == b'*' {
+            return Ok(None);
+        }
+        if orientation > 3 {
+            return Err("invalid native BREP table orientation".into());
+        }
+        let reverse_id = cursor.count(total)?;
+        if reverse_id == 0 {
+            return Err("zero native BREP topology reference".into());
+        }
+        let node = total - reverse_id;
+        if node >= self.shapes.len() {
+            return Err("forward/cyclic native BREP topology reference".into());
+        }
+        let location = cursor.count(self.locations.len())?;
+        Ok(Some(ShapeRef {
+            node,
+            location,
+            orientation,
+        }))
+    }
+
+    /// Validate backward topology ordering and mark records containing faces.
+    ///
+    /// # Errors
+    ///
+    /// A child shape refers forward or forms a cycle.
+    fn containing_faces(&self) -> Result<Vec<bool>> {
+        let mut faces = Vec::with_capacity(self.shapes.len());
+        for (index, shape) in self.shapes.iter().enumerate() {
+            let mut contains = shape.kind == 4;
+            for child in &shape.children {
+                if child.node >= index {
+                    return Err("forward or cyclic native BREP shape topology".into());
+                }
+                contains |= faces[child.node];
+            }
+            faces.push(contains);
+        }
+        Ok(faces)
     }
     /// Translate legacy table-based shape representations to BREP syntax.
     ///
@@ -1084,11 +1170,27 @@ impl Tables {
             7 => {
                 real_text(cursor, &mut out, 4)?;
                 loop {
-                    let rep = cursor.byte()?;
+                    // Historical V1/V2 vertices put the parameter before its
+                    // kind byte. OCCT also accepts modern kind-first records
+                    // for those versions using this same lookahead.
+                    let parameter_first = version <= 2
+                        && cursor
+                            .bytes
+                            .get(cursor.pos + 8)
+                            .is_some_and(|kind| (1..=3).contains(kind));
+                    let rep = if parameter_first {
+                        cursor.real()?;
+                        cursor.byte()?
+                    } else {
+                        let rep = cursor.byte()?;
+                        if rep != 0 {
+                            cursor.real()?;
+                        }
+                        rep
+                    };
                     if rep == 0 {
                         break;
                     }
-                    cursor.real()?;
                     match rep {
                         1 => {
                             cursor.count(self.curves.len())?;
@@ -1524,17 +1626,7 @@ impl Document {
                 }
             }
         }
-        let mut faces = Vec::with_capacity(tables.shapes.len());
-        for (index, shape) in tables.shapes.iter().enumerate() {
-            let mut contains = shape.kind == 4;
-            for child in &shape.children {
-                if child.node >= index {
-                    return Err("forward or cyclic XBF shape topology".into());
-                }
-                contains |= faces[child.node];
-            }
-            faces.push(contains);
-        }
+        let faces = tables.containing_faces()?;
         let mut primitives = Vec::new();
         let mut occurrences = 0;
         for (index, label) in self.labels.iter().enumerate() {
@@ -1566,18 +1658,32 @@ impl Document {
         if primitives.is_empty() {
             return Err("XBF document has no free renderable shapes".into());
         }
-        let text = tables.brep(&primitives)?;
-        let (mut model, root) = ogeom_io::brep::read(&text, ogeom_core::Tolerances::millimetres())?;
+        tables.render_primitives(&primitives)
+    }
+}
+
+impl Tables {
+    /// Restore native carrier geometry and tessellate only selected shape occurrences.
+    ///
+    /// # Errors
+    ///
+    /// Conversion, carrier placements, topology, tessellation or the resulting scene is invalid or excessive.
+    fn render_primitives(&mut self, primitives: &[Primitive]) -> Result<Scene> {
+        let text = self.brep(primitives)?;
+        let (mut model, root) = super::cad::read_brep_with_authored_frames(
+            &text,
+            ogeom_core::Tolerances::millimetres(),
+        )?;
         let children = model.children_of(&root)?;
-        if children.len() != primitives.len() + tables.shapes.len() {
+        if children.len() != primitives.len() + self.shapes.len() {
             return Err("XBF topology conversion omitted a primitive".into());
         }
-        tables.restore_representation_locations(&mut model, &children[..tables.shapes.len()])?;
+        self.restore_representation_locations(&mut model, &children[..self.shapes.len()])?;
         let mut scene = Scene::default();
         for (shape, (_, _, color)) in children
             .into_iter()
-            .skip(tables.shapes.len())
-            .zip(primitives)
+            .skip(self.shapes.len())
+            .zip(primitives.iter().copied())
         {
             let first_triangle = scene.triangles.len();
             let first_point = scene.points.len();
@@ -1660,16 +1766,15 @@ fn collect_primitives(
         ));
         return Ok(());
     }
-    // Face boundaries and solid wire edges are already represented by their
-    // faces. Wire-only documents retain their actual edge curves.
-    let contains_faces = faces[reference.node];
+    // Stopping at a face already retains its boundaries exactly once. Other
+    // compound children may be independent free wires or isolated vertices.
     for child in &shape.children {
-        if contains_faces && !faces[child.node] {
-            continue;
-        }
         collect_primitives(
             tables,
-            *child,
+            ShapeRef {
+                orientation: compose_orientation(reference.orientation, child.orientation)?,
+                ..*child
+            },
             world,
             color,
             colors,
@@ -1680,6 +1785,21 @@ fn collect_primitives(
         )?;
     }
     Ok(())
+}
+
+/// Compose native occurrence orientations as OCCT's `TopoDS_Iterator` does.
+/// Its `TopAbs::Compose(parent, child)` implementation indexes the child row
+/// and parent column, including the asymmetric internal/external cases.
+///
+/// # Errors
+///
+/// Either orientation lies outside the four native enumeration values.
+fn compose_orientation(parent: u8, child: u8) -> Result<u8> {
+    [[0, 1, 2, 3], [1, 0, 2, 3], [2, 2, 2, 2], [3, 3, 3, 3]]
+        .get(usize::from(child))
+        .and_then(|row| row.get(usize::from(parent)))
+        .copied()
+        .ok_or_else(|| "invalid native BREP occurrence orientation".into())
 }
 
 impl Tables {
@@ -1977,6 +2097,665 @@ fn write_reference(out: &mut String, shape: ShapeRef, total: usize) -> Result<()
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Emit a primary native table header for one of its four supported versions.
+    fn native_header(version: u32) -> Vec<u8> {
+        let line = match version {
+            1 => "Open CASCADE Topology V1 (c)",
+            2 => "Open CASCADE Topology V2 (c)",
+            3 => "Open CASCADE Topology V3 (c)",
+            4 => "Open CASCADE Topology V4, (c) Open Cascade",
+            _ => unreachable!(),
+        };
+        format!("\n{line}\n").into_bytes()
+    }
+
+    /// Serialize direct native placement records in mathematical row order.
+    fn native_locations(out: &mut Vec<u8>, placements: &[Transform]) {
+        out.extend(format!("Locations {}\n", placements.len()).as_bytes());
+        for placement in placements {
+            out.push(1);
+            for row in 0..3 {
+                for column in &placement.0 {
+                    real(out, column[row]);
+                }
+            }
+        }
+    }
+
+    /// Write shape flags, independently authored reverse references and the null terminator.
+    fn native_children(out: &mut Vec<u8>, children: &[(u8, i32, i32)]) {
+        out.extend([0, 0, 0, 1, 0, 0, 0]);
+        for &(orientation, reverse_id, location) in children {
+            out.push(orientation);
+            integer(out, reverse_id);
+            integer(out, location);
+        }
+        out.push(b'*');
+    }
+
+    /// Build two native points under a compound with independent child/root placements.
+    fn native_points(
+        version: u32,
+        placements: &[Transform],
+        child_location: i32,
+        root_location: i32,
+    ) -> Vec<u8> {
+        let mut out = native_header(version);
+        native_locations(&mut out, placements);
+        out.extend(b"Curve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 3\n");
+        for point in [[1., 2., 3.], [4., 5., 6.]] {
+            out.push(7);
+            real(&mut out, 1e-7);
+            reals(&mut out, &point);
+            out.push(0);
+            native_children(&mut out, &[]);
+        }
+        out.push(0);
+        native_children(&mut out, &[(0, 3, child_location), (0, 2, child_location)]);
+        out.push(0);
+        integer(&mut out, 1);
+        integer(&mut out, root_location);
+        out
+    }
+
+    /// Build a wound triangle, an independent free edge and one isolated point in native V4.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Keep the independently authored native geometry and reverse topology indices together."
+    )]
+    fn native_mixed(
+        carrier: Transform,
+        root: Transform,
+        root_orientation: u8,
+        face_orientation: u8,
+    ) -> Vec<u8> {
+        let points = [
+            Vec3::new(0., 0., 0.),
+            Vec3::new(2., 0., 0.),
+            Vec3::new(0., 1., 0.),
+            Vec3::new(4., 0., 0.),
+            Vec3::new(5., 0., 0.),
+            Vec3::new(8., 4., 3.),
+        ];
+        let endpoints = [(0_usize, 1_usize), (1, 2), (2, 0), (3, 4)];
+        let mut out = native_header(4);
+        native_locations(&mut out, &[carrier, root]);
+        out.extend(b"Curve2ds 3\n");
+        for &(start, end) in &endpoints[..3] {
+            let vector = (points[end] - points[start]).normalized();
+            out.push(1);
+            reals(
+                &mut out,
+                &[points[start].x, points[start].y, vector.x, vector.y],
+            );
+        }
+        out.extend(b"Curves 4\n");
+        for &(start, end) in &endpoints {
+            let vector = (points[end] - points[start]).normalized();
+            out.push(1);
+            reals(
+                &mut out,
+                &[
+                    points[start].x,
+                    points[start].y,
+                    points[start].z,
+                    vector.x,
+                    vector.y,
+                    vector.z,
+                ],
+            );
+        }
+        out.extend(b"Polygon3D 0\nPolygonOnTriangulations 0\nSurfaces 1\n");
+        out.push(1);
+        reals(&mut out, &[0., 0., 0., 0., 0., 1., 1., 0., 0., 0., 1., 0.]);
+        out.extend(b"Triangulations 0\nTShapes 13\n");
+        for point in points {
+            let point = carrier.apply(point);
+            out.push(7);
+            reals(&mut out, &[1e-7, point.x, point.y, point.z]);
+            out.push(0);
+            native_children(&mut out, &[]);
+        }
+        for (index, &(start, end)) in endpoints.iter().enumerate() {
+            let length = (points[end] - points[start]).length();
+            let id = i32::try_from(index + 1).unwrap();
+            out.push(6);
+            real(&mut out, 1e-7);
+            out.extend([1, 1, 0, 1]);
+            integer(&mut out, id);
+            integer(&mut out, 1);
+            reals(&mut out, &[0., length]);
+            if index < 3 {
+                out.push(2);
+                integer(&mut out, id);
+                integer(&mut out, 1);
+                integer(&mut out, 1);
+                reals(&mut out, &[0., length]);
+            }
+            out.push(0);
+            native_children(
+                &mut out,
+                &[
+                    (0, 13 - i32::try_from(start).unwrap(), 0),
+                    (1, 13 - i32::try_from(end).unwrap(), 0),
+                ],
+            );
+        }
+        out.push(5);
+        native_children(&mut out, &[(0, 7, 0), (0, 6, 0), (0, 5, 0)]);
+        out.extend([4, 0]);
+        real(&mut out, 1e-7);
+        integer(&mut out, 1);
+        integer(&mut out, 1);
+        out.push(0);
+        native_children(&mut out, &[(0, 3, 0)]);
+        out.push(0);
+        native_children(&mut out, &[(face_orientation, 2, 0), (0, 4, 0), (0, 8, 0)]);
+        out.push(root_orientation);
+        integer(&mut out, 1);
+        integer(&mut out, 2);
+        out
+    }
+
+    /// Author an indirect plane with asymmetric UV trim and independently placed vertices.
+    fn native_indirect_plane(placed: bool) -> Vec<u8> {
+        let carrier = if placed {
+            Transform([
+                [0., 1., 0., 0.],
+                [-1., 0., 0., 0.],
+                [0., 0., 1., 0.],
+                [10., 3., -1., 1.],
+            ])
+        } else {
+            Transform::IDENTITY
+        };
+        let points = if placed {
+            [[12., 10., 4.], [12., 13., 4.], [8., 10., 4.]]
+        } else {
+            [[7., -2., 5.], [10., -2., 5.], [7., 2., 5.]]
+        };
+        let mut out = native_header(4);
+        native_locations(&mut out, &[carrier]);
+        out.extend(b"Curve2ds 3\n");
+        for line in [[0., 0., 1., 0.], [3., 0., -0.6, 0.8], [0., 4., 0., -1.]] {
+            out.push(1);
+            reals(&mut out, &line);
+        }
+        out.extend(b"Curves 3\n");
+        for line in [
+            [7., -2., 5., 1., 0., 0.],
+            [10., -2., 5., -0.6, 0.8, 0.],
+            [7., 2., 5., 0., -1., 0.],
+        ] {
+            out.push(1);
+            reals(&mut out, &line);
+        }
+        out.extend(b"Polygon3D 0\nPolygonOnTriangulations 0\nSurfaces 1\n");
+        out.push(1);
+        // Valid gp_Ax3: X=+X, Y=+Y, Z=-Z is an indirect surface chart.
+        reals(
+            &mut out,
+            &[7., -2., 5., 0., 0., -1., 1., 0., 0., 0., 1., 0.],
+        );
+        out.extend(b"Triangulations 0\nTShapes 8\n");
+        for point in points {
+            out.push(7);
+            real(&mut out, 1e-7);
+            reals(&mut out, &point);
+            out.push(0);
+            native_children(&mut out, &[]);
+        }
+        for (index, (length, endpoints)) in [(3., [8, 7]), (5., [7, 6]), (4., [6, 8])]
+            .into_iter()
+            .enumerate()
+        {
+            let curve = i32::try_from(index + 1).unwrap();
+            out.push(6);
+            real(&mut out, 1e-7);
+            out.extend([1, 1, 0, 1]);
+            integer(&mut out, curve);
+            integer(&mut out, 1);
+            reals(&mut out, &[0., length]);
+            out.push(2);
+            integer(&mut out, curve);
+            integer(&mut out, 1);
+            integer(&mut out, 1);
+            reals(&mut out, &[0., length]);
+            out.push(0);
+            native_children(&mut out, &[(0, endpoints[0], 0), (1, endpoints[1], 0)]);
+        }
+        out.push(5);
+        native_children(&mut out, &[(0, 5, 0), (0, 4, 0), (0, 3, 0)]);
+        out.extend([4, 0]);
+        real(&mut out, 1e-7);
+        integer(&mut out, 1);
+        integer(&mut out, 1);
+        out.push(0);
+        native_children(&mut out, &[(0, 2, 0)]);
+        out.push(0);
+        integer(&mut out, 1);
+        integer(&mut out, 0);
+        out
+    }
+
+    /// Independently author the same triangular trim in native ASCII table syntax.
+    fn ascii_indirect_plane(placed: bool) -> String {
+        let matrix = if placed {
+            "0 -1 0 10\n1 0 0 3\n0 0 1 -1"
+        } else {
+            "1 0 0 0\n0 1 0 0\n0 0 1 0"
+        };
+        let points = if placed {
+            ["12 10 4", "12 13 4", "8 10 4"]
+        } else {
+            ["7 -2 5", "10 -2 5", "7 2 5"]
+        };
+        format!(
+            "DBRep_DrawableShape\n\nCASCADE Topology V1, (c) Matra-Datavision\n\
+             Locations 1\n1\n{matrix}\n\
+             Curve2ds 3\n1 0 0 1 0\n1 3 0 -0.6 0.8\n1 0 4 0 -1\n\
+             Curves 3\n1 7 -2 5 1 0 0\n1 10 -2 5 -0.6 0.8 0\n1 7 2 5 0 -1 0\n\
+             Polygon3D 0\nPolygonOnTriangulations 0\n\
+             Surfaces 1\n1 7 -2 5 0 0 -1 1 0 0 0 1 0\n\
+             Triangulations 0\nTShapes 8\n\
+             Ve\n1e-7 {}\n0 0\n0001000\n*\n\
+             Ve\n1e-7 {}\n0 0\n0001000\n*\n\
+             Ve\n1e-7 {}\n0 0\n0001000\n*\n\
+             Ed\n1e-7 1 1 0\n1 1 1 0 3\n2 1 1 1 0 3\n0\n0001000\n+8 0 -7 0 *\n\
+             Ed\n1e-7 1 1 0\n1 2 1 0 5\n2 2 1 1 0 5\n0\n0001000\n+7 0 -6 0 *\n\
+             Ed\n1e-7 1 1 0\n1 3 1 0 4\n2 3 1 1 0 4\n0\n0001000\n+6 0 -8 0 *\n\
+             Wi\n0001000\n+5 0 +4 0 +3 0 *\n\
+             Fa\n0 1e-7 1 1\n0001000\n+2 0 *\n+1 0\n",
+            points[0], points[1], points[2]
+        )
+    }
+
+    #[test]
+    fn binary_indirect_plane_keeps_literal_chart_trim_and_ascii_render() {
+        use ogeom_geom::Surface;
+        let tolerances = ogeom_core::Tolerances::millimetres();
+        for placed in [false, true] {
+            let bytes = native_indirect_plane(placed);
+            let ascii = ascii_indirect_plane(placed);
+            let mut cursor = Cursor::new(&bytes);
+            let mut tables = Tables::default();
+            tables.read_native_tables(&mut cursor).unwrap();
+            let root = tables
+                .table_reference(&mut cursor, tables.shapes.len())
+                .unwrap()
+                .unwrap();
+            let converted = tables.brep(&[(root, Transform::IDENTITY, None)]).unwrap();
+            // Check each decoder against a literal chart point, before carrier restoration.
+            for source in [&converted, &ascii] {
+                let (model, _) =
+                    super::super::cad::read_brep_with_authored_frames(source, tolerances).unwrap();
+                let (_, surface) = model.geometry().surfaces().next().unwrap();
+                let point = surface.point_at(1., 2., tolerances).unwrap();
+                close(Vec3::new(point.x, point.y, point.z), Vec3::new(8., 0., 5.));
+            }
+            let binary_scene = load_binary_brep(&bytes).unwrap();
+            let ascii_scene = super::super::cad::load_brep_text(&ascii).unwrap();
+            let expected = if placed {
+                [
+                    Vec3::new(12., 10., 4.),
+                    Vec3::new(12., 13., 4.),
+                    Vec3::new(8., 10., 4.),
+                ]
+            } else {
+                [
+                    Vec3::new(7., -2., 5.),
+                    Vec3::new(10., -2., 5.),
+                    Vec3::new(7., 2., 5.),
+                ]
+            };
+            for scene in [&binary_scene, &ascii_scene] {
+                assert_eq!(scene.triangles.len(), 1);
+                assert!(scene.lines.is_empty() && scene.points.is_empty());
+                let vertices = scene.triangles[0].vertices;
+                for literal in expected {
+                    assert!(
+                        vertices
+                            .iter()
+                            .any(|point| (*point - literal).length() < 1e-9)
+                    );
+                }
+                let [a, b, c] = vertices;
+                assert!(((b - a).cross(c - a).length() / 2. - 6.).abs() < 1e-9);
+                let (low, high) = bounds(scene);
+                let (minimum, maximum) = if placed {
+                    (Vec3::new(8., 10., 4.), Vec3::new(12., 13., 4.))
+                } else {
+                    (Vec3::new(7., -2., 5.), Vec3::new(10., 2., 5.))
+                };
+                close(low, minimum);
+                close(high, maximum);
+            }
+            let options = crate::render::RenderOptions {
+                width: 64,
+                height: 64,
+                transparent: true,
+                ..Default::default()
+            };
+            assert_eq!(
+                crate::render::render(&binary_scene, &options).unwrap(),
+                crate::render::render(&ascii_scene, &options).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn binary_direct_conic_retains_right_handed_ax2_orientation() {
+        use ogeom_geom::Curve3d;
+        let mut bytes = native_header(4);
+        native_locations(&mut bytes, &[]);
+        bytes.extend(b"Curve2ds 0\nCurves 1\n");
+        bytes.push(2);
+        // gp_Ax2 is direct: Z=-Z, X=+X requires Y=-Y, unlike the plane above.
+        reals(
+            &mut bytes,
+            &[7., -2., 5., 0., 0., -1., 1., 0., 0., 0., -1., 0., 2.],
+        );
+        bytes.extend(
+            b"Polygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 3\n",
+        );
+        for point in [[9., -2., 5.], [7., -4., 5.]] {
+            bytes.push(7);
+            real(&mut bytes, 1e-7);
+            reals(&mut bytes, &point);
+            bytes.push(0);
+            native_children(&mut bytes, &[]);
+        }
+        bytes.push(6);
+        real(&mut bytes, 1e-7);
+        bytes.extend([1, 1, 0, 1]);
+        integer(&mut bytes, 1);
+        integer(&mut bytes, 0);
+        reals(&mut bytes, &[0., std::f64::consts::FRAC_PI_2]);
+        bytes.push(0);
+        native_children(&mut bytes, &[(0, 3, 0), (1, 2, 0)]);
+        bytes.push(0);
+        integer(&mut bytes, 1);
+        integer(&mut bytes, 0);
+
+        let mut cursor = Cursor::new(&bytes);
+        let mut tables = Tables::default();
+        tables.read_native_tables(&mut cursor).unwrap();
+        let root = tables
+            .table_reference(&mut cursor, tables.shapes.len())
+            .unwrap()
+            .unwrap();
+        let text = tables.brep(&[(root, Transform::IDENTITY, None)]).unwrap();
+        let tolerances = ogeom_core::Tolerances::millimetres();
+        let (model, _) =
+            super::super::cad::read_brep_with_authored_frames(&text, tolerances).unwrap();
+        let (_, curve) = model.geometry().curves().next().unwrap();
+        let point = curve
+            .point_at(std::f64::consts::FRAC_PI_2, tolerances)
+            .unwrap();
+        close(Vec3::new(point.x, point.y, point.z), Vec3::new(7., -4., 5.));
+        let scene = load_binary_brep(&bytes).unwrap();
+        assert!(scene.triangles.is_empty() && scene.points.is_empty());
+        assert!(!scene.lines.is_empty());
+        close(
+            scene.lines.first().unwrap().vertices[0],
+            Vec3::new(9., -2., 5.),
+        );
+        close(
+            scene.lines.last().unwrap().vertices[1],
+            Vec3::new(7., -4., 5.),
+        );
+        assert!(scene.positions().all(|point| point.y <= -2. + 1e-9));
+    }
+
+    #[test]
+    fn standalone_native_versions_preserve_points_and_nested_root_placements() {
+        for version in 1..=4 {
+            let scene = load_binary_brep(&native_points(version, &[], 0, 0)).unwrap();
+            assert_eq!(scene.points.len(), 2);
+            let (low, high) = bounds(&scene);
+            close(low, Vec3::new(1., 2., 3.));
+            close(high, Vec3::new(4., 5., 6.));
+            assert!(scene.points.iter().all(|point| point.color.is_none()));
+        }
+        let child = Transform([
+            [1., 0., 0., 0.],
+            [0., 1., 0., 0.],
+            [0., 0., 1., 0.],
+            [4., -2., 3., 1.],
+        ]);
+        let root = Transform([
+            [0., 2., 0., 0.],
+            [-2., 0., 0., 0.],
+            [0., 0., 2., 0.],
+            [10., 20., 30., 1.],
+        ]);
+        let scene = load_binary_brep(&native_points(4, &[child, root], 1, 2)).unwrap();
+        close(scene.points[0].position, Vec3::new(10., 30., 42.));
+        close(scene.points[1].position, Vec3::new(4., 36., 48.));
+
+        // The standalone root selects one occurrence, rather than every table record.
+        let mut one_point = native_points(4, &[], 0, 0);
+        let index = one_point.len() - 8;
+        one_point[index..index + 4].copy_from_slice(&2_i32.to_le_bytes());
+        let scene = load_binary_brep(&one_point).unwrap();
+        assert_eq!(scene.points.len(), 1);
+        close(scene.points[0].position, Vec3::new(4., 5., 6.));
+    }
+
+    #[test]
+    fn standalone_compounds_preserve_faces_free_wires_points_and_carriers() {
+        let carrier = Transform([
+            [-1., 0., 0., 0.],
+            [0., 1., 0., 0.],
+            [0., 0., 1., 0.],
+            [7., 5., 2., 1.],
+        ]);
+        let root = Transform([
+            [2., 0., 0., 0.],
+            [0., 2., 0., 0.],
+            [0., 0., 2., 0.],
+            [10., -2., 3., 1.],
+        ]);
+        let scene = load_binary_brep(&native_mixed(carrier, root, 0, 0)).unwrap();
+        assert_eq!(scene.triangles.len(), 1);
+        assert_eq!(scene.lines.len(), 1);
+        assert_eq!(scene.points.len(), 1);
+        let (low, high) = bounds(&scene);
+        close(low, Vec3::new(8., 8., 7.));
+        close(high, Vec3::new(24., 16., 13.));
+        close(scene.points[0].position, Vec3::new(8., 16., 13.));
+        let triangle = &scene.triangles[0];
+        let area = (triangle.vertices[1] - triangle.vertices[0])
+            .cross(triangle.vertices[2] - triangle.vertices[0])
+            .length()
+            * 0.5;
+        assert!((area - 4.).abs() < 1e-6);
+        let options = crate::render::RenderOptions {
+            width: 96,
+            height: 64,
+            transparent: true,
+            ..Default::default()
+        };
+        let image = crate::render::render(&scene, &options).unwrap();
+        assert!(image.pixels().filter(|pixel| pixel[3] > 0).count() > 50);
+    }
+
+    #[test]
+    fn reversed_native_compound_root_preserves_authored_face_winding() {
+        let load = |parent, child| {
+            load_binary_brep(&native_mixed(
+                Transform::IDENTITY,
+                Transform::IDENTITY,
+                parent,
+                child,
+            ))
+            .unwrap()
+        };
+        let signed_area = |scene: &Scene| {
+            let points = scene.triangles[0].vertices;
+            (points[1] - points[0]).cross(points[2] - points[0]).z * 0.5
+        };
+        assert!((signed_area(&load(0, 0)) - 1.).abs() < 1e-6);
+        assert!((signed_area(&load(1, 0)) + 1.).abs() < 1e-6);
+        assert!((signed_area(&load(1, 1)) - 1.).abs() < 1e-6);
+        // Literal results follow the runtime TopAbs::Compose called by
+        // TopoDS_Iterator, including the two asymmetric cross cases.
+        for (parent, child, expected) in [
+            (0, 0, 0),
+            (0, 1, 1),
+            (0, 2, 2),
+            (0, 3, 3),
+            (1, 0, 1),
+            (1, 1, 0),
+            (1, 2, 2),
+            (1, 3, 3),
+            (2, 0, 2),
+            (2, 1, 2),
+            (2, 2, 2),
+            (2, 3, 3),
+            (3, 0, 3),
+            (3, 1, 3),
+            (3, 2, 2),
+            (3, 3, 3),
+        ] {
+            assert_eq!(compose_orientation(parent, child).unwrap(), expected);
+        }
+        assert!(compose_orientation(4, 0).is_err());
+        assert!(compose_orientation(0, 4).is_err());
+    }
+
+    #[test]
+    fn standalone_native_root_and_extent_validation_precedes_geometry() {
+        let valid = native_points(4, &[], 0, 0);
+        for size in [
+            0,
+            1,
+            32,
+            65,
+            valid.len() / 2,
+            valid.len() - 9,
+            valid.len() - 1,
+        ] {
+            assert!(load_binary_brep(&valid[..size]).is_err(), "size {size}");
+        }
+        for orientation in [4, b'*', b'F'] {
+            let mut bad = valid.clone();
+            let root = bad.len() - 9;
+            bad[root] = orientation;
+            assert!(load_binary_brep(&bad).is_err());
+        }
+        for reverse_id in [-1_i32, 0, 4] {
+            let mut bad = valid.clone();
+            let start = bad.len() - 8;
+            bad[start..start + 4].copy_from_slice(&reverse_id.to_le_bytes());
+            assert!(load_binary_brep(&bad).is_err());
+        }
+        for location in [-1_i32, 1] {
+            let mut bad = valid.clone();
+            let start = bad.len() - 4;
+            bad[start..].copy_from_slice(&location.to_le_bytes());
+            assert!(load_binary_brep(&bad).is_err());
+        }
+        let mut trailing = valid.clone();
+        trailing.push(b'\n');
+        assert!(
+            load_binary_brep(&trailing)
+                .unwrap_err()
+                .to_string()
+                .contains("trailing")
+        );
+        assert!(!is_binary_brep(b"arbitrary binary\xff"));
+        assert!(!is_binary_brep(b"CASCADE Topology V3, (c) Open Cascade\n"));
+    }
+
+    #[test]
+    fn standalone_native_limits_and_unsupported_tables_fail_before_allocation() {
+        let oversized = vec![0; MAX_BYTES + 1];
+        assert!(
+            load_binary_brep(&oversized)
+                .unwrap_err()
+                .to_string()
+                .contains("16 MiB")
+        );
+        let version = b"Open CASCADE Topology V5 (c)\nLocations 0\n";
+        assert!(
+            load_binary_brep(version)
+                .unwrap_err()
+                .to_string()
+                .contains("version")
+        );
+        for table in ["Locations", "Curve2ds", "Curves", "Surfaces", "TShapes"] {
+            let preceding = match table {
+                "Locations" => "",
+                "Curve2ds" => "Locations 0\n",
+                "Curves" => "Locations 0\nCurve2ds 0\n",
+                "Surfaces" => {
+                    "Locations 0\nCurve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\n"
+                }
+                _ => {
+                    "Locations 0\nCurve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\n"
+                }
+            };
+            let mut bad = native_header(4);
+            bad.extend(format!("{preceding}{table} {}\n", MAX_RECORDS + 1).as_bytes());
+            assert!(
+                load_binary_brep(&bad)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("oversized")
+            );
+        }
+        for cached in ["Polygon3D", "PolygonOnTriangulations", "Triangulations"] {
+            let mut bad = native_header(4);
+            bad.extend(b"Locations 0\nCurve2ds 0\nCurves 0\n");
+            if cached != "Polygon3D" {
+                bad.extend(b"Polygon3D 0\n");
+            }
+            if cached == "Triangulations" {
+                bad.extend(b"PolygonOnTriangulations 0\nSurfaces 0\n");
+            }
+            bad.extend(format!("{cached} 1\n").as_bytes());
+            assert!(
+                load_binary_brep(&bad)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("unsupported")
+            );
+        }
+    }
+
+    #[test]
+    fn legacy_native_vertex_parameters_accept_primary_historical_and_modern_orders() {
+        let tables = Tables {
+            curves: vec!["1 0 0 0 1 0 0".into()],
+            ..Default::default()
+        };
+        for version in 1..=4 {
+            for parameter_first in [false, true] {
+                if version > 2 && parameter_first {
+                    continue;
+                }
+                let mut bytes = Vec::new();
+                reals(&mut bytes, &[1e-7, 1., 2., 3.]);
+                if parameter_first {
+                    real(&mut bytes, 0.25);
+                    bytes.push(1);
+                } else {
+                    bytes.push(1);
+                    real(&mut bytes, 0.25);
+                }
+                integer(&mut bytes, 1);
+                integer(&mut bytes, 0);
+                bytes.push(0);
+                let mut cursor = Cursor::new(&bytes);
+                let geometry = tables.old_shape_geometry(&mut cursor, 7, version).unwrap();
+                assert_eq!(cursor.pos, bytes.len());
+                assert_eq!(geometry, "0.0000001 1 2 3 0 0\n");
+            }
+        }
+    }
+
     fn integer(out: &mut Vec<u8>, value: i32) {
         out.extend(value.to_le_bytes());
     }

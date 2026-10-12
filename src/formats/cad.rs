@@ -1,4 +1,4 @@
-//! IGES and Open CASCADE ASCII BREP topology, imported and tessellated in Rust.
+//! IGES and Open CASCADE ASCII/binary BREP topology, imported and tessellated in Rust.
 //! The kernel's omission/approximation report is checked before any preview.
 //! Primary implementation: <https://github.com/gilbertorconde/ogeom-rs>
 use crate::{
@@ -35,7 +35,7 @@ const MAX_FACES: usize = 4096;
 /// Maximum source or expanded preview triangle count.
 const MAX_TRIANGLES: usize = 5_000_000;
 
-/// Load IGES or ASCII BREP geometry and tessellate its complete topology.
+/// Load IGES or ASCII/binary BREP geometry and tessellate its complete topology.
 ///
 /// # Errors
 ///
@@ -43,7 +43,10 @@ const MAX_TRIANGLES: usize = 5_000_000;
 pub(super) fn load(path: &Path) -> Result<Scene> {
     let bytes = super::read_file(path)?;
     let extension = super::extension(path)?;
-    if extension == "brep" {
+    if bytes.len() > MAX_CAD_BYTES {
+        return Err("CAD input exceeds the 16 MiB preview limit".into());
+    }
+    if extension == "brep" && !super::xbf::is_binary_brep(&bytes) {
         load_brep_text(std::str::from_utf8(&bytes)?)
     } else {
         parse(&bytes, &extension)
@@ -59,6 +62,18 @@ pub(super) fn load_brep_text(text: &str) -> Result<Scene> {
     parse(text.as_bytes(), "brep")
 }
 
+/// Decode native BREP topology while retaining all authored analytic frame axes.
+///
+/// # Errors
+///
+/// Geometry tables, topology import or analytic-frame restoration are invalid.
+pub(super) fn read_brep_with_authored_frames(
+    text: &str,
+    tolerances: Tolerances,
+) -> Result<(Model, Shape)> {
+    brep_frames::read(text, tolerances)
+}
+
 /// Validate and import CAD exchange data before emitting surfaces, free wires and vertices.
 ///
 /// # Errors
@@ -67,6 +82,9 @@ pub(super) fn load_brep_text(text: &str) -> Result<Scene> {
 fn parse(bytes: &[u8], extension: &str) -> Result<Scene> {
     if bytes.len() > MAX_CAD_BYTES {
         return Err("CAD input exceeds the 16 MiB preview limit".into());
+    }
+    if extension == "brep" && super::xbf::is_binary_brep(bytes) {
+        return super::xbf::load_binary_brep(bytes);
     }
     let text = std::str::from_utf8(bytes)?;
     let mut scene = Scene::default();
@@ -128,7 +146,7 @@ fn parse(bytes: &[u8], extension: &str) -> Result<Scene> {
             validate_brep(text)?;
             let normalized = normalize_brep_caches(text)?;
             let carriers = carriers::Metadata::parse(&normalized)?;
-            let (mut model, root) = brep_frames::read(&normalized, TOLERANCES)?;
+            let (mut model, root) = read_brep_with_authored_frames(&normalized, TOLERANCES)?;
             validate_topology(&model, &root)?;
             carriers.restore(&mut model, &root, TOLERANCES)?;
             append_shape(&mut scene, &model, &root)?;
@@ -1144,6 +1162,23 @@ fn validate_locations<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn binary_brep_dispatch_preserves_a_native_vertex_and_rejects_other_carriers() {
+        let mut bytes = b"\nOpen CASCADE Topology V4, (c) Open Cascade\nLocations 0\nCurve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 1\n".to_vec();
+        bytes.push(7);
+        for value in [1e-7_f64, 3., -2., 7.] {
+            bytes.extend(value.to_le_bytes());
+        }
+        bytes.extend([0, 0, 0, 0, 1, 0, 0, 0, b'*', 0]);
+        bytes.extend(1_i32.to_le_bytes());
+        bytes.extend(0_i32.to_le_bytes());
+        let scene = parse(&bytes, "brep").unwrap();
+        assert_eq!(scene.points.len(), 1);
+        assert_eq!(scene.points[0].position, Vec3::new(3., -2., 7.));
+        assert!(parse(&bytes, "iges").is_err());
+        assert!(parse(b"arbitrary binary data\xff", "brep").is_err());
+    }
     use ogeom_math::{Frame, Point as CadPoint, Vector};
     use std::fmt::Write as _;
 

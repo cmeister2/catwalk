@@ -306,6 +306,54 @@
     },
     {
       "extension": "brep",
+      "id": "brep-binary-v1-points",
+      "input": "binary_brep/brep-binary-v1-points.brep",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust BinTools table fixture; MIT, matching the project license. Native V1–V4 layout follows the original OCCT BinTools serializer; these authored controls qualify their wire/point and placement subsets, not historical exporter compatibility. https://github.com/Open-Cascade-SAS/OCCT/tree/V7_9_0/src/BinTools",
+      "title": "Binary BREP V1 isolated points with root translation"
+    },
+    {
+      "extension": "brep",
+      "id": "brep-binary-v2-wire",
+      "input": "binary_brep/brep-binary-v2-wire.brep",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust BinTools table fixture; MIT, matching the project license. Native V1–V4 layout follows the original OCCT BinTools serializer; these authored controls qualify their wire/point and placement subsets, not historical exporter compatibility. https://github.com/Open-Cascade-SAS/OCCT/tree/V7_9_0/src/BinTools",
+      "title": "Binary BREP V2 wire with rotated curve carrier"
+    },
+    {
+      "extension": "brep",
+      "id": "brep-binary-v3-placed-wire-points",
+      "input": "binary_brep/brep-binary-v3-placed-wire-points.brep",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust BinTools table fixture; MIT, matching the project license. Native V1–V4 layout follows the original OCCT BinTools serializer; these authored controls qualify their wire/point and placement subsets, not historical exporter compatibility. https://github.com/Open-Cascade-SAS/OCCT/tree/V7_9_0/src/BinTools",
+      "title": "Binary BREP V3 reflected carrier and rotated wire/point compound"
+    },
+    {
+      "extension": "brep",
+      "id": "brep-binary-v4-repeated-wire",
+      "input": "binary_brep/brep-binary-v4-repeated-wire.brep",
+      "kind": "model",
+      "provenance": "Author-created deterministic Rust BinTools table fixture; MIT, matching the project license. Native V1–V4 layout follows the original OCCT BinTools serializer; these authored controls qualify their wire/point and placement subsets, not historical exporter compatibility. https://github.com/Open-Cascade-SAS/OCCT/tree/V7_9_0/src/BinTools",
+      "title": "Binary BREP V4 repeated wires and uniformly scaled root"
+    },
+    {
+      "extension": "brep",
+      "id": "brep-f3d-original-ascii",
+      "input": "binary_brep/f3d.brep",
+      "kind": "model",
+      "provenance": "Unmodified f3d-app/f3d testing/data asset at commit 89464637f12acaed870c46cf5cdeda3b8411841b; BSD-3-Clause under the original F3D license and DATA_LICENSES mapping retained in binary_brep/F3D-LICENSE.md and binary_brep/F3D-DATA_LICENSES.md. Exact source hashes and independent native topology expectations in binary_brep/README.md. https://github.com/f3d-app/f3d/tree/89464637f12acaed870c46cf5cdeda3b8411841b/testing/data",
+      "title": "F3D original ASCII BREP counterpart"
+    },
+    {
+      "extension": "brep",
+      "id": "brep-f3d-original-binary",
+      "input": "binary_brep/f3d.bin.brep",
+      "kind": "model",
+      "provenance": "Unmodified f3d-app/f3d testing/data asset at commit 89464637f12acaed870c46cf5cdeda3b8411841b; BSD-3-Clause under the original F3D license and DATA_LICENSES mapping retained in binary_brep/F3D-LICENSE.md and binary_brep/F3D-DATA_LICENSES.md. Exact source hashes and independent native topology expectations in binary_brep/README.md. https://github.com/f3d-app/f3d/tree/89464637f12acaed870c46cf5cdeda3b8411841b/testing/data",
+      "title": "F3D original binary BREP compound"
+    },
+    {
+      "extension": "brep",
       "id": "brep-planar-box",
       "input": "scientific_cad/brep-planar-box.brep",
       "kind": "model",
