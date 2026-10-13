@@ -37,7 +37,7 @@ cd catwalk3d
 cargo run --release --locked -- examples/models/gear.obj --output thumbnail.png --size 256
 ```
 
-The importers, renderer, compression and image codecs use Rust implementations. Running Catwalk requires no graphics driver, display server or subprocess converter.
+The importers and renderer use Rust implementations. Native Autodesk decoding uses Cadmpeg with bundled Zstandard compression; building from source requires a C compiler for that compression library. Running Catwalk requires no graphics driver, display server, CAD installation or subprocess converter.
 
 ## Which files can I preview?
 
@@ -71,20 +71,24 @@ Catwalk also handles these application documents:
 | [LightBurn `.lbrn` / `.lbrn2`](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#lightburn) | Vector outlines in an XY plan view | PNG |
 | [Blender `.blend`](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#blender) | Stored mesh scenes, with supported object placements and instances | Embedded RGBA image |
 | [AutoCAD `.dwg`](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#autocad-drawings) | Supported drawing entities and block instances | PNG or DIB |
-| [Inventor `.ipt` / `.iam`](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#autodesk-inventor) | Unavailable | PNG or supported DIB/BMP |
-| [Fusion `.f3d`](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#autodesk-fusion) | Unavailable | Active design's saved PNG |
+| [Inventor `.ipt` / `.iam`](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#autodesk-inventor) | Supported solved part bodies and local assembly occurrences | PNG or supported DIB/BMP |
+| [Fusion `.f3d`](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#autodesk-fusion) | Supported active native bodies and placements | Active design's saved PNG |
 | [Lychee `.lys`](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#lychee) | Original stored model meshes with saved object placements | Saved PNG from qualified Mango/ASAR scenes |
 | [FreeCAD `.fcstd`](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#freecad) | Stored ASCII BREP shapes with supported containers, local links and arrays | Addressed saved PNG |
 
-By default, a supported saved image is used when available. Blender, `LightBurn`, DWG, Lychee and `FreeCAD` fall back to their geometry readers when the saved image is missing or unreadable. A saved thumbnail can be blank or out of date.
+By default, a supported saved image is used when available. Blender, `LightBurn`, DWG, Lychee, `FreeCAD`, Inventor and Fusion fall back to their geometry readers when the saved image is missing or unreadable. A saved thumbnail can be blank or out of date.
 
 **`LightBurn` supports fresh vector rendering:** paths, cubic Bézier curves, shared instances, nested groups, rectangles, rounded corners, ellipses and the first 16 standard cut-layer colors. Text, bitmaps, laser fills and multipage geometry remain unsupported. Nine projects without saved thumbnails have geometry checks and PNG snapshots.
 
-**Inventor support currently extracts saved images.** The reader selects the native document summary and can fall back to a usable legacy summary. Fresh part and assembly geometry previews are not yet supported. Tests qualify the image carriers; compatibility with every Inventor release remains unfinished.
+**Inventor previews use stored solved geometry.** Fresh rendering decodes native part bodies and supported assembly occurrences, retaining their authored placement and suppression. Assemblies require their referenced `.ipt` / `.iam` documents beside the input; missing or ambiguous companions fail. Assembly features with nonempty local result bodies and unsupported document variants fail explicitly. The saved-image reader remains available without companions. Tests use unchanged native producer files; compatibility with every Inventor release and Model State remains unfinished.
+
+**Fusion previews can render native geometry.** Supported `.f3d` archives transfer active solved bodies and supported stored carriers without using their saved images. Unresolved native assembly operations are refused until their final placements can be verified. The decoder also validates native document records; older design histories and complex archives can exceed its supported grammar or service budgets. These variants and `.f3z` archives remain unsupported. See [the Fusion coverage entry](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#autodesk-fusion) for qualified examples and limits.
 
 **Lychee previews prefer the saved scene PNG.** Fresh geometry renders the original stored model meshes with their saved scale, rotation, XY position and Z lift. Supports, rafts, hollowing and holes preparation are intentionally excluded from fresh geometry; the saved PNG preserves the prepared image. Original Lychee 5.4.3 keyboard scenes qualify flat Mango/ASAR manifest 3.1.0, scene-state 2 and mesh 2 encodings. Legacy ZIP scenes, `.lyt`, other stored encodings and missing external/library model geometry remain unsupported; see [the Lychee coverage entry](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#lychee).
 
 **`FreeCAD` previews use stored document shapes.** Fresh geometry respects supported visibility, part containers, local links and model arrays without opening `FreeCAD`. The reader supports qualified schema-4 documents with ASCII BREP members. Binary shape members, external links and unsupported link modes return an error; see [the FreeCAD coverage entry](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#freecad).
+
+See [native Autodesk geometry examples and their original source credits](docs/native-autodesk/README.md).
 
 Choose the preview mode explicitly when needed:
 
@@ -94,6 +98,9 @@ catwalk project.lbrn2 --render-geometry --output fresh.png --size 256
 catwalk scene.blend --render-geometry --output fresh.png --size 256
 catwalk scene.lys --render-geometry --output models.png --size 256
 catwalk part.FCStd --render-geometry --output fresh.png --size 256
+catwalk part.ipt --render-geometry --output fresh.png --size 256
+catwalk assembly.iam --render-geometry --output fresh.png --size 256
+catwalk design.f3d --render-geometry --output fresh.png --size 256
 
 # Extract a saved image at its original dimensions.
 catwalk part.ipt --extract-saved-preview --output saved.png
@@ -126,7 +133,7 @@ Use `catwalk --help` for all options. `--no-background` aliases `--transparent`,
 
 CLI dimensions are 1–4096 pixels per axis. Geometry rendering allows at most 16 million supersampled pixels; reduce dimensions or use `--samples 1` for a very large thumbnail. Inputs and referenced resources have size limits, with additional limits for individual readers documented in the coverage matrix.
 
-Errors are written to stderr and return a nonzero exit code. Decode failures occur before the destination is opened, preserving an existing thumbnail. For an unsupported file variant, check its coverage entry and export to a supported encoding or geometry format. For a missing Inventor or Fusion preview, save a new thumbnail in the authoring application.
+Errors are written to stderr and return a nonzero exit code. Decode failures occur before the destination is opened, preserving an existing thumbnail. For an unsupported file variant, check its coverage entry and export to a supported encoding or geometry format. Unsupported native document variants may still need a new saved thumbnail from the authoring application.
 
 ## Use from Rust
 

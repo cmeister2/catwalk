@@ -1,0 +1,25 @@
+{
+  "source_file": "motor/Motor Bot.ipt",
+  "source_sha256": "bab037b22bf9fad3a3d7ec9556195ce9b814f02e9cae08e301ee76306923ee92",
+  "native_asm_face": 896,
+  "native_surface": 990,
+  "native_graphics_face_key": 3673,
+  "original_graphics_bounds_cm": [-0.55, -0.55, 0.6, 0.55, 0.55, 0.8],
+  "carrier_mm": {
+    "center_z": 8.0,
+    "axis": [0.0, 0.0, -1.0],
+    "major_radius": 5.5,
+    "minor_radius": -2.0
+  },
+  "joint_rings_mm": [
+    {"radius": 3.5, "z": 8.0, "axis_z": -1.0, "coedge_forward": true},
+    {"radius": 5.5, "z": 6.0, "axis_z": 1.0, "coedge_forward": true}
+  ],
+  "adjoining_native_faces": [
+    {"asm_face": 988, "kind": "solid cylinder", "radius_mm": 3.5, "z_range_mm": [8.0, 17.0], "normal_at_joint": "outward radial"},
+    {"asm_face": 1062, "kind": "plane", "z_mm": 6.0, "normal_at_joint": "positive Z"}
+  ],
+  "quarter_area_mm2": 83.43290718326459,
+  "area_formula": "2*pi*r*(R*pi/2-r), R=5.5, r=2: inner lower quarter of the circular torus",
+  "notes": "Independent original-source geometric bounds, linked through the ASM face-native key to PmGraphicsFace key3673, exclude the complementary patch. Units are independently confirmed by the adjoining native radius3.5 shaft and z6 plane. Original coedge directions and adjoining outward face normals require the quarter's outward radial and upward orientation. No saved raster image supplies these expectations."
+}

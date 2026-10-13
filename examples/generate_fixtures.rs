@@ -6,6 +6,9 @@ mod binary_brep;
 #[path = "fixtures/collada_primitives.rs"]
 /// Generate COLLADA static primitive controls and register licensed conformance models.
 mod collada_primitives;
+#[path = "../tests/support/digest_hex.rs"]
+/// Lowercase checksum formatting shared by retained-source fixture generators.
+mod digest_hex;
 #[path = "fixtures/freecad.rs"]
 /// Register original FreeCAD saved images and native placed BREP geometry.
 mod freecad;
@@ -21,6 +24,9 @@ mod lychee_geometry;
 #[path = "fixtures/mesh_scene.rs"]
 /// Generate authored mesh and scene fixtures and register retained reference assets.
 mod mesh_scene;
+#[path = "fixtures/native_autodesk.rs"]
+/// Register unchanged Inventor and Fusion documents for fresh geometry thumbnails.
+mod native_autodesk;
 #[path = "fixtures/native_geometry.rs"]
 /// Register licensed native documents with fresh geometry render qualification.
 mod native_geometry;
@@ -109,6 +115,7 @@ fn main() -> Result<()> {
     cases.extend(lychee::generate(&root)?);
     cases.extend(lychee_geometry::generate(&root)?);
     cases.extend(native_geometry::generate(&root)?);
+    cases.extend(native_autodesk::generate(&root)?);
     cases.extend(vrml_prototypes::generate(&root)?);
     cases.extend(vtk_lines::generate(&root)?);
     cases.extend(binary_brep::generate(&root)?);
@@ -145,6 +152,18 @@ fn main() -> Result<()> {
             generated.difference(&advertised).collect::<Vec<_>>()
         )
         .into());
+    }
+    let native_advertised: BTreeSet<_> = formats::NATIVE_GEOMETRY_EXTENSIONS
+        .iter()
+        .copied()
+        .collect();
+    let native_generated: BTreeSet<_> = cases
+        .iter()
+        .filter(|case| case.kind == "native-geometry")
+        .map(|case| case.extension.as_str())
+        .collect();
+    if native_advertised != native_generated {
+        return Err("every native geometry reader needs a fresh-render corpus case".into());
     }
     let count = cases.len();
     let cases: Vec<_> = cases.into_iter().map(|case| json!({"id":case.id,"extension":case.extension,"title":case.title,"input":case.input,"kind":case.kind,"provenance":case.provenance})).collect();

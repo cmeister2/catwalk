@@ -2,3 +2,7 @@
 tests/fixtures/** -text
 # Snapshot baselines are exact image artifacts.
 tests/snapshots/** -text
+# Retained producer originals include intentional source whitespace.
+tests/fixtures/formats/autodesk_geometry/FUSION-SAMPLES-README.md -whitespace
+tests/fixtures/native_geometry/inventor/references/conveyor_model.step -whitespace
+docs/native-autodesk/FUSION-SAMPLES-README.md -text -whitespace

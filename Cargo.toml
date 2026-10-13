@@ -27,6 +27,11 @@ path = "src/main.rs"
 [dependencies]
 acadrust = { version = "=0.6.4", default-features = false }
 base64 = "0.23.0"
+cadmpeg-codec-f3d = "=0.6.1"
+cadmpeg-codec-inventor = "=0.6.1"
+cadmpeg-codec-step = "=0.6.1"
+cadmpeg-core = "=0.6.1"
+cadmpeg-ir = "=0.6.1"
 cfb = { version = "=0.15.0", default-features = false }
 clap = { version = "4.6.1", features = ["derive"] }
 dicom-object = { version = "=0.10.0", default-features = false, features = ["deflate"] }
@@ -50,6 +55,7 @@ num-traits = "=0.2.19"
 ogeom-io = { version = "=0.9.16", default-features = false }
 ogeom-mesh = { version = "=0.9.16", default-features = false }
 ogeom-core = { version = "=0.9.16", default-features = false }
+ogeom-doc = { version = "=0.9.16", default-features = false }
 ogeom-geom = { version = "=0.9.16", default-features = false }
 ogeom-intersect = { version = "=0.9.16", default-features = false }
 ogeom-math = { version = "=0.9.16", default-features = false }
@@ -71,7 +77,6 @@ zip = { version = "9.0.0", default-features = false, features = ["deflate"] }
 [dev-dependencies]
 hdf5-writer = { version = "=0.9.1", default-features = false }
 netcdf-writer = { version = "=0.9.1", default-features = false, features = ["netcdf4"] }
-ogeom-doc = { version = "=0.9.16", default-features = false }
 truck-modeling = "=0.6.0"
 
 [profile.release]
