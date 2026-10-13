@@ -45,6 +45,9 @@ mod scientific_cad;
 #[path = "fixtures/sketchup.rs"]
 /// Register original `SketchUp` producer files and independently extracted model PNGs.
 mod sketchup;
+#[path = "fixtures/solidworks.rs"]
+/// Register unchanged `SolidWorks` documents and independently extracted preview pixels.
+mod solidworks;
 #[path = "fixtures/vrml_prototypes.rs"]
 /// Register original VRML prototypes and generate typed static expansion controls.
 mod vrml_prototypes;
@@ -133,6 +136,7 @@ fn main() -> Result<()> {
     cases.extend(tiff_volumes::generate(&root)?);
     cases.extend(freecad::generate(&root)?);
     cases.extend(rhino::generate(&root)?);
+    cases.extend(solidworks::generate(&root)?);
     cases.sort_by(|a, b| a.extension.cmp(&b.extension).then(a.id.cmp(&b.id)));
     let mut ids = BTreeSet::new();
     for case in &cases {

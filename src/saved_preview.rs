@@ -18,6 +18,8 @@ pub mod lychee;
 pub mod rhino;
 /// Addressed model thumbnails from qualified `SketchUp` document containers.
 pub mod sketchup;
+/// Document-level `SolidWorks` part and assembly thumbnails from compound storage.
+pub mod solidworks;
 
 use crate::{Result, formats};
 use image::RgbaImage;
@@ -25,7 +27,8 @@ use std::path::Path;
 
 /// Extension aliases dispatched to the saved-image readers.
 pub const EXTENSIONS: &[&str] = &[
-    "ipt", "iam", "lbrn", "lbrn2", "blend", "f3d", "dwg", "lys", "fcstd", "3dm", "skp",
+    "ipt", "iam", "lbrn", "lbrn2", "blend", "f3d", "dwg", "lys", "fcstd", "3dm", "skp", "sldprt",
+    "sldasm",
 ];
 
 /// A supported document has no usable saved thumbnail carrier.
@@ -58,6 +61,7 @@ pub fn extract(path: &Path) -> Result<Option<RgbaImage>> {
         "fcstd" => freecad::extract(path),
         "3dm" => rhino::extract(path),
         "skp" => sketchup::extract(path),
+        "sldprt" | "sldasm" => solidworks::extract(path),
         extension => Err(format!("no saved-preview reader for .{extension}").into()),
     }
 }

@@ -15,7 +15,7 @@ use std::{
 mod bitmap;
 #[path = "inventor_container.rs"]
 /// Preflight compound-file metadata and enforce cooperative I/O limits.
-mod container;
+pub(super) mod container;
 
 /// Maximum size of an Inventor compound file admitted for preview extraction.
 const MAX_SOURCE: u64 = 512 * 1024 * 1024;

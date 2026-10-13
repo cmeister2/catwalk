@@ -1,9 +1,9 @@
-use super::{Result, bytes, check_time, u16_le, u32_le};
+use super::{Result, bytes, u16_le, u32_le};
 use std::{
     collections::{HashMap, HashSet},
     fs::File,
     io::{self, Read, Seek, SeekFrom},
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 /// Compound-file marker for an unused sector or directory link.
@@ -13,8 +13,8 @@ const END: u32 = u32::MAX - 1;
 /// Maximum directory, DIFAT and mini-FAT byte budget.
 const MAX_DIRECTORY: usize = 4 * 1024 * 1024;
 
-/// Original compound-file tables retained to validate only selected root property streams.
-pub(super) struct Metadata {
+/// Original compound-file tables retained to validate only selected root streams.
+pub(crate) struct Metadata {
     /// Regular-sector allocation table from the original file.
     fat: Vec<u32>,
     /// Mini-sector allocation table from the original file.
@@ -41,39 +41,46 @@ impl Metadata {
         let mut count = 0_u64;
         while current != END {
             if !seen.insert(current) {
-                return Err("cyclic Inventor selected-stream sector chain".into());
+                return Err("cyclic compound document selected-stream sector chain".into());
             }
             count += 1;
             if count * unit > limit + unit - 1 {
-                return Err("Inventor selected-stream chain exceeds its resource limit".into());
+                return Err(
+                    "compound document selected-stream chain exceeds its resource limit".into(),
+                );
             }
             if mini {
                 if (u64::from(current) + 1) * 64 > self.root_size {
-                    return Err("Inventor mini sector lies outside the root mini-stream".into());
+                    return Err(
+                        "compound document mini sector lies outside the root mini-stream".into(),
+                    );
                 }
             } else if current as usize >= self.sector_count {
-                return Err("Inventor selected-stream sector lies outside the source".into());
+                return Err(
+                    "compound document selected-stream sector lies outside the source".into(),
+                );
             }
             current = *table
                 .get(current as usize)
-                .ok_or("Inventor selected-stream sector lies outside its FAT")?;
+                .ok_or("compound document selected-stream sector lies outside its FAT")?;
         }
         if count != size.div_ceil(unit) {
             return Err(
-                "Inventor selected-stream chain length does not match its declared size".into(),
+                "compound document selected-stream chain length does not match its declared size"
+                    .into(),
             );
         }
         Ok(())
     }
 
     /// Check selected-stream metadata and validate its regular or mini-stream sector chains.
-    pub(super) fn validate_stream(&self, name: &str, size: u64) -> Result<()> {
+    pub(crate) fn validate_stream(&self, name: &str, size: u64) -> Result<()> {
         let &(start, original_size) = self
             .streams
             .get(name)
-            .ok_or("Inventor summary is absent from original root metadata")?;
+            .ok_or("compound document selected stream is absent from original root metadata")?;
         if original_size != size {
-            return Err("Inventor summary stream metadata changed during parsing".into());
+            return Err("compound document selected-stream metadata changed during parsing".into());
         }
         if size == 0 {
             return Ok(());
@@ -88,7 +95,7 @@ impl Metadata {
 }
 
 /// File adapter that checks the extraction deadline and bounds seek positions.
-pub(super) struct BudgetFile {
+pub(crate) struct BudgetFile {
     /// Opened underlying carrier file.
     source: File,
     /// Original file size used to bound seek operations.
@@ -99,7 +106,7 @@ pub(super) struct BudgetFile {
 
 impl BudgetFile {
     /// Wrap an opened file with its original size and extraction start time.
-    pub(super) fn new(source: File, size: u64, started: Instant) -> Self {
+    pub(crate) fn new(source: File, size: u64, started: Instant) -> Self {
         Self {
             source,
             size,
@@ -108,7 +115,12 @@ impl BudgetFile {
     }
     /// Translate the cooperative deadline failure into an I/O error for compound-file readers.
     fn check(&self) -> io::Result<()> {
-        check_time(self.started).map_err(|error| io::Error::other(error.to_string()))
+        if self.started.elapsed() > Duration::from_secs(5) {
+            return Err(io::Error::other(
+                "compound document processing exceeded the cooperative five-second budget",
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -124,7 +136,7 @@ impl Seek for BudgetFile {
         self.check()?;
         let position = self.source.seek(offset)?;
         if position > self.size {
-            return Err(io::Error::other("Inventor seek outside source"));
+            return Err(io::Error::other("compound document seek outside source"));
         }
         Ok(position)
     }
@@ -133,7 +145,7 @@ impl Seek for BudgetFile {
 /// Read one complete sector after checking its identifier against the original file extent.
 fn sector(source: &mut BudgetFile, id: u32, count: usize, size: usize) -> Result<Vec<u8>> {
     if id as usize >= count {
-        return Err("invalid Inventor compound sector index".into());
+        return Err("invalid compound document sector index".into());
     }
     source.seek(SeekFrom::Start((u64::from(id) + 1) * size as u64))?;
     let mut output = vec![0; size];
@@ -149,7 +161,7 @@ fn sector(source: &mut BudgetFile, id: u32, count: usize, size: usize) -> Result
     clippy::cast_possible_truncation,
     reason = "Keep metadata validation ordered before allocation; the caller bounds the file to 512 MiB"
 )]
-pub(super) fn preflight(source: &mut BudgetFile, source_size: u64) -> Result<Option<Metadata>> {
+pub(crate) fn preflight(source: &mut BudgetFile, source_size: u64) -> Result<Option<Metadata>> {
     let mut header = [0; 512];
     source.read_exact(&mut header)?;
     if &header[..8] != b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" {
@@ -161,27 +173,27 @@ pub(super) fn preflight(source: &mut BudgetFile, source_size: u64) -> Result<Opt
         || !matches!((major, shift), (3, 9) | (4, 12))
         || u16_le(&header, 32)? != 6
     {
-        return Err("invalid Inventor compound-file header".into());
+        return Err("invalid compound document header".into());
     }
     let sector_size = 1_usize << shift;
     if !source_size.is_multiple_of(sector_size as u64) || source_size < 2 * sector_size as u64 {
-        return Err("truncated Inventor compound file".into());
+        return Err("truncated compound document".into());
     }
     let sector_count = source_size as usize / sector_size - 1;
     if u32_le(&header, 56)? != 4096 {
-        return Err("unsupported Inventor mini-stream cutoff".into());
+        return Err("unsupported compound document mini-stream cutoff".into());
     }
     let fat_count = u32_le(&header, 44)? as usize;
     let difat_count = u32_le(&header, 72)? as usize;
     let mini_count = u32_le(&header, 64)? as usize;
     if fat_count == 0 || fat_count > sector_count || fat_count * sector_size > 8 * 1024 * 1024 {
-        return Err("Inventor FAT metadata exceeds the extraction limit".into());
+        return Err("compound document FAT metadata exceeds the extraction limit".into());
     }
     if difat_count > sector_count
         || difat_count * sector_size > MAX_DIRECTORY
         || mini_count * sector_size > MAX_DIRECTORY
     {
-        return Err("Inventor DIFAT or miniFAT exceeds the 4 MiB limit".into());
+        return Err("compound document DIFAT or miniFAT exceeds the 4 MiB limit".into());
     }
     let mut fat_sectors = header[76..512]
         .as_chunks::<4>()
@@ -194,7 +206,7 @@ pub(super) fn preflight(source: &mut BudgetFile, source_size: u64) -> Result<Opt
     let mut seen = HashSet::new();
     for _ in 0..difat_count {
         if !seen.insert(difat) {
-            return Err("cyclic Inventor DIFAT".into());
+            return Err("cyclic compound document DIFAT".into());
         }
         let data = sector(source, difat, sector_count, sector_size)?;
         for value in data[..sector_size - 4].as_chunks::<4>().0 {
@@ -204,7 +216,7 @@ pub(super) fn preflight(source: &mut BudgetFile, source_size: u64) -> Result<Opt
             }
         }
         if fat_sectors.len() > fat_count {
-            return Err("Inventor DIFAT lists excess FAT sectors".into());
+            return Err("compound document DIFAT lists excess FAT sectors".into());
         }
         difat = u32_le(&data, sector_size - 4)?;
     }
@@ -212,10 +224,10 @@ pub(super) fn preflight(source: &mut BudgetFile, source_size: u64) -> Result<Opt
         || fat_sectors.len() != fat_count
         || fat_sectors.iter().collect::<HashSet<_>>().len() != fat_count
     {
-        return Err("invalid Inventor FAT sector list".into());
+        return Err("invalid compound document FAT sector list".into());
     }
     if fat_count * (sector_size / 4) < sector_count {
-        return Err("Inventor FAT cannot address the source".into());
+        return Err("compound document FAT cannot address the source".into());
     }
     let mut fat = Vec::with_capacity(fat_count * sector_size / 4);
     for id in fat_sectors {
@@ -235,16 +247,16 @@ pub(super) fn preflight(source: &mut BudgetFile, source_size: u64) -> Result<Opt
     let mut count = 0;
     while directory != END {
         if !seen.insert(directory) {
-            return Err("cyclic Inventor directory sector chain".into());
+            return Err("cyclic compound document directory sector chain".into());
         }
         count += 1;
         if count * sector_size > MAX_DIRECTORY {
-            return Err("Inventor directory exceeds the 4 MiB limit".into());
+            return Err("compound document directory exceeds the 4 MiB limit".into());
         }
         let data = sector(source, directory, sector_count, sector_size)?;
         if count == 1 {
             if data[66] != 5 {
-                return Err("Inventor compound file has no root storage".into());
+                return Err("compound document has no root storage".into());
             }
             root_start = u32_le(&data, 116)?;
             root_size = if major == 3 {
@@ -253,13 +265,13 @@ pub(super) fn preflight(source: &mut BudgetFile, source_size: u64) -> Result<Opt
                 u64::from_le_bytes(bytes(&data, 120, 8)?.try_into()?)
             };
             if root_size > 64 * 1024 * 1024 {
-                return Err("Inventor root mini-stream exceeds the 64 MiB limit".into());
+                return Err("compound document root mini-stream exceeds the 64 MiB limit".into());
             }
         }
         directory_bytes.extend_from_slice(&data);
         directory = *fat
             .get(directory as usize)
-            .ok_or("Inventor directory points outside FAT")?;
+            .ok_or("compound document directory points outside FAT")?;
     }
     // Permissive cfb opening reads the actual miniFAT chain, independently of
     // its declared length. Bound that chain before its entry vector allocates.
@@ -269,14 +281,14 @@ pub(super) fn preflight(source: &mut BudgetFile, source_size: u64) -> Result<Opt
     let mut count = 0;
     while mini != END {
         if !seen.insert(mini) {
-            return Err("cyclic Inventor miniFAT chain".into());
+            return Err("cyclic compound document miniFAT chain".into());
         }
         count += 1;
         if count * sector_size > MAX_DIRECTORY {
-            return Err("Inventor actual miniFAT exceeds the 4 MiB limit".into());
+            return Err("compound document actual miniFAT exceeds the 4 MiB limit".into());
         }
         if mini as usize >= sector_count {
-            return Err("Inventor miniFAT points outside the source".into());
+            return Err("compound document miniFAT points outside the source".into());
         }
         let data = sector(source, mini, sector_count, sector_size)?;
         mini_fat.extend(
@@ -287,10 +299,10 @@ pub(super) fn preflight(source: &mut BudgetFile, source_size: u64) -> Result<Opt
         );
         mini = *fat
             .get(mini as usize)
-            .ok_or("Inventor miniFAT points outside FAT")?;
+            .ok_or("compound document miniFAT points outside FAT")?;
     }
     if count != mini_count {
-        return Err("Inventor miniFAT chain length does not match its header".into());
+        return Err("compound document miniFAT chain length does not match its header".into());
     }
     let mut streams = HashMap::new();
     let mut pending = vec![u32_le(&directory_bytes, 76)?];
@@ -300,11 +312,11 @@ pub(super) fn preflight(source: &mut BudgetFile, source_size: u64) -> Result<Opt
             continue;
         }
         if !seen.insert(id) {
-            return Err("cyclic Inventor root directory tree".into());
+            return Err("cyclic compound document root directory tree".into());
         }
         let entry = bytes(&directory_bytes, id as usize * 128, 128)?;
         if ![1, 2].contains(&entry[66]) {
-            return Err("invalid Inventor root directory child".into());
+            return Err("invalid compound document root directory child".into());
         }
         pending.push(u32_le(entry, 68)?);
         pending.push(u32_le(entry, 72)?);
@@ -316,7 +328,7 @@ pub(super) fn preflight(source: &mut BudgetFile, source_size: u64) -> Result<Opt
             || !name_size.is_multiple_of(2)
             || bytes(entry, name_size - 2, 2)? != [0, 0]
         {
-            return Err("invalid Inventor directory name".into());
+            return Err("invalid compound document directory name".into());
         }
         let characters = bytes(entry, 0, name_size - 2)?
             .as_chunks::<2>()

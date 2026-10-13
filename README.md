@@ -77,8 +77,11 @@ Catwalk also handles these application documents:
 | [FreeCAD `.fcstd`](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#freecad) | Stored ASCII BREP shapes with supported containers, local links and arrays | Addressed saved PNG |
 | [SketchUp `.skp`](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#sketchup) | — | Model-thumbnail PNG from qualified 2013–2017 and 2026 containers |
 | [Rhino `.3dm`](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#rhino) | Unavailable | Addressed document-properties DIB |
+| [SolidWorks `.sldprt` / `.sldasm`](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#solidworks) | Unsupported | Document PNG or supported DIB in compound-storage files |
 
 By default, a supported saved image is used when available. Blender, `LightBurn`, DWG, Lychee, `FreeCAD`, Inventor and Fusion fall back to their geometry readers when the saved image is missing or unreadable. A saved thumbnail can be blank or out of date. Rhino support extracts the stored viewport image; documents without that image return the absent-preview status.
+
+**`SolidWorks` previews extract the last saved document image.** Qualified compound-storage parts and assemblies use the root `PreviewPNG` image, with a supported `Preview` DIB as fallback. Assembly component files are not needed. Modern compressed-section containers, configuration-specific previews and fresh part/assembly geometry remain unsupported. Absent or empty preview streams return exit code 3; malformed selected images return an error. See [the coverage entry](docs/format-coverage.md#solidworks) and [original source qualification](tests/fixtures/formats/solidworks/README.md).
 
 **`LightBurn` supports fresh vector rendering:** paths, cubic Bézier curves, shared instances, nested groups, rectangles, rounded corners, ellipses and the first 16 standard cut-layer colors. Text, bitmaps, laser fills and multipage geometry remain unsupported. Nine projects without saved thumbnails have geometry checks and PNG snapshots.
 
