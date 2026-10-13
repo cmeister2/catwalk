@@ -1,0 +1,33 @@
+{
+  "repository": "ADN-DevTech/3dsMax-MCG-Samples",
+  "revision": "820d8a32badf916849282081ca42416a88d2f6b7",
+  "license": "MIT",
+  "files": [
+    {
+      "file": "Combine Test.max",
+      "source_path": "Scenes/Tests/Combine Test.max",
+      "url": "https://github.com/ADN-DevTech/3dsMax-MCG-Samples/blob/820d8a32badf916849282081ca42416a88d2f6b7/Scenes/Tests/Combine%20Test.max",
+      "git_blob": "521e80513b82592bf04f9f05fdb5076da0029374",
+      "sha256": "4c065fedde00ed23f884b959448bb9d69725b5e0aaf667746639de91cd74f68c",
+      "bytes": 630784,
+      "dimensions": [
+        512,
+        256
+      ],
+      "rgba_sha256": "c06792b6a85f99a7eaf3991cacd2a37fe75833678b67f02b874ffc4b3580ab91"
+    },
+    {
+      "file": "Spherify Test.max",
+      "source_path": "Scenes/Tests/Spherify Test.max",
+      "url": "https://github.com/ADN-DevTech/3dsMax-MCG-Samples/blob/820d8a32badf916849282081ca42416a88d2f6b7/Scenes/Tests/Spherify%20Test.max",
+      "git_blob": "d13e32acb69321c5c0fd1864d3f96d79d667a01e",
+      "sha256": "e2d8d94e20a9c182bb38ac03426bfbf6608aafa9b3f2dcbcc033a47d669ee823",
+      "bytes": 630784,
+      "dimensions": [
+        512,
+        268
+      ],
+      "rgba_sha256": "43f61b0fdefb6cfb3a5b682363ab032a6cb7b8c840d08d305563309483610023"
+    }
+  ]
+}
