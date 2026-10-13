@@ -33,6 +33,9 @@ mod native_geometry;
 #[path = "fixtures/obj_appearance.rs"]
 /// Generate OBJ appearance controls and register a retained textured exporter model.
 mod obj_appearance;
+#[path = "fixtures/rhino.rs"]
+/// Register original Rhino documents and independently qualified viewport images.
+mod rhino;
 #[path = "fixtures/saved_previews.rs"]
 /// Generate qualified saved-thumbnail carrier fixtures.
 mod saved_previews;
@@ -129,6 +132,7 @@ fn main() -> Result<()> {
     cases.extend(usd_nurbs::generate(&root)?);
     cases.extend(tiff_volumes::generate(&root)?);
     cases.extend(freecad::generate(&root)?);
+    cases.extend(rhino::generate(&root)?);
     cases.sort_by(|a, b| a.extension.cmp(&b.extension).then(a.id.cmp(&b.id)));
     let mut ids = BTreeSet::new();
     for case in &cases {

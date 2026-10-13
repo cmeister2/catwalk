@@ -76,8 +76,9 @@ Catwalk also handles these application documents:
 | [Lychee `.lys`](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#lychee) | Original stored model meshes with saved object placements | Saved PNG from qualified Mango/ASAR scenes |
 | [FreeCAD `.fcstd`](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#freecad) | Stored ASCII BREP shapes with supported containers, local links and arrays | Addressed saved PNG |
 | [SketchUp `.skp`](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#sketchup) | — | Model-thumbnail PNG from qualified 2013–2017 and 2026 containers |
+| [Rhino `.3dm`](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#rhino) | Unavailable | Addressed document-properties DIB |
 
-By default, a supported saved image is used when available. Blender, `LightBurn`, DWG, Lychee, `FreeCAD`, Inventor and Fusion fall back to their geometry readers when the saved image is missing or unreadable. A saved thumbnail can be blank or out of date.
+By default, a supported saved image is used when available. Blender, `LightBurn`, DWG, Lychee, `FreeCAD`, Inventor and Fusion fall back to their geometry readers when the saved image is missing or unreadable. A saved thumbnail can be blank or out of date. Rhino support extracts the stored viewport image; documents without that image return the absent-preview status.
 
 **`LightBurn` supports fresh vector rendering:** paths, cubic Bézier curves, shared instances, nested groups, rectangles, rounded corners, ellipses and the first 16 standard cut-layer colors. Text, bitmaps, laser fills and multipage geometry remain unsupported. Nine projects without saved thumbnails have geometry checks and PNG snapshots.
 
@@ -106,6 +107,7 @@ catwalk design.f3d --render-geometry --output fresh.png --size 256
 # Extract a saved image at its original dimensions.
 catwalk part.ipt --extract-saved-preview --output saved.png
 catwalk scene.lys --extract-saved-preview --output saved.png
+catwalk model.3dm --extract-saved-preview --output saved.png
 ```
 
 `--render-geometry` ignores embedded images and requires a supported geometry reader. `--extract-saved-preview` uses the saved image's original dimensions and cannot be combined with canvas-size, transparency, background, color or sampling options. For Inventor PNGs, extraction preserves the native bit depth. When the reader returns no saved image, extraction exits with code 3; corrupt or unsupported carriers can return an error.

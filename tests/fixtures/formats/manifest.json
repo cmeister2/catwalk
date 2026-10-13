@@ -9,6 +9,54 @@
       "title": "STEP translated box through .210 alias"
     },
     {
+      "extension": "3dm",
+      "id": "rhino-v3-deform-spheres-saved-thumbnail",
+      "input": "rhino/v3_DeformSpheres.3dm",
+      "kind": "saved-preview",
+      "provenance": "Unmodified McNeel openNURBS SDK sample example_files/V3/v3_DeformSpheres.3dm at commit eb92af3ba1806b0a34a99aba0d3bda83e3d46083; permissive openNURBS license and official redistribution grant retained as rhino/LICENSE-openNURBS*.txt. Exact source/pixel hashes and independent preview extraction in rhino/sources.json and README.md. Saved viewport pixels only; no geometry decoding.",
+      "title": "Rhino 3 deformable spheres saved viewport"
+    },
+    {
+      "extension": "3dm",
+      "id": "rhino-v4-mechanical-part-saved-thumbnail",
+      "input": "rhino/v4_MechPartB.3dm",
+      "kind": "saved-preview",
+      "provenance": "Unmodified McNeel openNURBS SDK sample example_files/V4/v4_MechPartB.3dm at commit eb92af3ba1806b0a34a99aba0d3bda83e3d46083; permissive openNURBS license and official redistribution grant retained as rhino/LICENSE-openNURBS*.txt. Exact source/pixel hashes and independent preview extraction in rhino/sources.json and README.md. Saved viewport pixels only; no geometry decoding.",
+      "title": "Rhino 4 mechanical part saved viewport"
+    },
+    {
+      "extension": "3dm",
+      "id": "rhino-v5-extrusions-saved-thumbnail",
+      "input": "rhino/v5_extrusions.3dm",
+      "kind": "saved-preview",
+      "provenance": "Unmodified McNeel openNURBS SDK sample example_files/V5/v5_extrusions.3dm at commit eb92af3ba1806b0a34a99aba0d3bda83e3d46083; permissive openNURBS license and official redistribution grant retained as rhino/LICENSE-openNURBS*.txt. Exact source/pixel hashes and independent preview extraction in rhino/sources.json and README.md. Saved viewport pixels only; no geometry decoding.",
+      "title": "Rhino 5 extrusions saved viewport"
+    },
+    {
+      "extension": "3dm",
+      "id": "rhino-v6-annotations-saved-thumbnail",
+      "input": "rhino/V6_annotation.3dm",
+      "kind": "saved-preview",
+      "provenance": "Unmodified McNeel openNURBS SDK sample example_files/V6/V6_annotation.3dm at commit eb92af3ba1806b0a34a99aba0d3bda83e3d46083; permissive openNURBS license and official redistribution grant retained as rhino/LICENSE-openNURBS*.txt. Exact source/pixel hashes and independent preview extraction in rhino/sources.json and README.md. Saved viewport pixels only; no geometry decoding.",
+      "title": "Rhino 6 annotations saved viewport"
+    },
+    {
+      "extension": "3dm",
+      "id": "rhino-v7-logo-annotations-saved-thumbnail",
+      "input": "rhino/v7_rhino_logo_annotations.3dm",
+      "kind": "saved-preview",
+      "provenance": "Unmodified McNeel openNURBS SDK sample example_files/V7/v7_rhino_logo_annotations.3dm at commit eb92af3ba1806b0a34a99aba0d3bda83e3d46083; permissive openNURBS license and official redistribution grant retained as rhino/LICENSE-openNURBS*.txt. Exact source/pixel hashes and independent preview extraction in rhino/sources.json and README.md. Saved viewport pixels only; no geometry decoding.",
+      "title": "Rhino 7 logo and annotations saved viewport"
+    },
+    {
+      "extension": "3dm",
+      "id": "rhino-v8-caps-joins-saved-thumbnail",
+      "input": "rhino/v8_caps_and_joins.3dm",
+      "kind": "saved-preview",
+      "provenance": "Unmodified McNeel openNURBS SDK sample example_files/V8/v8_caps_and_joins.3dm at commit eb92af3ba1806b0a34a99aba0d3bda83e3d46083; permissive openNURBS license and official redistribution grant retained as rhino/LICENSE-openNURBS*.txt. Exact source/pixel hashes and independent preview extraction in rhino/sources.json and README.md. Saved viewport pixels only; no geometry decoding.",
+      "title": "Rhino 8 capped and joined surfaces saved viewport"
+    },
+    {
       "extension": "3ds",
       "id": "3ds-native-material",
       "input": "mesh_scene/3ds-native-material.3ds",
