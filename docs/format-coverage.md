@@ -70,6 +70,7 @@ Fresh geometry readers support Blender, LightBurn, a DWG drawing subset, origina
 | [SBET](#sbet) | `.sbet` | Subset: little-endian 17-double trajectory records rendered as geographic points. |
 | [SLPK](#slpk) | `.slpk` | Subset: I3S point-cloud packages, hierarchy and Rust LEPCC XYZ/RGB decoding. |
 | [Lychee](#lychee) | `.lys` | Subset: addressed saved PNG and original indexed source models with scene placements in qualified flat Mango containers; print preparation is excluded from fresh geometry. |
+| [SolidWorks](#solidworks) | `.sldprt`, `.sldasm` | Subset: addressed document PNG or supported DIB in CFB/OLE compound-storage parts and assemblies; extraction only. |
 
 ## Shared preview policies
 
@@ -812,6 +813,20 @@ The [payload parser](https://github.com/LibreDWG/libredwg/blob/a3d51f13f7afc143c
 Saved-preview extraction accepts R13/R14/2000/2004/2007/2010/2013/2018 signatures AC1012/AC1014/AC1015/AC1018/AC1021/AC1024/AC1027/AC1032. [Carrier fixture details](../tests/fixtures/saved-previews/blend_dwg/README.md) describe authored AC1032 DIB, PNG and absent-preview carriers with pixel snapshots. These incomplete drawings test extraction; separate native drawing fixtures test geometry loading.
 
 The saved-preview reader does not parse geometry, verify whole-file CRCs or recover previews through section maps. LibreDWG handles [R2004/R2010+ section maps](https://github.com/LibreDWG/libredwg/blob/a3d51f13f7afc143c2adb87d4b0e858e24cdac95/src/decode.c) and [R2007 page/section maps](https://github.com/LibreDWG/libredwg/blob/a3d51f13f7afc143c2adb87d4b0e858e24cdac95/src/decode_r2007.c) differently; addressed preview support does not establish those broader layouts. Other producers, service packs, encrypted or multiple-image previews and beta formats remain unqualified; AC1009, AC1013 and other signatures are explicitly rejected.
+
+## SolidWorks
+
+**Extensions:** `.sldprt`, `.sldasm`. **Coverage:** saved document thumbnails in qualified CFB/OLE v3/v4 containers, without part or assembly geometry decoding.
+
+The root `ISolidWorksInformation` stream qualifies the document container. The reader selects the exact root `PreviewPNG` stream, followed by the exact root `Preview` stream when the PNG is absent or unreadable. `Preview` is a little-endian byte length followed by a DIB; the enabled Rust bitmap decoder handles supported palettes, row orientation and RLE encodings. It does not search geometry or miscellaneous streams for images. Configuration-specific thumbnails and nested streams are not document candidates.
+
+SOLIDWORKS Document Manager exposes separate document [PNG and bitmap preview stream names](https://help.solidworks.com/2012/english/api/swdocmgrapi/SolidWorks.Interop.swdocumentmgr~SolidWorks.Interop.swdocumentmgr.ISwDMDocument10_members.html?format=P&value=). Its [document bitmap API](https://help.solidworks.com/2022/english/api/swdocmgrapi/SolidWorks.Interop.swdocumentmgr~SolidWorks.Interop.swdocumentmgr.ISwDMDocument10~GetPreviewBitmap.html) describes the image of the configuration active when the part or assembly was last saved. These references document the addressed carriers; Catwalk does not invoke Document Manager, COM or a CAD installation.
+
+The shared compound preflight preserves the Inventor reader's limits: 512 MiB source, 8 MiB FAT metadata, 4 MiB each directory/DIFAT/miniFAT, 64 MiB root mini-stream, exact original selected-stream chain lengths and cycle checks. Selected previews are limited to 8 MiB encoded bytes, 4096 pixels per axis and 64 MiB decoded allocation, with a cooperative five-second extraction deadline.
+
+Two unchanged, separately MIT-licensed producer files qualify parts and assemblies. Public extraction matches PNGs independently read using Python `olefile`; removing only `PreviewPNG` from temporary copies also matches independently decoded original RLE8 DIB pixels. CLI tests cover original-size extraction, absent-preview code 3, output preservation and unsupported fresh rendering. [Fixture provenance, hashes and license](../tests/fixtures/formats/solidworks/README.md) are retained alongside both producer files.
+
+Modern compressed-section SolidWorks containers, `.slddrw`, configuration-selection APIs and fresh Parasolid/model geometry remain unsupported. Assemblies use their stored image without opening referenced component files. PNG/DIB fallback does not establish whole-model validity or compatibility with every SolidWorks release; saved images can be absent or stale.
 
 ## Remaining compatibility work
 

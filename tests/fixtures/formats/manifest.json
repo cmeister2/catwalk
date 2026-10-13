@@ -1561,6 +1561,22 @@
       "title": "SketchUp legacy-box-v2016 original model thumbnail"
     },
     {
+      "extension": "sldasm",
+      "id": "solidworks-powerpackage",
+      "input": "solidworks/solidworks-powerpackage.sldasm",
+      "kind": "saved-preview",
+      "provenance": "Unmodified guoxxiong/Power-Package/powerpackage.SLDASM at commit bc6b8d0ca0fe472a4f0ed91c9e64f986b3ddc7e6; separately MIT-licensed native SolidWorks assembly document. Extracts root PreviewPNG, without geometry or assembly companion reads. Original license, exact hashes and reference PNG streams retained in solidworks/.",
+      "title": "SolidWorks native assembly saved PNG preview"
+    },
+    {
+      "extension": "sldprt",
+      "id": "solidworks-about",
+      "input": "solidworks/solidworks-about.sldprt",
+      "kind": "saved-preview",
+      "provenance": "Unmodified guoxxiong/Power-Package/about.SLDPRT at commit bc6b8d0ca0fe472a4f0ed91c9e64f986b3ddc7e6; separately MIT-licensed native SolidWorks part document. Extracts root PreviewPNG, without geometry or assembly companion reads. Original license, exact hashes and reference PNG streams retained in solidworks/.",
+      "title": "SolidWorks native part saved PNG preview"
+    },
+    {
       "extension": "slpk",
       "id": "slpk-autzen",
       "input": "images_points/slpk-autzen.slpk",
