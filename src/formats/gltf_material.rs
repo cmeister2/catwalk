@@ -315,7 +315,7 @@ fn read_image(
         return Err("glTF base color image format must match its PNG/JPEG MIME type".into());
     }
     let (width, height) =
-        image::ImageReader::with_format(Cursor::new(&bytes), format).into_dimensions()?;
+        image::ImageReader::with_format(Cursor::new(bytes.as_ref()), format).into_dimensions()?;
     let pixels = u64::from(width) * u64::from(height);
     *total_pixels = total_pixels
         .checked_add(pixels)
@@ -329,7 +329,7 @@ fn read_image(
     {
         return Err("glTF color images exceed the texture dimensions or pixel budget".into());
     }
-    let mut reader = image::ImageReader::with_format(Cursor::new(&bytes), format);
+    let mut reader = image::ImageReader::with_format(Cursor::new(bytes.as_ref()), format);
     let mut limits = image::Limits::default();
     limits.max_image_width = Some(8192);
     limits.max_image_height = Some(8192);

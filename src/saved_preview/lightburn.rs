@@ -113,7 +113,8 @@ fn extract_bytes(bytes: &[u8]) -> Result<Option<RgbaImage>> {
     {
         return Err("LightBurn saved preview exceeds the image dimension or pixel limit".into());
     }
-    let mut reader = image::ImageReader::with_format(Cursor::new(png), image::ImageFormat::Png);
+    let mut reader =
+        image::ImageReader::with_format(Cursor::new(png.as_slice()), image::ImageFormat::Png);
     let mut limits = image::Limits::default();
     limits.max_image_width = Some(MAX_IMAGE_DIMENSION);
     limits.max_image_height = Some(MAX_IMAGE_DIMENSION);

@@ -1,4 +1,13 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["github>cmeister2/renovate"]
+  "extends": ["github>cmeister2/renovate"],
+  "packageRules": [
+    {
+      "matchManagers": ["cargo"],
+      "matchIsBreaking": true,
+      "groupName": "Cargo breaking dependency updates",
+      "groupSlug": "cargo-breaking-dependencies",
+      "automerge": false
+    }
+  ]
 }
