@@ -41,16 +41,85 @@ The importers and renderer use Rust implementations. Native Autodesk decoding us
 
 ## Which files can I preview?
 
-Common inputs include:
+The matrix covers all 91 advertised extensions, sorted alphabetically by type with aliases grouped together.
 
-| Family | Example extensions |
-| --- | --- |
-| Meshes and printable models | `.stl`, `.obj`, `.ply`, `.off`, `.3mf`, `.amf` |
-| Scenes and animation files | `.gltf`, `.glb`, `.fbx`, `.dae`, `.3ds`, `.wrl`, `.vrml`, `.usd`, `.usda`, `.usdc`, `.usdz`, `.abc` |
-| CAD, buildings and drawings | `.step`, `.stp`, `.iges`, `.igs`, `.brep`, `.xbf`, `.ifc`, `.gml`, `.dxf` |
-| Point clouds | `.las`, `.laz`, `.pcd`, `.pts`, `.ptx`, `.drc`, `.slpk`, `.splat`, `.spz` |
-| Scientific data | `.vtk`, `.vtp`, `.vtu`, `.vtr`, `.vti`, `.vts`, `.vtm`, `.vtkhdf`, `.exo`, `.nc`, `.nrrd`, `.mhd`, `.mha`, `.dcm` |
-| Images | `.png`, `.jpg`, `.jpeg`, `.tif`, `.tiff`, `.bmp`, `.tga`, `.hdr`, `.webp`, `.exr` |
+**✅ Supported for a qualified subset · ❌ Unsupported · — Not applicable.** Coverage follows the versions, encodings and features in each linked entry. Geometry includes meshes, points, lines and surfaces generated from volume data. Saved preview means extracting a document image stored in or referenced by a model file.
+
+Ordinary raster and DICOM inputs are fitted directly to the canvas, so both document modes are —. TIFF also supports ✅ geometry previews from qualified scalar page stacks.
+
+| Type | Extensions | Saved preview | Geometry |
+| --- | --- | :---: | :---: |
+| [3DS](docs/format-coverage.md#3ds) | `.3ds` | — | ✅ |
+| [3ds Max](docs/format-coverage.md#3ds-max) | `.max` | ✅ | ❌ |
+| [3MF](docs/format-coverage.md#3mf) | `.3mf` | ❌ | ✅ |
+| [Alembic](docs/format-coverage.md#alembic) | `.abc` | — | ✅ |
+| [AMF](docs/format-coverage.md#amf) | `.amf` | — | ✅ |
+| [`AutoCAD` drawings](docs/format-coverage.md#autocad-drawings) | `.dwg` | ✅ | ✅ |
+| [Autodesk Fusion](docs/format-coverage.md#autodesk-fusion) | `.f3d` | ✅ | ✅ |
+| [Autodesk Inventor](docs/format-coverage.md#autodesk-inventor) | `.ipt`, `.iam` | ✅ | ✅ |
+| [Blender](docs/format-coverage.md#blender) | `.blend` | ✅ | ✅ |
+| [BMP](docs/format-coverage.md#bmp) | `.bmp` | — | — |
+| [BPF](docs/format-coverage.md#bpf) | `.bpf` | — | ✅ |
+| [BREP](docs/format-coverage.md#brep) | `.brep` | — | ✅ |
+| [`CityGML`](docs/format-coverage.md#citygml) | `.gml` | — | ✅ |
+| [COLLADA](docs/format-coverage.md#collada) | `.dae` | — | ✅ |
+| [DICOM](docs/format-coverage.md#dicom) | `.dcm` | — | — |
+| [DirectX](docs/format-coverage.md#directx) | `.x` | — | ✅ |
+| [Draco](docs/format-coverage.md#draco) | `.drc` | — | ✅ |
+| [DXF](docs/format-coverage.md#dxf) | `.dxf` | ❌ | ✅ |
+| [Exodus II](docs/format-coverage.md#exodus-ii) | `.e`, `.ex2`, `.exo`, `.g` | — | ✅ |
+| [EXR](docs/format-coverage.md#exr) | `.exr` | — | — |
+| [FBX](docs/format-coverage.md#fbx) | `.fbx` | ❌ | ✅ |
+| [`FreeCAD`](docs/format-coverage.md#freecad) | `.fcstd` | ✅ | ✅ |
+| [GLB](docs/format-coverage.md#glb) | `.glb` | — | ✅ |
+| [glTF](docs/format-coverage.md#gltf) | `.gltf` | — | ✅ |
+| [HDR](docs/format-coverage.md#hdr) | `.hdr` | — | — |
+| [IFC](docs/format-coverage.md#ifc) | `.ifc` | — | ✅ |
+| [IGES](docs/format-coverage.md#iges) | `.iges`, `.igs` | — | ✅ |
+| [JPEG](docs/format-coverage.md#jpeg) | `.jpg`, `.jpeg` | — | — |
+| [LAS](docs/format-coverage.md#las) | `.las`, `.laz` | — | ✅ |
+| [`LightBurn`](docs/format-coverage.md#lightburn) | `.lbrn`, `.lbrn2` | ✅ | ✅ |
+| [Lychee](docs/format-coverage.md#lychee) | `.lys` | ✅ | ✅ |
+| [`MetaImage`](docs/format-coverage.md#metaimage) | `.mhd`, `.mha` | — | ✅ |
+| [`NetCDF`](docs/format-coverage.md#netcdf) | `.nc`, `.cdf`, `.ncdf` | — | ✅ |
+| [NRRD](docs/format-coverage.md#nrrd) | `.nrrd`, `.nhdr` | — | ✅ |
+| [OBJ](docs/format-coverage.md#obj) | `.obj` | — | ✅ |
+| [OFF](docs/format-coverage.md#off) | `.off` | — | ✅ |
+| [Optech CSD](docs/format-coverage.md#optech-csd) | `.csd` | — | ✅ |
+| [PCD](docs/format-coverage.md#pcd) | `.pcd` | — | ✅ |
+| [PLY](docs/format-coverage.md#ply) | `.ply` | — | ✅ |
+| [PNG](docs/format-coverage.md#png) | `.png` | — | — |
+| [PTS](docs/format-coverage.md#pts) | `.pts` | — | ✅ |
+| [PTX](docs/format-coverage.md#ptx) | `.ptx` | — | ✅ |
+| [QFIT](docs/format-coverage.md#qfit) | `.qi` | — | ✅ |
+| [Quake MDL](docs/format-coverage.md#quake-mdl) | `.mdl` | — | ✅ |
+| [Rhino](docs/format-coverage.md#rhino) | `.3dm` | ✅ | ❌ |
+| [SBET](docs/format-coverage.md#sbet) | `.sbet` | — | ✅ |
+| [`SketchUp`](docs/format-coverage.md#sketchup) | `.skp` | ✅ | ❌ |
+| [SLPK](docs/format-coverage.md#slpk) | `.slpk` | — | ✅ |
+| [`SolidWorks`](docs/format-coverage.md#solidworks) | `.sldprt`, `.sldasm` | ✅ | ❌ |
+| [Splat](docs/format-coverage.md#splat) | `.splat` | — | ✅ |
+| [SPZ](docs/format-coverage.md#spz) | `.spz` | — | ✅ |
+| [STEP](docs/format-coverage.md#step) | `.step`, `.stp`, `.stpnc`, `.p21`, `.210` | — | ✅ |
+| [STL](docs/format-coverage.md#stl) | `.stl` | — | ✅ |
+| [`TerraScan` BIN](docs/format-coverage.md#terrascan-bin) | `.bin` | — | ✅ |
+| [TGA](docs/format-coverage.md#tga) | `.tga` | — | — |
+| [TIFF](docs/format-coverage.md#tiff) | `.tif`, `.tiff` | — | ✅ |
+| [USD](docs/format-coverage.md#usd) | `.usd`, `.usda`, `.usdc`, `.usdz` | ❌ | ✅ |
+| [VDB](docs/format-coverage.md#vdb) | `.vdb` | — | ✅ |
+| [VRML](docs/format-coverage.md#vrml) | `.wrl`, `.vrml` | — | ✅ |
+| [VTK `ImageData` XML](docs/format-coverage.md#vtk-imagedata-xml) | `.vti` | — | ✅ |
+| [VTK legacy](docs/format-coverage.md#vtk-legacy) | `.vtk` | — | ✅ |
+| [VTK `MultiBlock` XML](docs/format-coverage.md#vtk-multiblock-xml) | `.vtm` | — | ✅ |
+| [VTK `PolyData` XML](docs/format-coverage.md#vtk-polydata-xml) | `.vtp` | — | ✅ |
+| [VTK `RectilinearGrid` XML](docs/format-coverage.md#vtk-rectilineargrid-xml) | `.vtr` | — | ✅ |
+| [VTK `StructuredGrid` XML](docs/format-coverage.md#vtk-structuredgrid-xml) | `.vts` | — | ✅ |
+| [VTK `UnstructuredGrid` XML](docs/format-coverage.md#vtk-unstructuredgrid-xml) | `.vtu` | — | ✅ |
+| [VTKHDF](docs/format-coverage.md#vtkhdf) | `.vtkhdf` | — | ✅ |
+| [WebP](docs/format-coverage.md#webp) | `.webp` | — | — |
+| [XBF](docs/format-coverage.md#xbf) | `.xbf` | — | ✅ |
+
+The ❌ saved-preview entries have documented image carriers that Catwalk does not extract: [3MF thumbnails](https://github.com/3MFConsortium/spec_core/blob/master/3MF%20Core%20Specification.md), [DXF `THUMBNAILIMAGE`](https://help.autodesk.com/cloudhelp/2017/ENU/AutoCAD-DXF/files/GUID-792F79DC-0D5D-43B5-AB0E-212E0EDF6BAE.htm), [FBX thumbnail objects](https://help.autodesk.com/cloudhelp/2020/ENU/FBX-Developer-Help/files/cpp_ref/FBX_Developer_Help_cpp_ref_class_fbx_thumbnail_html.html) and [USD `AssetPreviewsAPI`](https://openusd.org/dev/user_guides/schemas/usdMedia/AssetPreviewsAPI.html). Other mesh, point and scientific-volume inputs use — for saved-preview mode.
 
 Run `catwalk --list-formats` for the complete extension list. Each reader supports a documented subset; the [coverage matrix](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md) lists supported encodings, scene features and limitations.
 
@@ -63,22 +132,6 @@ COLLADA (`.dae`) previews include static surfaces, colored wire geometry, planar
 Open CASCADE `.brep` previews accept supported ASCII and little-endian binary topology tables, including curved surfaces, free wires, isolated points and stored placements. See [the BREP coverage entry](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#brep) for supported versions, cache exclusions and limits.
 
 ## Native documents and saved previews
-
-Catwalk also handles these application documents:
-
-| Document | Fresh geometry preview | Saved thumbnail |
-| --- | --- | --- |
-| [LightBurn `.lbrn` / `.lbrn2`](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#lightburn) | Vector outlines in an XY plan view | PNG |
-| [Blender `.blend`](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#blender) | Stored mesh scenes, with supported object placements and instances | Embedded RGBA image |
-| [AutoCAD `.dwg`](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#autocad-drawings) | Supported drawing entities and block instances | PNG or DIB |
-| [Inventor `.ipt` / `.iam`](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#autodesk-inventor) | Supported solved part bodies and local assembly occurrences | PNG or supported DIB/BMP |
-| [Fusion `.f3d`](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#autodesk-fusion) | Supported active native bodies and placements | Active design's saved PNG |
-| [Lychee `.lys`](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#lychee) | Original stored model meshes with saved object placements | Saved PNG from qualified Mango/ASAR scenes |
-| [FreeCAD `.fcstd`](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#freecad) | Stored ASCII BREP shapes with supported containers, local links and arrays | Addressed saved PNG |
-| [SketchUp `.skp`](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#sketchup) | — | Model-thumbnail PNG from qualified 2013–2017 and 2026 containers |
-| [Rhino `.3dm`](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#rhino) | Unavailable | Addressed document-properties DIB |
-| [SolidWorks `.sldprt` / `.sldasm`](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#solidworks) | Unsupported | Document PNG or supported DIB in compound-storage files |
-| [3ds Max `.max`](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#3ds-max) | Unsupported | Qualified property-set WMF/DIB image |
 
 By default, a supported saved image is used when available. Blender, `LightBurn`, DWG, Lychee, `FreeCAD`, Inventor and Fusion fall back to their geometry readers when the saved image is missing or unreadable. A saved thumbnail can be blank or out of date. Rhino support extracts the stored viewport image; documents without that image return the absent-preview status. 3ds Max `.max` thumbnails use the saved image only; a document without a supported image has no geometry fallback.
 
