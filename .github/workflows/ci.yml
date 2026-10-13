@@ -125,13 +125,14 @@ jobs:
   success:
     name: Success
     if: always()
-    needs: [checks, tests, gallery, release-plan, prepare-binaries, binaries]
+    needs: [checks, tests, web, gallery, release-plan, prepare-binaries, binaries]
     runs-on: ubuntu-latest
     steps:
       - name: Require all checks to pass
         env:
           CHECKS_RESULT: ${{ needs.checks.result }}
           TESTS_RESULT: ${{ needs.tests.result }}
+          WEB_RESULT: ${{ needs.web.result }}
           GALLERY_RESULT: ${{ needs.gallery.result }}
           PLAN_RESULT: ${{ needs.release-plan.result }}
           PREPARE_RESULT: ${{ needs.prepare-binaries.result }}
@@ -139,6 +140,7 @@ jobs:
         run: |
           test "$CHECKS_RESULT" = success
           test "$TESTS_RESULT" = success
+          test "$WEB_RESULT" = success
           test "$GALLERY_RESULT" = success
           test "$PLAN_RESULT" = success || test "$PLAN_RESULT" = skipped
           test "$PREPARE_RESULT" = success
@@ -297,8 +299,69 @@ jobs:
           path: target/release-snapshots
           if-no-files-found: warn
 
+  web:
+    needs: prepare-binaries
+    if: ${{ always() && !cancelled() && needs.prepare-binaries.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CC_wasm32_wasip1: clang
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+        with:
+          toolchain: ${{ needs.prepare-binaries.outputs.rust-version }}
+          targets: wasm32-wasip1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          shared-key: web-wasm32-wasip1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: lts/*
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Install the WebAssembly C compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends clang
+          command -v clang
+      - name: Install Chromium and browser dependencies
+        run: npx --no-install playwright install --with-deps chromium
+      - name: Download prepared runtime license notices
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: binary-prepared
+          path: release-prepared
+      - name: Apply prepared manifests
+        run: cp release-prepared/Cargo.toml release-prepared/Cargo.lock .
+      - name: Build the local-file thumbnail uploader
+        run: npm run build:web -- --output target/web --notices release-prepared
+      - name: Test the WebAssembly runner
+        run: npm run test:web:node
+      - name: Test local-file thumbnails in Chromium
+        run: npm run test:web:browser
+      - name: Retain WebAssembly and browser test results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: wasm-browser-test-results
+          path: |
+            target/web-test-results
+            test-results
+            playwright-report
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Retain the verified thumbnail uploader
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: thumbnail-uploader
+          path: target/web
+          if-no-files-found: error
+          retention-days: 14
+
   gallery:
-    needs: [checks, tests]
+    needs: [checks, tests, web]
+    if: ${{ always() && !cancelled() && needs.checks.result == 'success' && needs.tests.result == 'success' && needs.web.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -309,6 +372,18 @@ jobs:
         with:
           name: thumbnail-gallery
           path: target/gallery
+      - name: Download the verified local-file thumbnail uploader
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: thumbnail-uploader
+          path: target/gallery/upload
+      - name: Retain the assembled thumbnail site
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: thumbnail-site
+          path: target/gallery
+          if-no-files-found: error
+          retention-days: 14
       - name: Configure GitHub Pages
         if: github.event.repository.private == false && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
@@ -319,7 +394,7 @@ jobs:
           path: target/gallery
 
   pages:
-    if: github.event.repository.private == false && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: ${{ always() && !cancelled() && needs.gallery.result == 'success' && github.event.repository.private == false && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
     needs: gallery
     runs-on: ubuntu-latest
     permissions:

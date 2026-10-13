@@ -1,4 +1,4 @@
-# Binary notices cover the normal dependency graph for every release target.
+# Binary notices cover the normal dependency graph for native releases and the browser.
 # Apache-2.0 is preferred where upstream explicitly offers a license choice. Mandatory
 # AND terms remain included by cargo-about's SPDX expression evaluation.
 accepted = [
@@ -13,6 +13,7 @@ targets = [
     "x86_64-apple-darwin",
     "aarch64-apple-darwin",
     "x86_64-pc-windows-msvc",
+    "wasm32-wasip1",
 ]
 ignore-dev-dependencies = true
 ignore-build-dependencies = true

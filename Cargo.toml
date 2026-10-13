@@ -81,6 +81,13 @@ truck-modeling = "=0.6.0"
 lto = "thin"
 codegen-units = 1
 
+# Keep the browser download compact without changing native release builds.
+[profile.web]
+inherits = "release"
+opt-level = "s"
+strip = true
+panic = "abort"
+
 [lints.rust]
 missing_docs = "deny"
 

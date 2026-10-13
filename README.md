@@ -1,10 +1,10 @@
 # Catwalk
 
-Turn 3D models into PNG thumbnails from the command line or a Rust application. Catwalk renders on the CPU with automatic framing, a fixed isometric view, simple lighting and antialiasing. It runs headlessly on Linux, macOS and Windows.
+Turn 3D models into PNG thumbnails from your browser, the command line or a Rust application. Catwalk renders on the CPU with automatic framing, a fixed isometric view, simple lighting and antialiasing. Native builds run headlessly on Linux, macOS and Windows.
 
 The Rust crate is **`catwalk3d`**; the command is **`catwalk`**.
 
-[Browse example thumbnails](https://cmeister2.github.io/catwalk3d/) · [Check format coverage](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md) · [Rust API reference](https://docs.rs/catwalk3d/)
+[Create a thumbnail](https://cmeister2.github.io/catwalk3d/upload/) · [Browse example thumbnails](https://cmeister2.github.io/catwalk3d/) · [Check format coverage](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md) · [Rust API reference](https://docs.rs/catwalk3d/)
 
 ## Install and make a thumbnail
 
@@ -38,6 +38,23 @@ cargo run --release --locked -- examples/models/gear.obj --output thumbnail.png 
 ```
 
 The importers and renderer use Rust implementations. Native Autodesk decoding uses Cadmpeg with bundled Zstandard compression; building from source requires a C compiler for that compression library. Running Catwalk requires no graphics driver, display server, CAD installation or subprocess converter.
+
+## Create a thumbnail in your browser
+
+The [browser tool](https://cmeister2.github.io/catwalk3d/upload/) reads a selected model, image or document and lets you download its PNG thumbnail. Selected files stay on your device. Choose automatic saved-preview preference or fresh geometry, output size and transparency. Add materials, textures or assembly parts stored beside the primary file as companions; the picker currently accepts files from one folder.
+
+The page loads the compressed renderer when you generate a thumbnail and runs it in a worker. Browser limits are 64 MiB per file, 128 MiB total, 2,048 selected files and two minutes per job. Cancellation stops the worker; a failed input can be followed by another render. Format versions and encodings follow the compatibility matrix below.
+
+For local development, install Clang with WebAssembly support and the Rust WASI target, then build the static page:
+
+```sh
+rustup target add wasm32-wasip1
+npm ci --ignore-scripts
+npm run build:web
+python3 -m http.server 4173 --bind 127.0.0.1 --directory target
+```
+
+Open `http://127.0.0.1:4173/web/`. `npm run test:web:node` exercises the WASI runner; `npx playwright install chromium` and `npm run test:web:browser` exercise uploads and downloads in Chromium. CI supplies runtime notices, verifies the page, and publishes it beside the existing gallery at `/upload/` on successful main builds.
 
 ## Which files can I preview?
 

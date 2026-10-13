@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <meta name="description" content="Create a PNG thumbnail from a model, image or saved document preview. Your files stay in your browser.">
+    <title>Catwalk · Create a thumbnail</title>
+    <link rel="stylesheet" href="./style.css">
+    <script src="./app.js" type="module"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#upload-form">Skip to file selection</a>
+    <header class="site-header">
+      <div class="header-inner">
+        <a class="brand" href="../" aria-label="Catwalk thumbnail gallery">
+          <span class="brand-icon" aria-hidden="true">C</span>
+          <span>Catwalk</span>
+        </a>
+        <nav aria-label="Main navigation">
+          <a href="../">Example gallery</a>
+          <a href="https://github.com/cmeister2/catwalk3d" target="_blank" rel="noopener noreferrer">GitHub <span aria-hidden="true">↗</span></a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="page-shell">
+      <section class="introduction" aria-labelledby="page-title">
+        <p class="eyebrow">Local files · PNG thumbnails</p>
+        <h1 id="page-title">Create a thumbnail.</h1>
+        <p class="intro-copy">Choose a model, image or document, then save its preview as a PNG. Your files stay in this browser. Nothing you select is uploaded.</p>
+        <p class="scope-note">Support varies by format and file contents. <a href="https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md" target="_blank" rel="noopener noreferrer">See format coverage <span aria-hidden="true">↗</span></a></p>
+      </section>
+
+      <div class="workspace">
+        <section class="input-card" aria-labelledby="input-title">
+          <h2 id="input-title">Choose your file</h2>
+          <form id="upload-form">
+            <fieldset id="input-controls">
+              <legend class="visually-hidden">File and thumbnail settings</legend>
+              <label id="drop-target" class="drop-target" for="primary-file">
+                <input id="primary-file" class="visually-hidden" type="file" aria-describedby="file-limits">
+                <span class="drop-icon" aria-hidden="true">↑</span>
+                <span class="drop-title">Choose a file</span>
+                <span class="drop-description">or drop one here</span>
+              </label>
+              <p id="file-limits" class="help-text"></p>
+              <p id="primary-summary" class="file-summary" hidden></p>
+
+              <div class="companion-section">
+                <label class="field-label" for="companion-files">Companion files <span class="optional">optional</span></label>
+                <p id="companion-help" class="help-text">Add materials, textures or parts beside the main file, in the same folder. Companion files in subfolders are not supported here.</p>
+                <input id="companion-files" type="file" multiple aria-describedby="companion-help companion-summary">
+                <div id="companion-details" hidden>
+                  <p id="companion-summary" class="help-text"></p>
+                  <ul id="companion-list" class="file-list"></ul>
+                  <button id="clear-companions" class="text-button" type="button">Clear companion files</button>
+                </div>
+              </div>
+
+              <div class="options-grid">
+                <div>
+                  <label class="field-label" for="thumbnail-size">Thumbnail size</label>
+                  <select id="thumbnail-size">
+                    <option value="256">256 × 256</option>
+                    <option value="512" selected>512 × 512</option>
+                    <option value="1024">1024 × 1024</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="field-label" for="preview-mode">Preview mode</label>
+                  <select id="preview-mode" aria-describedby="mode-help">
+                    <option value="auto">Automatic</option>
+                    <option value="geometry">Geometry</option>
+                  </select>
+                </div>
+              </div>
+              <p id="mode-help" class="help-text">Automatic uses a saved preview when available. Geometry draws the model where supported. A saved preview may reflect an earlier version of a document.</p>
+              <label class="checkbox-label" for="transparent">
+                <input id="transparent" type="checkbox" checked>
+                Transparent background
+              </label>
+            </fieldset>
+
+            <div class="form-actions">
+              <button id="generate" class="primary-button" type="submit" disabled>Create thumbnail</button>
+              <button id="cancel" class="secondary-button" type="button" hidden>Cancel</button>
+              <button id="reset-files" class="text-button" type="button">Reset</button>
+            </div>
+            <div class="progress-line">
+              <span id="progress-spinner" class="spinner" aria-hidden="true" hidden></span>
+              <p id="status" role="status" aria-live="polite">Choose a file to get started.</p>
+            </div>
+            <div id="error-notice" class="error-notice" role="alert" hidden>
+              <p id="error-message"></p>
+              <button id="dismiss-error" class="text-button" type="button">Dismiss</button>
+            </div>
+          </form>
+          <noscript><p class="error-notice">Enable JavaScript to create a thumbnail in your browser.</p></noscript>
+        </section>
+
+        <section id="preview-card" class="preview-card" aria-labelledby="preview-title" aria-busy="false">
+          <div class="preview-heading">
+            <h2 id="preview-title">Your thumbnail</h2>
+            <span id="preview-size" class="size-badge" hidden></span>
+          </div>
+          <div class="preview-stage checkerboard">
+            <p id="preview-placeholder" class="preview-placeholder">Your thumbnail will appear here.</p>
+            <img id="preview-image" alt="" hidden>
+          </div>
+          <p id="preview-caption" class="preview-caption">The first preview may take a moment to prepare.</p>
+          <a id="download" class="download-button" hidden>Download PNG <span aria-hidden="true">↓</span></a>
+        </section>
+      </div>
+    </main>
+
+    <footer class="site-footer page-shell">
+      <p>Made with Catwalk. Files are processed locally in your browser.</p>
+      <div class="footer-links">
+        <a href="../">Example gallery</a>
+        <a href="./licenses.txt">Licenses</a>
+        <a href="./THIRD_PARTY_LICENSES.html">Third-party licenses</a>
+        <a href="./RUST-LICENSES.html">Rust licenses</a>
+      </div>
+    </footer>
+  </body>
+</html>
