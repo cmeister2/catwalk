@@ -7,7 +7,7 @@
     "release": "semantic-release",
     "test:release": "node --test tests/release-config.test.js tests/release-plan.test.js tests/release-binaries.test.js tests/release-notices.test.js",
     "build:web": "node .github/web/build.mjs",
-    "test:web:node": "node --test --test-isolation=none tests/wasm-runner.test.js tests/wasm-corpus.test.js tests/web-notices.test.js",
+    "test:web:node": "node --test --test-isolation=none tests/wasm-runner.test.js tests/wasm-corpus.test.js tests/web-notices.test.js tests/web-output.test.js",
     "test:web:browser": "playwright test --config tests/web/playwright.config.js"
   },
   "devDependencies": {
