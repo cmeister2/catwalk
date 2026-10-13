@@ -4,7 +4,7 @@ Catwalk provides Rust thumbnail readers for the model, image and application-doc
 
 The summary table groups format families and extension aliases. Each format section describes supported features, limits and shared renderer or codec policies.
 
-Fresh geometry readers support Blender, LightBurn, a DWG drawing subset, original stored Lychee models and qualified FreeCAD document shapes. Inventor `.ipt`/`.iam` and Fusion `.f3d` support saved-image extraction only; their geometry rendering is unsupported in Catwalk. Saved-image extraction does not regenerate geometry or establish compatibility with every application release.
+Fresh geometry readers support Blender, LightBurn, a DWG drawing subset, original stored Lychee models, qualified FreeCAD document shapes, and supported native solved geometry in Inventor `.ipt`/`.iam` and Fusion `.f3d` documents. Automatic thumbnails prefer a supported saved image, then fall back to geometry when it is missing or unreadable; `--render-geometry` bypasses saved images. Each reader has the format-specific limits below. Saved-image extraction does not regenerate geometry or establish compatibility with every application release.
 
 | Format family | Extensions | Current Rust preview coverage |
 | --- | --- | --- |
