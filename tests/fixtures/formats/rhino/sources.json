@@ -1,0 +1,70 @@
+{
+  "repository": "https://github.com/mcneel/opennurbs",
+  "commit": "eb92af3ba1806b0a34a99aba0d3bda83e3d46083",
+  "files": [
+    {
+      "file": "v2_DeformSpheres.3dm",
+      "upstream_path": "example_files/V2/v2_DeformSpheres.3dm",
+      "sha256": "ccfee9b39d01aeaf14b57ff0c2d258c5a776b374f6fd31bad61cb6ae838adfbb"
+    },
+    {
+      "file": "v3_DeformSpheres.3dm",
+      "upstream_path": "example_files/V3/v3_DeformSpheres.3dm",
+      "sha256": "41ee3cf8128203ea27e0b8df0d808815c198fa467d0aaa2e2dbfb5be0b892ffd",
+      "preview": "v3_DeformSpheres.png",
+      "width": 200,
+      "height": 122,
+      "rgba_sha256": "60452dea947bed4bfe0266bd56aafb4e9803f61130976eb7aefac7ac93126b43"
+    },
+    {
+      "file": "v4_MechPartB.3dm",
+      "upstream_path": "example_files/V4/v4_MechPartB.3dm",
+      "sha256": "848271e98cf83a72c6d0fa134dc7a430d2f4d938a4c38765dcc6da0bff8d8978",
+      "preview": "v4_MechPartB.png",
+      "width": 200,
+      "height": 145,
+      "rgba_sha256": "9d52d5799496026bccb9aa064fb92264f2bb5abe0ab4b0cf2360f7f5ce71fd0f"
+    },
+    {
+      "file": "v5_extrusions.3dm",
+      "upstream_path": "example_files/V5/v5_extrusions.3dm",
+      "sha256": "63091e38458464761e2ee067e88167847c08f581b08a0b9bf4628d9007f44340",
+      "preview": "v5_extrusions.png",
+      "width": 200,
+      "height": 156,
+      "rgba_sha256": "3fe2a1ced80860fcf0a5440515aaee3436897c31fdf09c6359ca35284b8d344e"
+    },
+    {
+      "file": "V6_annotation.3dm",
+      "upstream_path": "example_files/V6/V6_annotation.3dm",
+      "sha256": "bb42dd6978eb65917ebd6055a339b45ea0c583d44899319efc7eba8f3f2c129e",
+      "preview": "V6_annotation.png",
+      "width": 1024,
+      "height": 654,
+      "rgba_sha256": "99b6e4d48647477dbd14c464dbc4822ffd8a108efab5be0399a87b85f197c600"
+    },
+    {
+      "file": "v7_rhino_logo_annotations.3dm",
+      "upstream_path": "example_files/V7/v7_rhino_logo_annotations.3dm",
+      "sha256": "5884d946a36f19ad171c898c93b684e695f87a707bfb174ff4894429f9941f24",
+      "preview": "v7_rhino_logo_annotations.png",
+      "width": 1024,
+      "height": 615,
+      "rgba_sha256": "6030ca728d8c2ea9698472527ea39639f88e525630285c298809151a0085fe4a"
+    },
+    {
+      "file": "v8_caps_and_joins.3dm",
+      "upstream_path": "example_files/V8/v8_caps_and_joins.3dm",
+      "sha256": "5f4f8d98be42f790ae4eb296ea478a9c861be723b16e86fc98a2aef5ce521ba1",
+      "preview": "v8_caps_and_joins.png",
+      "width": 1024,
+      "height": 689,
+      "rgba_sha256": "e4af2b5f21b7107c85e7d5f06a50492fff8e1b57dc7ff29bbb09ed0e564c6845"
+    },
+    {
+      "file": "my_mesh.3dm",
+      "upstream_path": "example_files/V6/my_mesh.3dm",
+      "sha256": "fdf39bb1b67a31ad0df166af6a063ce270990fcefce6c6c1e61100c8b4f625fc"
+    }
+  ]
+}

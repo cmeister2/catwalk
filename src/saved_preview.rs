@@ -14,6 +14,8 @@ pub mod inventor;
 pub mod lightburn;
 /// Addressed PNG extraction from qualified Lychee Mango scene containers.
 pub mod lychee;
+/// Addressed Rhino document-properties bitmap extraction.
+pub mod rhino;
 /// Addressed model thumbnails from qualified `SketchUp` document containers.
 pub mod sketchup;
 
@@ -23,7 +25,7 @@ use std::path::Path;
 
 /// Extension aliases dispatched to the saved-image readers.
 pub const EXTENSIONS: &[&str] = &[
-    "ipt", "iam", "lbrn", "lbrn2", "blend", "f3d", "dwg", "lys", "fcstd", "skp",
+    "ipt", "iam", "lbrn", "lbrn2", "blend", "f3d", "dwg", "lys", "fcstd", "3dm", "skp",
 ];
 
 /// A supported document has no usable saved thumbnail carrier.
@@ -54,6 +56,7 @@ pub fn extract(path: &Path) -> Result<Option<RgbaImage>> {
         "dwg" => blend_dwg::extract_dwg(path),
         "lys" => lychee::extract(path),
         "fcstd" => freecad::extract(path),
+        "3dm" => rhino::extract(path),
         "skp" => sketchup::extract(path),
         extension => Err(format!("no saved-preview reader for .{extension}").into()),
     }
