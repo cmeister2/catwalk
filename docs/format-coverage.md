@@ -39,6 +39,7 @@ Fresh geometry readers support Blender, LightBurn, a DWG drawing subset, origina
 | [BREP](#brep) | `.brep` | Subset: Open CASCADE ASCII and little-endian binary topology, supported analytic/NURBS geometry, occurrence placements and curved tessellation. |
 | [XBF](#xbf) | `.xbf` | Subset: native binary XCAF static B-rep geometry, free shapes, instance placements and diffuse colors. |
 | [FreeCAD](#freecad) | `.fcstd` | Subset: addressed saved PNG and native ASCII BREP document shapes with supported visibility, containers, local links and model arrays. |
+| [SketchUp](#sketchup) | `.skp` | Subset: addressed model-thumbnail PNG from qualified 2013–2017 legacy and 2026 VFF/ZIP containers; no geometry reader. |
 | [Alembic](#alembic) | `.abc` | Subset: Ogawa/HDF5 first-sample meshes, subdivision cages, points, sampled curves, transforms, instances and RGB. |
 | [OBJ](#obj) | `.obj` | Subset: static polygons/wires/points, corner RGB/normals/UVs, local MTL diffuse maps and dissolve. |
 | [GLTF, GLTFDraco](#gltf) | `.gltf` | Subset: textured triangle/point/line scenes, alpha, normals, first poses, skins/morphs, GPU instances and Rust Draco/quantized decoding. |
@@ -804,3 +805,17 @@ The saved-preview reader does not parse geometry, verify whole-file CRCs or reco
 3. Expand independent format verification. Add examples from more exporters and encoding variants, and compare geometry bounds, supported static content and reference thumbnails. Include malformed/truncated files, external resources, transforms, holes/concave polygons, mixed blocks, large inputs and compressed variants. Current generated regression tests and independent reference files establish the documented subsets; they do not establish universal valid-file compatibility.
 
 Remaining work covers valid encodings and geometry outside the documented subsets. The implementation uses no subprocess converters or C/C++ model/codec bindings.
+
+## SketchUp
+
+**Extension:** `.skp`. **Status:** addressed saved model-thumbnail PNG extraction only.
+
+SketchUp 2013–2017 legacy containers are qualified by unchanged retail producer files. The reader validates the UTF-16 document/version strings, skips the per-model GUID and save seed, walks the bounded schema-0 `CVersionMap`, then follows the fixed document prefix to its first schema-3 `CDib`. PNG subtype 4 and the declared image byte length select the model thumbnail. SketchUp 17 adds the next persistent ID and reserved field to this prefix. A null thumbnail pointer returns absence; later preview, component and texture images never substitute for it.
+
+SketchUp 2026 VFF/ZIP containers are qualified by unchanged SketchUp Web 26.2.0 saves. The reader checks the qualified VFF prefix, bounded physical ZIP directory and unambiguous member names, requires `model.dat`, and checks `meta/meta.dat` root/type/version records against the outer header. Only the metadata model-image field `0x67 > 0x2328` with PNG subtype 4 and exact `meta/model_thumbnail.png` address supplies the saved image. An absent model-image record returns absence. A declared but missing or malformed selected member returns an error. Preview, scene, component, watermark and material images are ignored. Selected metadata and PNG members accept stored or Deflate compression and must pass ZIP CRC validation.
+
+Automatic previews fit the saved image to the requested canvas. `--extract-saved-preview` preserves its original decoded pixels and dimensions; absence returns exit code 3. There is no SketchUp geometry reader or fallback. 2018–2025, other legacy schemas or VFF prefixes, JPEG thumbnails and other image descriptors are outside this qualification; unsupported carriers fail explicitly. A saved image may be blank or stale.
+
+Inputs use the shared 512 MiB source limit. Version/class strings allow at most 128 UTF-16 code units, the legacy version map 256 unique classes, modern ZIP directories 4096 entries, metadata 64 KiB and 128 unique records per parsed level. Selected image members allow 8 MiB compressed and decoded, dimensions up to 4096 per axis, 16 million pixels and 64 MiB codec allocation. The PNG IHDR is checked before decoding. No desktop application, SDK, subprocess or new dependency is required.
+
+Eight original producer files, their independent 256 × 256 PNG witnesses, original fixture license and corpus notice, pinned source hashes and qualification notes are retained in the [SketchUp corpus](../tests/fixtures/formats/sketchup/README.md). Integration tests compare exact saved pixels across all qualified versions, exercise extraction and absence through the CLI, and reject truncated/framing/schema/size/dimension/version/metadata/address/CRC failures. The fixtures are separately licensed GPL-3.0-only geometry with the upstream notice's bundled Trimble-content exclusions; Catwalk's independently implemented reader retains its MIT license.

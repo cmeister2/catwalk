@@ -98,7 +98,7 @@ mod vrml;
 /// Binary XCAF document geometry, placement and color tables.
 mod xbf;
 /// Physical ZIP directory counts and duplicates checked before library indexing.
-mod zip_directory;
+pub(crate) mod zip_directory;
 
 use crate::{Result, scene::Scene};
 use std::path::Path;

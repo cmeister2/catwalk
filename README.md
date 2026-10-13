@@ -75,6 +75,7 @@ Catwalk also handles these application documents:
 | [Fusion `.f3d`](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#autodesk-fusion) | Supported active native bodies and placements | Active design's saved PNG |
 | [Lychee `.lys`](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#lychee) | Original stored model meshes with saved object placements | Saved PNG from qualified Mango/ASAR scenes |
 | [FreeCAD `.fcstd`](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#freecad) | Stored ASCII BREP shapes with supported containers, local links and arrays | Addressed saved PNG |
+| [SketchUp `.skp`](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#sketchup) | — | Model-thumbnail PNG from qualified 2013–2017 and 2026 containers |
 
 By default, a supported saved image is used when available. Blender, `LightBurn`, DWG, Lychee, `FreeCAD`, Inventor and Fusion fall back to their geometry readers when the saved image is missing or unreadable. A saved thumbnail can be blank or out of date.
 

@@ -1449,6 +1449,70 @@
       "title": "SBET navigation trajectory in radians"
     },
     {
+      "extension": "skp",
+      "id": "skp-2017-box-saved-thumbnail",
+      "input": "sketchup/2017-box.skp",
+      "kind": "saved-preview",
+      "provenance": "Unchanged hew3d/openskp retail SketchUp producer corpus at a6788afa6386cfd4bc781998dca99c591b3fb069; GPL-3.0-only fixture geometry, original license and corpus notice retained in sketchup/. Bundled Trimble content retains its original ownership as described in that notice. Document model-thumbnail PNG extracted independently; source and PNG hashes, version/carrier qualification and limitations in sketchup/README.md. Saved image only; no model geometry rendering. https://github.com/hew3d/openskp/tree/a6788afa6386cfd4bc781998dca99c591b3fb069/corpus",
+      "title": "SketchUp 2017-box original model thumbnail"
+    },
+    {
+      "extension": "skp",
+      "id": "skp-2017-box-two-materials-saved-thumbnail",
+      "input": "sketchup/2017-box-two-materials.skp",
+      "kind": "saved-preview",
+      "provenance": "Unchanged hew3d/openskp retail SketchUp producer corpus at a6788afa6386cfd4bc781998dca99c591b3fb069; GPL-3.0-only fixture geometry, original license and corpus notice retained in sketchup/. Bundled Trimble content retains its original ownership as described in that notice. Document model-thumbnail PNG extracted independently; source and PNG hashes, version/carrier qualification and limitations in sketchup/README.md. Saved image only; no model geometry rendering. https://github.com/hew3d/openskp/tree/a6788afa6386cfd4bc781998dca99c591b3fb069/corpus",
+      "title": "SketchUp 2017-box-two-materials original model thumbnail"
+    },
+    {
+      "extension": "skp",
+      "id": "skp-2026-box-saved-thumbnail",
+      "input": "sketchup/2026-box.skp",
+      "kind": "saved-preview",
+      "provenance": "Unchanged hew3d/openskp retail SketchUp producer corpus at a6788afa6386cfd4bc781998dca99c591b3fb069; GPL-3.0-only fixture geometry, original license and corpus notice retained in sketchup/. Bundled Trimble content retains its original ownership as described in that notice. Document model-thumbnail PNG extracted independently; source and PNG hashes, version/carrier qualification and limitations in sketchup/README.md. Saved image only; no model geometry rendering. https://github.com/hew3d/openskp/tree/a6788afa6386cfd4bc781998dca99c591b3fb069/corpus",
+      "title": "SketchUp 2026-box original model thumbnail"
+    },
+    {
+      "extension": "skp",
+      "id": "skp-2026-box-two-materials-saved-thumbnail",
+      "input": "sketchup/2026-box-two-materials.skp",
+      "kind": "saved-preview",
+      "provenance": "Unchanged hew3d/openskp retail SketchUp producer corpus at a6788afa6386cfd4bc781998dca99c591b3fb069; GPL-3.0-only fixture geometry, original license and corpus notice retained in sketchup/. Bundled Trimble content retains its original ownership as described in that notice. Document model-thumbnail PNG extracted independently; source and PNG hashes, version/carrier qualification and limitations in sketchup/README.md. Saved image only; no model geometry rendering. https://github.com/hew3d/openskp/tree/a6788afa6386cfd4bc781998dca99c591b3fb069/corpus",
+      "title": "SketchUp 2026-box-two-materials original model thumbnail"
+    },
+    {
+      "extension": "skp",
+      "id": "skp-legacy-box-v2013-saved-thumbnail",
+      "input": "sketchup/legacy-box-v2013.skp",
+      "kind": "saved-preview",
+      "provenance": "Unchanged hew3d/openskp retail SketchUp producer corpus at a6788afa6386cfd4bc781998dca99c591b3fb069; GPL-3.0-only fixture geometry, original license and corpus notice retained in sketchup/. Bundled Trimble content retains its original ownership as described in that notice. Document model-thumbnail PNG extracted independently; source and PNG hashes, version/carrier qualification and limitations in sketchup/README.md. Saved image only; no model geometry rendering. https://github.com/hew3d/openskp/tree/a6788afa6386cfd4bc781998dca99c591b3fb069/corpus",
+      "title": "SketchUp legacy-box-v2013 original model thumbnail"
+    },
+    {
+      "extension": "skp",
+      "id": "skp-legacy-box-v2014-saved-thumbnail",
+      "input": "sketchup/legacy-box-v2014.skp",
+      "kind": "saved-preview",
+      "provenance": "Unchanged hew3d/openskp retail SketchUp producer corpus at a6788afa6386cfd4bc781998dca99c591b3fb069; GPL-3.0-only fixture geometry, original license and corpus notice retained in sketchup/. Bundled Trimble content retains its original ownership as described in that notice. Document model-thumbnail PNG extracted independently; source and PNG hashes, version/carrier qualification and limitations in sketchup/README.md. Saved image only; no model geometry rendering. https://github.com/hew3d/openskp/tree/a6788afa6386cfd4bc781998dca99c591b3fb069/corpus",
+      "title": "SketchUp legacy-box-v2014 original model thumbnail"
+    },
+    {
+      "extension": "skp",
+      "id": "skp-legacy-box-v2015-saved-thumbnail",
+      "input": "sketchup/legacy-box-v2015.skp",
+      "kind": "saved-preview",
+      "provenance": "Unchanged hew3d/openskp retail SketchUp producer corpus at a6788afa6386cfd4bc781998dca99c591b3fb069; GPL-3.0-only fixture geometry, original license and corpus notice retained in sketchup/. Bundled Trimble content retains its original ownership as described in that notice. Document model-thumbnail PNG extracted independently; source and PNG hashes, version/carrier qualification and limitations in sketchup/README.md. Saved image only; no model geometry rendering. https://github.com/hew3d/openskp/tree/a6788afa6386cfd4bc781998dca99c591b3fb069/corpus",
+      "title": "SketchUp legacy-box-v2015 original model thumbnail"
+    },
+    {
+      "extension": "skp",
+      "id": "skp-legacy-box-v2016-saved-thumbnail",
+      "input": "sketchup/legacy-box-v2016.skp",
+      "kind": "saved-preview",
+      "provenance": "Unchanged hew3d/openskp retail SketchUp producer corpus at a6788afa6386cfd4bc781998dca99c591b3fb069; GPL-3.0-only fixture geometry, original license and corpus notice retained in sketchup/. Bundled Trimble content retains its original ownership as described in that notice. Document model-thumbnail PNG extracted independently; source and PNG hashes, version/carrier qualification and limitations in sketchup/README.md. Saved image only; no model geometry rendering. https://github.com/hew3d/openskp/tree/a6788afa6386cfd4bc781998dca99c591b3fb069/corpus",
+      "title": "SketchUp legacy-box-v2016 original model thumbnail"
+    },
+    {
       "extension": "slpk",
       "id": "slpk-autzen",
       "input": "images_points/slpk-autzen.slpk",
