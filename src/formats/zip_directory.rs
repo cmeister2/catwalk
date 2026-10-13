@@ -124,7 +124,7 @@ fn zip64_end(
     clippy::too_many_lines,
     reason = "Keep the format record dispatch, validation and its resource checks together without changing geometry evaluation."
 )]
-pub(super) fn validate(
+pub(crate) fn validate(
     reader: &mut (impl Read + Seek),
     length: u64,
     max_entries: usize,

@@ -39,6 +39,9 @@ mod saved_previews;
 #[path = "fixtures/scientific_cad.rs"]
 /// Generate scientific datasets and CAD boundary representations.
 mod scientific_cad;
+#[path = "fixtures/sketchup.rs"]
+/// Register original `SketchUp` producer files and independently extracted model PNGs.
+mod sketchup;
 #[path = "fixtures/vrml_prototypes.rs"]
 /// Register original VRML prototypes and generate typed static expansion controls.
 mod vrml_prototypes;
@@ -112,6 +115,7 @@ fn main() -> Result<()> {
     cases.extend(saved_previews::generate_blend_dwg(&root)?);
     cases.extend(saved_previews::generate_fusion(&root)?);
     cases.extend(saved_previews::generate_inventor(&root)?);
+    cases.extend(sketchup::generate(&root)?);
     cases.extend(lychee::generate(&root)?);
     cases.extend(lychee_geometry::generate(&root)?);
     cases.extend(native_geometry::generate(&root)?);
