@@ -1,5 +1,7 @@
 /target/
 /node_modules/
+/test-results/
+/playwright-report/
 /release-prepared/
 /release-assets/
 /.env

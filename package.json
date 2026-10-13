@@ -5,13 +5,19 @@
   "packageManager": "npm@11.21.0",
   "scripts": {
     "release": "semantic-release",
-    "test:release": "node --test tests/release-config.test.js tests/release-plan.test.js tests/release-binaries.test.js tests/release-notices.test.js"
+    "test:release": "node --test tests/release-config.test.js tests/release-plan.test.js tests/release-binaries.test.js tests/release-notices.test.js",
+    "build:web": "node .github/web/build.mjs",
+    "test:web:node": "node --test --test-isolation=none tests/wasm-runner.test.js tests/wasm-corpus.test.js tests/web-notices.test.js",
+    "test:web:browser": "playwright test --config tests/web/playwright.config.js"
   },
   "devDependencies": {
+    "@bjorn3/browser_wasi_shim": "0.4.2",
+    "@playwright/test": "1.64.0",
     "@semantic-release-cargo/semantic-release-cargo": "2.4.84",
     "@semantic-release/exec": "7.1.0",
     "@semantic-release/release-notes-generator": "15.0.0-beta.3",
     "conventional-changelog-conventionalcommits": "10.4.1",
+    "esbuild": "0.28.2",
     "fflate": "0.8.3",
     "semantic-release": "25.0.9"
   }
