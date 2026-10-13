@@ -21,6 +21,9 @@ mod lychee;
 #[path = "fixtures/lychee_geometry.rs"]
 /// Register original stored Lychee meshes and generate independent placement controls.
 mod lychee_geometry;
+#[path = "fixtures/max.rs"]
+/// Register unchanged Autodesk 3ds Max scenes with exact saved-thumbnail qualification.
+mod max;
 #[path = "fixtures/mesh_scene.rs"]
 /// Generate authored mesh and scene fixtures and register retained reference assets.
 mod mesh_scene;
@@ -123,6 +126,7 @@ fn main() -> Result<()> {
     cases.extend(saved_previews::generate_inventor(&root)?);
     cases.extend(sketchup::generate(&root)?);
     cases.extend(lychee::generate(&root)?);
+    cases.extend(max::generate(&root)?);
     cases.extend(lychee_geometry::generate(&root)?);
     cases.extend(native_geometry::generate(&root)?);
     cases.extend(native_autodesk::generate(&root)?);

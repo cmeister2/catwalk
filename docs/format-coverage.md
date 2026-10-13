@@ -47,6 +47,7 @@ Fresh geometry readers support Blender, LightBurn, a DWG drawing subset, origina
 | [GLB, GLBDraco](#glb) | `.glb` | Subset: textured triangle/point/line scenes, alpha, normals, first poses, skins/morphs, GPU instances and Rust Draco/quantized decoding. |
 | [Draco](#draco) | `.drc` | Subset: sequential/Edgebreaker meshes with authored corner normals, sequential/kd-tree point clouds, positions and colors. |
 | [3DS](#3ds) | `.3ds` | Subset: static triangle meshes, diffuse colors and earliest-key object hierarchy. |
+| [3ds Max](#3ds-max) | `.max` | Subset: addressed SummaryInformation WMF/DIB saved thumbnail; no scene geometry reader. |
 | [VRMLReader](#vrml) | `.wrl`, `.vrml` | Subset: VRML97 static geometry, local typed PROTO/IS instances, DEF/USE, transforms, fixed-view billboards and colors. |
 | [FBX](#fbx) | `.fbx` | Subset: ASCII/binary static polygon scenes, weighted linear skins, progressive morphs, hierarchy, pivots, units, first keys and colors. |
 | [COLLADA](#collada) | `.dae` | Subset: static indexed surfaces and wires, planar polygon holes, instancing, affine transforms, units and up axes. |
@@ -503,6 +504,18 @@ Limits cap decoded geometry at five million points/faces and expanded attributes
 **Coverage:** Subset: static triangle meshes, diffuse colors and earliest-key object hierarchy.
 
 3DS reads binary triangle meshes, per-face diffuse colors, master scale and the earliest object translation/rotation/scale keys. Editor vertices, inverse mesh matrices, pivots, instance/dummy nodes, node-ID parent hierarchies and mirrored transforms are accounted for. Camera/light ancestors and the earliest camera roll are evaluated for mesh-child placement; their views and illumination are not rendered. Textures, material alpha, smoothing groups and later animation keys are omitted. Morph/visibility tracks, prescale, unlinked parent axes, legacy editor or parent-name hierarchies and unknown geometry chunks fail explicitly. The conventions are checked against the primary [Assimp](https://github.com/assimp/assimp/tree/master/code/AssetLib/3DS) and [Blender](https://github.com/blender/blender-addons/blob/main/io_scene_3ds/import_3ds.py) importers; six upstream Assimp models also render successfully.
+
+## 3ds Max
+
+**Extension:** `.max`. **Status:** qualified saved-thumbnail extraction only.
+
+Automatic thumbnails fit the stored image to the requested canvas. `--extract-saved-preview` preserves its original dimensions; a missing or complete unsupported thumbnail returns code 3 and leaves an existing output untouched. There is no scene geometry reader or fallback, and `--render-geometry` fails explicitly. Saved images can be stale, blank or show an authored viewport rather than a fitted model view. Autodesk describes the optional [Explorer thumbnail mechanism](https://www.autodesk.com/support/technical/article/caas/sfdcarticles/sfdcarticles/How-to-view-a-3ds-Max-thumbnail-preview-in-Windows-File-Explorer.html).
+
+The reader admits CFB/OLE v3/v4 containers with the qualified root `Scene`, `ClassData` and `ClassDirectory3` streams. It selects only root `\u0005SummaryInformation`, checks the standard SummaryInformation FMTID, and resolves PID 17 through the property table. The qualified `VT_CF` carrier contains Windows `CF_METAFILEPICT` and a legacy 16-bit mapping header. Its WMF has one [META_STRETCHDIB record](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-wmf/7ebae08d-61ee-4d82-9aa5-9217ba2aa8c1) followed by EOF: full-size, uncropped, unplaced `SRCCOPY`, containing a positive-height 24-bit `BI_RGB` DIB. Checked lengths, dimensions, BGR channels, bottom-up rows and row padding preserve every saved pixel. Arbitrary byte scanning and scene/plugin/asset loading are not used.
+
+[Two unchanged MIT-licensed Autodesk sample scenes](../tests/fixtures/formats/max_saved/README.md) qualify genuine v4 regular-stream thumbnails at 512 × 256 and 512 × 268. Source hashes, pinned producer URLs, original license and independently decoded RGBA hashes are retained. Authored tests additionally exercise v3/v4 mini/regular streams, root selection and scene identity, padding/orientation, absence, malformed property tables, WMF/DIB extents and original FAT chain integrity. These examples do not establish broad 3ds Max release compatibility.
+
+Other clipboard/image formats, arbitrary metafile drawing operations, alternate scene identity streams, password/encrypted documents and non-sector-aligned containers are unsupported. Source files are capped at 512 MiB, selected summaries at 8 MiB and 4096 properties, and image axes at 4096 pixels; RGBA allocation is at most 64 MiB. Extraction uses a cooperative five-second deadline. The shared compound-file preflight bounds FAT metadata at 8 MiB, directory/DIFAT/miniFAT metadata at 4 MiB each and the root mini-stream at 64 MiB, and validates the original selected allocation chain before reading the image.
 
 ## VRML
 

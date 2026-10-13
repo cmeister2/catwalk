@@ -143,26 +143,33 @@ pub fn extract_png(path: &Path) -> Result<Option<Vec<u8>>> {
 }
 
 /// Enforce the cooperative five-second budget between container and image parsing steps.
-fn check_time(started: Instant) -> Result<()> {
+pub(crate) fn check_time(started: Instant) -> Result<()> {
     if started.elapsed() > Duration::from_secs(5) {
-        return Err("Inventor processing exceeded the cooperative five-second budget".into());
+        return Err(
+            "Compound document processing exceeded the cooperative five-second budget".into(),
+        );
     }
     Ok(())
 }
 
 /// Return a byte range with checked offset arithmetic and a truncation error.
-fn bytes(data: &[u8], offset: usize, count: usize) -> Result<&[u8]> {
-    data.get(offset..offset.checked_add(count).ok_or("Inventor range overflow")?)
-        .ok_or_else(|| "truncated Inventor metadata or image".into())
+pub(crate) fn bytes(data: &[u8], offset: usize, count: usize) -> Result<&[u8]> {
+    data.get(
+        offset
+            ..offset
+                .checked_add(count)
+                .ok_or("compound document range overflow")?,
+    )
+    .ok_or_else(|| "truncated compound document metadata or image".into())
 }
 
 /// Read a checked little-endian 16-bit property or bitmap integer.
-fn u16_le(data: &[u8], offset: usize) -> Result<u16> {
+pub(crate) fn u16_le(data: &[u8], offset: usize) -> Result<u16> {
     Ok(u16::from_le_bytes(bytes(data, offset, 2)?.try_into()?))
 }
 
 /// Read a checked little-endian 32-bit property or bitmap integer.
-fn u32_le(data: &[u8], offset: usize) -> Result<u32> {
+pub(crate) fn u32_le(data: &[u8], offset: usize) -> Result<u32> {
     Ok(u32::from_le_bytes(bytes(data, offset, 4)?.try_into()?))
 }
 
