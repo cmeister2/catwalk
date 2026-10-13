@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 import { gzip } from 'node:zlib';
 import { build } from 'esbuild';
 import { generateWasiLibcNotices } from './notices.mjs';
+import { assertSeparateDirectories, verifyWebOutput } from './output.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const args = process.argv.slice(2);
@@ -14,8 +15,9 @@ const output = resolve(root, outputIndex < 0 ? 'target/web' : args[outputIndex +
 const skipCompile = args.includes('--skip-compile');
 const noticesIndex = args.indexOf('--notices');
 const notices = noticesIndex < 0 ? null : resolve(root, args[noticesIndex + 1]);
-const targetDir = resolve(root, process.env.CARGO_TARGET_DIR || 'target');
+const targetDir = resolve(root, process.env.CARGO_TARGET_DIR || 'target/web-build');
 const wasm = join(targetDir, 'wasm32-wasip1/web/catwalk.wasm');
+assertSeparateDirectories(output, targetDir);
 
 if (!skipCompile) {
   const result = spawnSync('cargo', [
@@ -26,6 +28,7 @@ if (!skipCompile) {
     stdio: 'inherit',
     env: {
       ...process.env,
+      CARGO_TARGET_DIR: targetDir,
       // Zstd supplies its own wasm stdlib/string shim. Use Clang's freestanding
       // integer/limits headers rather than accidentally selecting host libc.
       CFLAGS_wasm32_wasip1: `${process.env.CFLAGS_wasm32_wasip1 || ''} -ffreestanding`.trim(),
@@ -74,4 +77,6 @@ if (notices) {
   await writeFile(thirdPartyPath, thirdParty.replace(/<\/html>\s*$/, section + '</html>\n'));
 }
 await writeFile(join(output, 'build.json'), JSON.stringify({ wasmBytes, gzipBytes: compressed.length, target: 'wasm32-wasip1' }) + '\n');
+const assets = await verifyWebOutput(output, { requireNotices: notices !== null });
 console.log(`Browser uploader: ${output} (${(compressed.length / 1024 / 1024).toFixed(2)} MiB download; ${(wasmBytes / 1024 / 1024).toFixed(2)} MiB WASM)`);
+console.log(`Verified ${assets.length} static runtime assets; Cargo output stays in ${targetDir}`);
