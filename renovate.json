@@ -3,6 +3,11 @@
   "extends": ["github>cmeister2/renovate"],
   "packageRules": [
     {
+      "description": "Work around npm/cli#9800 when regenerating lockfiles with bundled dependencies",
+      "matchManagers": ["npm"],
+      "skipInstalls": false
+    },
+    {
       "matchManagers": ["cargo"],
       "matchIsBreaking": true,
       "groupName": "Cargo breaking dependency updates",
