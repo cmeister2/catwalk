@@ -90,7 +90,8 @@ fn image_thumbnail(path: &Path, options: &RenderOptions) -> Result<RgbaImage> {
         // from the extension so every supported image type gets its decoder.
         let format = image::ImageFormat::from_extension(formats::extension(path)?)
             .ok_or("unsupported image extension")?;
-        let mut reader = image::ImageReader::with_format(std::io::Cursor::new(data), format);
+        let mut reader =
+            image::ImageReader::with_format(std::io::Cursor::new(data.as_slice()), format);
         let mut limits = image::Limits::default();
         limits.max_alloc = Some(256 * 1024 * 1024);
         reader.limits(limits);

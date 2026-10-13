@@ -74,16 +74,25 @@ pub(super) fn load(path: &Path) -> Result<Scene> {
                 });
             }
         }
-        let document =
-            ::gltf::Document::from_json_without_validation(serde_json::from_value(typed)?);
-        let blob = if source.starts_with(b"glTF") {
-            ::gltf::binary::Glb::from_slice(&source)?
+        // Keep typed deserialization in gltf's shared constructor so that
+        // both branches use one copy of the byte-slice parser.
+        let typed_json = serde_json::to_vec(&typed)?;
+        drop(typed);
+        let mut model = ::gltf::Gltf::from_slice_without_validation(&typed_json).map_err(
+            |error| -> crate::Error {
+                match error {
+                    ::gltf::Error::Deserialize(error) => error.into(),
+                    error => error.into(),
+                }
+            },
+        )?;
+        drop(typed_json);
+        if source.starts_with(b"glTF") {
+            model.blob = ::gltf::binary::Glb::from_slice(&source)?
                 .bin
-                .map(std::borrow::Cow::into_owned)
-        } else {
-            None
-        };
-        ::gltf::Gltf { document, blob }
+                .map(std::borrow::Cow::into_owned);
+        }
+        model
     } else {
         ::gltf::Gltf::from_slice_without_validation(&source)?
     };

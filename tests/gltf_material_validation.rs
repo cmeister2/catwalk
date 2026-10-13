@@ -1,7 +1,10 @@
 //! Public-loader validation of glTF material carriers, UV encodings and resource limits.
 
 use base64::Engine;
-use catwalk3d::{Result, formats, scene::Scene};
+use catwalk3d::{
+    Result, formats,
+    scene::{Scene, Vec3},
+};
 use image::{
     ExtendedColorType, ImageEncoder, Rgba, codecs::jpeg::JpegEncoder, codecs::png::PngEncoder,
 };
@@ -186,6 +189,73 @@ fn near_uv(actual: [[f64; 2]; 3], expected: [[f64; 2]; 3]) {
             "UV {actual} != {expected}"
         );
     }
+}
+
+#[test]
+fn inactive_animation_channels_preserve_glb_buffers_and_raw_uv_morphs() {
+    let mut fixture = Fixture::new();
+    let delta = fixture.floats("VEC2", 3, &[0.5, 0.25, 0.5, 0.25, 0.5, 0.25]);
+    fixture.document["meshes"][0]["primitives"][0]["targets"] = json!([{"TEXCOORD_0":delta}]);
+    fixture.document["meshes"][0]["weights"] = json!([0.5]);
+    let time = fixture.floats("SCALAR", 1, &[0.]);
+    fixture.document["accessors"][time]["min"] = json!([0]);
+    fixture.document["accessors"][time]["max"] = json!([0]);
+    let translation = fixture.floats("VEC3", 1, &[2., 3., 4.]);
+    fixture.document["animations"] = json!([{
+        "samplers":[{"input":time,"output":translation}],
+        "channels":[
+            {"sampler":999,"target":{"path":"translation"}},
+            {"sampler":0,"target":{"node":0,"path":"translation"}}
+        ]
+    }]);
+    let image = fixture.view(&png());
+    fixture.document["images"][0] = json!({"bufferView":image,"mimeType":"image/png"});
+
+    for scene in [fixture.load().unwrap(), fixture.load_glb().unwrap()] {
+        assert_eq!(scene.triangles.len(), 1);
+        // Active animation survives the compatibility patch and GLB binary extraction.
+        let origin = scene.triangles[0].vertices[0];
+        assert!((origin - Vec3::new(2., -4., 3.)).length() < 1e-6);
+        // TEXCOORD morphs need the original JSON because gltf-json omits them.
+        near_uv(uv(&scene), [[0.25, 0.125], [1.25, 0.125], [0.25, 1.125]]);
+        assert_eq!(
+            scene.appearances[&0]
+                .texture
+                .as_ref()
+                .unwrap()
+                .image
+                .as_raw(),
+            &PIXELS
+        );
+    }
+}
+
+#[test]
+fn ordinary_gltf_documents_reject_duplicate_core_fields() {
+    let fixture = Fixture::new();
+    let path = fixture.directory.join("duplicate.gltf");
+    std::fs::write(
+        &path,
+        br#"{"asset":{"version":"2.0"},"asset":{"version":"2.0"}}"#,
+    )
+    .unwrap();
+    let error = formats::load(&path).unwrap_err().to_string();
+    assert!(error.contains("duplicate field"), "{error}");
+}
+
+#[test]
+fn inactive_animation_schema_errors_preserve_json_error_type() {
+    let mut fixture = Fixture::new();
+    fixture.document["animations"] = json!([{
+        "samplers":[],
+        "channels":[{"sampler":999,"target":{"path":"translation"}}]
+    }]);
+    fixture.document["asset"]["version"] = json!(false);
+    let error = fixture.load().unwrap_err();
+    let json_error = error
+        .downcast_ref::<serde_json::Error>()
+        .expect("the compatibility parser must preserve the JSON schema error type");
+    assert!(json_error.is_data());
 }
 
 #[test]

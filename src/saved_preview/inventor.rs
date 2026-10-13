@@ -5,7 +5,7 @@ use image::RgbaImage;
 use std::{
     collections::HashSet,
     fs::File,
-    io::{BufReader, Cursor, Read, Seek, SeekFrom},
+    io::{Cursor, Read, Seek, SeekFrom},
     path::Path,
     time::{Duration, Instant},
 };
@@ -46,7 +46,7 @@ pub fn extract(path: &Path) -> Result<Option<RgbaImage>> {
         return Ok(None);
     };
     let mut reader =
-        image::ImageReader::with_format(BufReader::new(Cursor::new(png)), image::ImageFormat::Png);
+        image::ImageReader::with_format(Cursor::new(png.as_slice()), image::ImageFormat::Png);
     let mut limits = image::Limits::default();
     limits.max_image_width = Some(4096);
     limits.max_image_height = Some(4096);

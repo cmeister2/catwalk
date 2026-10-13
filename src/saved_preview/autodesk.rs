@@ -8,7 +8,7 @@ use crate::Result;
 use image::{ImageFormat, ImageReader, RgbaImage};
 use std::{
     fs::File,
-    io::{BufReader, Cursor, Read, Seek, SeekFrom},
+    io::{Cursor, Read, Seek, SeekFrom},
     path::Path,
     time::{Duration, Instant},
 };
@@ -87,8 +87,7 @@ pub fn extract_fusion(path: &Path) -> Result<Option<RgbaImage>> {
         return Ok(None);
     };
     let encoded = read_member(&mut archive, preview_index, started)?;
-    let mut reader =
-        ImageReader::with_format(BufReader::new(Cursor::new(encoded)), ImageFormat::Png);
+    let mut reader = ImageReader::with_format(Cursor::new(encoded.as_slice()), ImageFormat::Png);
     let mut limits = image::Limits::default();
     limits.max_image_width = Some(4096);
     limits.max_image_height = Some(4096);

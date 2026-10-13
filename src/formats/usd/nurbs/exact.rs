@@ -8,7 +8,6 @@
 
 use super::{Budget, Curve, STEPS};
 use crate::{Result, scene::Vec3};
-use num_bigint::BigInt;
 use num_rational::BigRational;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 
@@ -282,7 +281,7 @@ fn certify(denominator: &Polynomial, arithmetic: &mut Arithmetic<'_>) -> Result<
     }
     let mut derivative = Vec::with_capacity(denominator.len().saturating_sub(1));
     for (i, coefficient) in denominator.iter().enumerate().skip(1) {
-        derivative.push(arithmetic.mul(coefficient, &BigRational::from_integer(BigInt::from(i)))?);
+        derivative.push(arithmetic.mul(coefficient, &BigRational::from_integer(i.into()))?);
     }
     trim(&mut derivative);
     if derivative.is_empty() {
@@ -328,7 +327,7 @@ pub(super) fn samples(
     let count = if curve.order == 1 { 0 } else { STEPS };
     let mut output = Vec::with_capacity(count + 1);
     for step in 0..=count {
-        let t = BigRational::new(BigInt::from(step), BigInt::from(STEPS));
+        let t = BigRational::new(step.into(), STEPS.into());
         let denominator = evaluate(&homogeneous[3], &t, &mut arithmetic)?;
         let mut coordinates = [0_f64; 3];
         for (axis, coordinate) in coordinates.iter_mut().enumerate() {

@@ -1,5 +1,5 @@
 use super::{MAX_DECODED, Result, bytes, check_time, dimensions, u16_le, u32_le};
-use std::{io::Cursor, time::Instant};
+use std::time::Instant;
 
 /// Normalize a qualified BMP or DIB to RGBA PNG with checked palettes, masks and row bounds.
 #[allow(
@@ -118,10 +118,10 @@ pub(super) fn normalize(data: &[u8], bmp: bool, started: Instant) -> Result<Opti
             image.put_pixel(x as u32, y as u32, image::Rgba(rgba));
         }
     }
-    let mut output = Cursor::new(Vec::new());
-    image.write_to(&mut output, image::ImageFormat::Png)?;
+    let mut output = Vec::new();
+    crate::render::write_png(&image, &mut output)?;
     check_time(started)?;
-    Ok(Some(output.into_inner()))
+    Ok(Some(output))
 }
 
 /// Validate disjoint contiguous bitmap channel masks and compute their shifts and maxima.
