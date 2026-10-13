@@ -2,76 +2,87 @@
 
 Catwalk provides Rust thumbnail readers for the model, image and application-document formats listed here. Each importer supports the encodings and geometry described below. **A listed extension does not imply support for every encoding, entity or scene feature in that format.**
 
-The summary table groups format families and extension aliases. Each format section describes supported features, limits and shared renderer or codec policies.
+The compatibility matrix covers all 91 advertised extensions, sorted alphabetically by type with aliases grouped together. Each linked section retains its detailed coverage, limits and shared renderer or codec policies.
 
-Fresh geometry readers support Blender, LightBurn, a DWG drawing subset, original stored Lychee models, qualified FreeCAD document shapes, and supported native solved geometry in Inventor `.ipt`/`.iam` and Fusion `.f3d` documents. Automatic thumbnails prefer a supported saved image, then fall back to geometry when it is missing or unreadable; `--render-geometry` bypasses saved images. Each reader has the format-specific limits below. Saved-image extraction does not regenerate geometry or establish compatibility with every application release.
+Fresh geometry readers support Blender, LightBurn, a DWG drawing subset, original stored Lychee models, qualified FreeCAD document shapes, and supported native solved geometry in Inventor `.ipt`/`.iam` and Fusion `.f3d` documents. For these document families, automatic thumbnails prefer a supported saved image, then fall back to geometry when it is missing or unreadable; `--render-geometry` bypasses saved images. Each reader has the format-specific limits below. Saved-image extraction does not regenerate geometry or establish compatibility with every application release.
 
-| Format family | Extensions | Current Rust preview coverage |
-| --- | --- | --- |
-| [VTKLegacy](#vtk-legacy) | `.vtk` | Subset: ASCII/big-endian binary, classic/version-5 topology, polygons/lines, linear/fixed-node higher-order and structured grid boundaries. |
-| [VTKXMLVTP](#vtk-polydata-xml) | `.vtp` | Subset: ASCII/binary/appended XML, zlib/LZ4; polygons, strips, vertices and polylines. |
-| [VTKXMLVTU](#vtk-unstructuredgrid-xml) | `.vtu` | Subset: ASCII/binary/appended XML, zlib/LZ4; linear/fixed-node higher-order cells and closed convex polyhedra. |
-| [VTKXMLVTR](#vtk-rectilineargrid-xml) | `.vtr` | Subset: ASCII/binary/appended, zlib/LZ4; single-piece rectilinear grid boundary geometry. |
-| [VTKXMLVTI](#vtk-imagedata-xml) | `.vti` | Subset: scalar image data, ASCII/base64/zlib, voxel density surface. |
-| [VTKXMLVTS](#vtk-structuredgrid-xml) | `.vts` | Subset: ASCII/binary/appended, zlib/LZ4; single-piece structured grid boundary geometry. |
-| [VTKXMLVTM](#vtk-multiblock-xml) | `.vtm` | Subset: nested multiblock hierarchy and supported relative child datasets. |
-| [VTKHDF](#vtkhdf) | `.vtkhdf` | Subset: static polygon/linear/fixed-node higher-order/convex-polyhedron meshes, structured grids, scalar images and local composite assemblies. |
-| [ExodusII](#exodus-ii) | `.e`, `.ex2`, `.exo`, `.g` | Subset: CDF1/2/5 and NetCDF4 undeformed linear element-block boundary geometry. |
-| [NetCDF](#netcdf) | `.nc`, `.cdf`, `.ncdf` | Subset: rectilinear 2D scalar sheets, 3D scalar density and first time sample; Exodus schema detection. |
-| [PLYReader](#ply) | `.ply` | Subset: ASCII/binary polygons, standard edges and point geometry with RGB. |
-| [STL](#stl) | `.stl` | Implemented: ASCII and binary triangle geometry. |
-| [DICOM](#dicom) | `.dcm` | Subset: first scalar/RGB image frame with native, deflated, JPEG or RLE pixel decoding. |
-| [Nrrd](#nrrd) | `.nrrd`, `.nhdr` | Subset: raw/ASCII/hex/gzip scalar density, attached or one detached payload. |
-| [MetaImage](#metaimage) | `.mhd`, `.mha` | Subset: raw/ASCII/zlib scalar density, attached or one detached payload. |
-| [TIFF](#tiff) | `.tif`, `.tiff` | Fitted 2D images and bounded scalar page-stack density surfaces. |
-| [PNG](#png) | `.png` | Implemented: 2D image preview. |
-| [JPEG](#jpeg) | `.jpg`, `.jpeg` | Implemented: 2D image preview. |
-| [BMP](#bmp) | `.bmp` | Implemented: 2D image preview. |
-| [TGA](#tga) | `.tga` | Implemented: 2D image preview. |
-| [HDR](#hdr) | `.hdr` | Implemented: 2D image preview. |
-| [WebP](#webp) | `.webp` | Implemented: 2D image preview. |
-| [EXR](#exr) | `.exr` | Implemented: 2D image preview. |
-| [QuakeMDL](#quake-mdl) | `.mdl` | Subset: Quake IDPO v6 triangle geometry, first frame, grouped frames. |
-| [CityGML](#citygml) | `.gml` | Subset: highest feature LoD planar surfaces, holes, local XLinks and diffuse appearances. |
-| [PTS](#pts) | `.pts` | Implemented: point positions and optional RGB. |
-| [STEP](#step) | `.step`, `.stp`, `.stpnc`, `.p21`, `.210` | Subset: supported Part 21 B-rep shells, planar faceted solids and AP242 triangle geometry, axis-based assemblies/mappings and length contexts in Rust. |
-| [IGES](#iges) | `.iges`, `.igs` | Subset: supported manifold/constructive solids and independent trimmed/bounded sheets, curved surface tessellation. |
-| [BREP](#brep) | `.brep` | Subset: Open CASCADE ASCII and little-endian binary topology, supported analytic/NURBS geometry, occurrence placements and curved tessellation. |
-| [XBF](#xbf) | `.xbf` | Subset: native binary XCAF static B-rep geometry, free shapes, instance placements and diffuse colors. |
-| [FreeCAD](#freecad) | `.fcstd` | Subset: addressed saved PNG and native ASCII BREP document shapes with supported visibility, containers, local links and model arrays. |
-| [SketchUp](#sketchup) | `.skp` | Subset: addressed model-thumbnail PNG from qualified 2013–2017 legacy and 2026 VFF/ZIP containers; no geometry reader. |
-| [Rhino](#rhino) | `.3dm` | Subset: addressed saved viewport DIB in archive 2–4 and 50–80 document properties. |
-| [Alembic](#alembic) | `.abc` | Subset: Ogawa/HDF5 first-sample meshes, subdivision cages, points, sampled curves, transforms, instances and RGB. |
-| [OBJ](#obj) | `.obj` | Subset: static polygons/wires/points, corner RGB/normals/UVs, local MTL diffuse maps and dissolve. |
-| [GLTF, GLTFDraco](#gltf) | `.gltf` | Subset: textured triangle/point/line scenes, alpha, normals, first poses, skins/morphs, GPU instances and Rust Draco/quantized decoding. |
-| [GLB, GLBDraco](#glb) | `.glb` | Subset: textured triangle/point/line scenes, alpha, normals, first poses, skins/morphs, GPU instances and Rust Draco/quantized decoding. |
-| [Draco](#draco) | `.drc` | Subset: sequential/Edgebreaker meshes with authored corner normals, sequential/kd-tree point clouds, positions and colors. |
-| [3DS](#3ds) | `.3ds` | Subset: static triangle meshes, diffuse colors and earliest-key object hierarchy. |
-| [3ds Max](#3ds-max) | `.max` | Subset: addressed SummaryInformation WMF/DIB saved thumbnail; no scene geometry reader. |
-| [VRMLReader](#vrml) | `.wrl`, `.vrml` | Subset: VRML97 static geometry, local typed PROTO/IS instances, DEF/USE, transforms, fixed-view billboards and colors. |
-| [FBX](#fbx) | `.fbx` | Subset: ASCII/binary static polygon scenes, weighted linear skins, progressive morphs, hierarchy, pivots, units, first keys and colors. |
-| [COLLADA](#collada) | `.dae` | Subset: static indexed surfaces and wires, planar polygon holes, instancing, affine transforms, units and up axes. |
-| [OFF](#off) | `.off` | Subset: polygon geometry and colors. |
-| [DXF](#dxf) | `.dxf` | Subset: ASCII/binary drawing faces, points, lines, sampled curves/splines, meshes and nested block instances. |
-| [DirectX](#directx) | `.x` | Subset: text/binary/MSZIP mesh scenes, static frames, bind geometry and colors. |
-| [3MF](#3mf) | `.3mf` | Subset: core/production multipart meshes, placements, units, colors and packaged PNG/JPEG textures. |
-| [AMF](#amf) | `.amf` | Subset: XML/single-model ZIP triangle volumes, units, constant colors and qualified constellation placements. |
-| [USD](#usd) | `.usd`, `.usda`, `.usdc`, `.usdz` | Subset: local composed stages, static meshes/primitives/points/curves, instances, transforms and diffuse colors. |
-| [VDB](#vdb) | `.vdb` | Subset: scalar sparse 5/4/3 trees, half-float values, density/level-set surfaces and affine transforms. |
-| [IFC](#ifc) | `.ifc` | Subset: Part 21 product placements, mapped/faceted/tessellated shapes, extruded/revolved profiles, primitives and bounded solid operations/openings. |
-| [Splat](#splat) | `.splat` | Subset: positions and RGB rendered as points. |
-| [SPZ](#spz) | `.spz` | Subset: gzip versions 1–3 and Zstandard version 4, centers and colors rendered as points. |
-| [LAS](#las) | `.las`, `.laz` | Subset: LAS point records, Rust LAZ decompression and RGB. |
-| [BinaryPointFile](#bpf) | `.bpf` | Subset: versions 1–3, supported layouts, zlib, homogeneous transforms and RGB. |
-| [TerraScanBIN](#terrascan-bin) | `.bin` | Subset: versions 20010712/20020715, scaled coordinates and optional RGB. |
-| [OptechCSD](#optech-csd) | `.csd` | Subset: 69-byte records, range echoes, platform attitude and boresight geometry. |
-| [PCD](#pcd) | `.pcd` | Subset: ASCII, binary and LZF-compressed points with RGB. |
-| [LeicaCyclonePTX](#ptx) | `.ptx` | Subset: scans, positions, RGB and scan transforms. |
-| [QFIT](#qfit) | `.qi` | Subset: supported 10/12/14-word records and endianness, longitude/latitude/elevation points. |
-| [SBET](#sbet) | `.sbet` | Subset: little-endian 17-double trajectory records rendered as geographic points. |
-| [SLPK](#slpk) | `.slpk` | Subset: I3S point-cloud packages, hierarchy and Rust LEPCC XYZ/RGB decoding. |
-| [Lychee](#lychee) | `.lys` | Subset: addressed saved PNG and original indexed source models with scene placements in qualified flat Mango containers; print preparation is excluded from fresh geometry. |
-| [SolidWorks](#solidworks) | `.sldprt`, `.sldasm` | Subset: addressed document PNG or supported DIB in CFB/OLE compound-storage parts and assemblies; extraction only. |
+**✅ Supported for a qualified subset · ❌ Unsupported · — Not applicable.** Coverage follows the versions, encodings and features in each linked entry. Geometry includes meshes, points, lines and surfaces generated from volume data. Saved preview means extracting a document image stored in or referenced by a model file.
+
+Ordinary raster and DICOM inputs are fitted directly to the canvas, so both document modes are —. TIFF also supports ✅ geometry previews from qualified scalar page stacks.
+
+| Type | Extensions | Saved preview | Geometry |
+| --- | --- | :---: | :---: |
+| [3DS](#3ds) | `.3ds` | — | ✅ |
+| [3ds Max](#3ds-max) | `.max` | ✅ | ❌ |
+| [3MF](#3mf) | `.3mf` | ❌ | ✅ |
+| [Alembic](#alembic) | `.abc` | — | ✅ |
+| [AMF](#amf) | `.amf` | — | ✅ |
+| [`AutoCAD` drawings](#autocad-drawings) | `.dwg` | ✅ | ✅ |
+| [Autodesk Fusion](#autodesk-fusion) | `.f3d` | ✅ | ✅ |
+| [Autodesk Inventor](#autodesk-inventor) | `.ipt`, `.iam` | ✅ | ✅ |
+| [Blender](#blender) | `.blend` | ✅ | ✅ |
+| [BMP](#bmp) | `.bmp` | — | — |
+| [BPF](#bpf) | `.bpf` | — | ✅ |
+| [BREP](#brep) | `.brep` | — | ✅ |
+| [`CityGML`](#citygml) | `.gml` | — | ✅ |
+| [COLLADA](#collada) | `.dae` | — | ✅ |
+| [DICOM](#dicom) | `.dcm` | — | — |
+| [DirectX](#directx) | `.x` | — | ✅ |
+| [Draco](#draco) | `.drc` | — | ✅ |
+| [DXF](#dxf) | `.dxf` | ❌ | ✅ |
+| [Exodus II](#exodus-ii) | `.e`, `.ex2`, `.exo`, `.g` | — | ✅ |
+| [EXR](#exr) | `.exr` | — | — |
+| [FBX](#fbx) | `.fbx` | ❌ | ✅ |
+| [`FreeCAD`](#freecad) | `.fcstd` | ✅ | ✅ |
+| [GLB](#glb) | `.glb` | — | ✅ |
+| [glTF](#gltf) | `.gltf` | — | ✅ |
+| [HDR](#hdr) | `.hdr` | — | — |
+| [IFC](#ifc) | `.ifc` | — | ✅ |
+| [IGES](#iges) | `.iges`, `.igs` | — | ✅ |
+| [JPEG](#jpeg) | `.jpg`, `.jpeg` | — | — |
+| [LAS](#las) | `.las`, `.laz` | — | ✅ |
+| [`LightBurn`](#lightburn) | `.lbrn`, `.lbrn2` | ✅ | ✅ |
+| [Lychee](#lychee) | `.lys` | ✅ | ✅ |
+| [`MetaImage`](#metaimage) | `.mhd`, `.mha` | — | ✅ |
+| [`NetCDF`](#netcdf) | `.nc`, `.cdf`, `.ncdf` | — | ✅ |
+| [NRRD](#nrrd) | `.nrrd`, `.nhdr` | — | ✅ |
+| [OBJ](#obj) | `.obj` | — | ✅ |
+| [OFF](#off) | `.off` | — | ✅ |
+| [Optech CSD](#optech-csd) | `.csd` | — | ✅ |
+| [PCD](#pcd) | `.pcd` | — | ✅ |
+| [PLY](#ply) | `.ply` | — | ✅ |
+| [PNG](#png) | `.png` | — | — |
+| [PTS](#pts) | `.pts` | — | ✅ |
+| [PTX](#ptx) | `.ptx` | — | ✅ |
+| [QFIT](#qfit) | `.qi` | — | ✅ |
+| [Quake MDL](#quake-mdl) | `.mdl` | — | ✅ |
+| [Rhino](#rhino) | `.3dm` | ✅ | ❌ |
+| [SBET](#sbet) | `.sbet` | — | ✅ |
+| [`SketchUp`](#sketchup) | `.skp` | ✅ | ❌ |
+| [SLPK](#slpk) | `.slpk` | — | ✅ |
+| [`SolidWorks`](#solidworks) | `.sldprt`, `.sldasm` | ✅ | ❌ |
+| [Splat](#splat) | `.splat` | — | ✅ |
+| [SPZ](#spz) | `.spz` | — | ✅ |
+| [STEP](#step) | `.step`, `.stp`, `.stpnc`, `.p21`, `.210` | — | ✅ |
+| [STL](#stl) | `.stl` | — | ✅ |
+| [`TerraScan` BIN](#terrascan-bin) | `.bin` | — | ✅ |
+| [TGA](#tga) | `.tga` | — | — |
+| [TIFF](#tiff) | `.tif`, `.tiff` | — | ✅ |
+| [USD](#usd) | `.usd`, `.usda`, `.usdc`, `.usdz` | ❌ | ✅ |
+| [VDB](#vdb) | `.vdb` | — | ✅ |
+| [VRML](#vrml) | `.wrl`, `.vrml` | — | ✅ |
+| [VTK `ImageData` XML](#vtk-imagedata-xml) | `.vti` | — | ✅ |
+| [VTK legacy](#vtk-legacy) | `.vtk` | — | ✅ |
+| [VTK `MultiBlock` XML](#vtk-multiblock-xml) | `.vtm` | — | ✅ |
+| [VTK `PolyData` XML](#vtk-polydata-xml) | `.vtp` | — | ✅ |
+| [VTK `RectilinearGrid` XML](#vtk-rectilineargrid-xml) | `.vtr` | — | ✅ |
+| [VTK `StructuredGrid` XML](#vtk-structuredgrid-xml) | `.vts` | — | ✅ |
+| [VTK `UnstructuredGrid` XML](#vtk-unstructuredgrid-xml) | `.vtu` | — | ✅ |
+| [VTKHDF](#vtkhdf) | `.vtkhdf` | — | ✅ |
+| [WebP](#webp) | `.webp` | — | — |
+| [XBF](#xbf) | `.xbf` | — | ✅ |
+
+The ❌ saved-preview entries have documented image carriers that Catwalk does not extract: [3MF thumbnails](https://github.com/3MFConsortium/spec_core/blob/master/3MF%20Core%20Specification.md), [DXF `THUMBNAILIMAGE`](https://help.autodesk.com/cloudhelp/2017/ENU/AutoCAD-DXF/files/GUID-792F79DC-0D5D-43B5-AB0E-212E0EDF6BAE.htm), [FBX thumbnail objects](https://help.autodesk.com/cloudhelp/2020/ENU/FBX-Developer-Help/files/cpp_ref/FBX_Developer_Help_cpp_ref_class_fbx_thumbnail_html.html) and [USD `AssetPreviewsAPI`](https://openusd.org/dev/user_guides/schemas/usdMedia/AssetPreviewsAPI.html). Other mesh, point and scientific-volume inputs use — for saved-preview mode.
 
 ## Shared preview policies
 
