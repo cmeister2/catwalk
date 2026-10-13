@@ -53,11 +53,35 @@ jobs:
       - name: Check runtime geometry and compression backends
         shell: bash
         run: |
+          mkdir -p target
           for platform in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu x86_64-unknown-linux-musl aarch64-unknown-linux-musl x86_64-apple-darwin aarch64-apple-darwin x86_64-pc-windows-msvc; do
             cargo tree --locked --target "$platform" --edges normal,build --prefix none > "target/runtime-$platform.txt"
-            if rg '^(zstd-sys|zstd-safe|libz-sys|libz-ng-sys|hdf5-sys|netcdf-sys|assimp-sys|vtk-sys|occt-sys|bzip2-sys|cmake|bindgen|cc) v' "target/runtime-$platform.txt"; then
-              echo 'A native geometry or compression build dependency entered the runtime graph.' >&2
+            if rg '^(libz-sys|libz-ng-sys|hdf5-sys|netcdf-sys|assimp-sys|vtk-sys|occt-sys|bzip2-sys|cmake|bindgen) v' "target/runtime-$platform.txt"; then
+              echo 'An unsupported native geometry or compression dependency entered the runtime graph.' >&2
               exit 1
+            fi
+            # Cadmpeg's bounded native Autodesk decoder uses bundled Zstandard.
+            # It is the only allowed native build; adding another cc consumer fails.
+            if rg -q '^cc v' "target/runtime-$platform.txt"; then
+              cargo tree --locked --target "$platform" --edges normal,build --invert cc --depth 1 --prefix none > "target/cc-parents-$platform.txt"
+              if ! rg -q '^zstd-sys v' "target/cc-parents-$platform.txt" \
+                || rg -v '^(cc|zstd-sys) v' "target/cc-parents-$platform.txt"; then
+                echo 'Only bundled Zstandard may invoke the C compiler.' >&2
+                exit 1
+              fi
+            fi
+            if rg -q '^zstd-sys v' "target/runtime-$platform.txt"; then
+              cargo tree --locked --target "$platform" --edges normal,build --invert zstd-sys --depth 1 --prefix none > "target/zstd-parents-$platform.txt"
+              if ! rg -q '^zstd-safe v' "target/zstd-parents-$platform.txt" \
+                || rg -v '^(zstd-sys|zstd-safe) v' "target/zstd-parents-$platform.txt"; then
+                echo 'Native Zstandard must remain behind its Rust wrapper.' >&2
+                exit 1
+              fi
+              cargo tree --locked --target "$platform" --edges normal,build --prefix none --format '{p} {f}' > "target/runtime-features-$platform.txt"
+              if rg '^zstd-sys v.*(bindgen|cmake|pkg-config)' "target/runtime-features-$platform.txt"; then
+                echo 'Zstandard must use its bundled source and pregenerated bindings.' >&2
+                exit 1
+              fi
             fi
           done
 
@@ -237,6 +261,16 @@ jobs:
           path: release-prepared
       - name: Apply prepared manifests
         run: cp release-prepared/Cargo.toml release-prepared/Cargo.lock .
+      - name: Install the musl C compiler for bundled Zstandard
+        if: matrix.musl
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends musl-tools
+          command -v musl-gcc
+          # cc reads this target-specific setting; Rust keeps its static rust-lld linker.
+          printf 'CC_%s=musl-gcc\n' "${TARGET//-/_}" >> "$GITHUB_ENV"
       - name: Compile release executable
         env:
           TARGET: ${{ matrix.target }}

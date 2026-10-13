@@ -601,6 +601,22 @@
       "title": "Fusion active-design saved-thumbnail carrier"
     },
     {
+      "extension": "f3d",
+      "id": "fusion-geometry-hex-nut",
+      "input": "autodesk_geometry/fusion-hex-nut.f3d",
+      "kind": "native-geometry",
+      "provenance": "Unmodified Samuel Oladosu fusion360-sample-modeling native Fusion design at commit 2d19f73689ac133e1f9abc5d6780681268d21808; SHA-256 75a1b10b39bc635e3feb61cf571651a7e98ba0f54f664e2d7e4f26be7e4b371b. MIT licensing and original source attribution are retained in autodesk_geometry/FUSION-SAMPLES-README.md and fusion-hex-nut-NOTICE.txt. Fresh native solved B-rep geometry is rendered; saved PNGs are bypassed. Cosmetic thread marks are not reconstructed as helical surfaces. https://github.com/samueloladosu37/fusion360-sample-modeling/tree/2d19f73689ac133e1f9abc5d6780681268d21808",
+      "title": "Fusion original hex nut with cylindrical through-bore"
+    },
+    {
+      "extension": "f3d",
+      "id": "fusion-geometry-toy-block",
+      "input": "autodesk_geometry/fusion-toy-block.f3d",
+      "kind": "native-geometry",
+      "provenance": "Unmodified Samuel Oladosu fusion360-sample-modeling native Fusion design at commit 2d19f73689ac133e1f9abc5d6780681268d21808; SHA-256 7fb14c89f0f2b04657fbdf178f6b2cf9fd902f905fd1687263280ca629e1502f. MIT licensing and original source attribution are retained in autodesk_geometry/FUSION-SAMPLES-README.md and fusion-toy-block-NOTICE.txt. Fresh native solved B-rep geometry is rendered; saved PNGs are bypassed. https://github.com/samueloladosu37/fusion360-sample-modeling/tree/2d19f73689ac133e1f9abc5d6780681268d21808",
+      "title": "Fusion original eight-stud toy block geometry"
+    },
+    {
       "extension": "fbx",
       "id": "fbx-ascii-material",
       "input": "mesh_scene/fbx-ascii-material.fbx",
@@ -954,6 +970,14 @@
     },
     {
       "extension": "iam",
+      "id": "inventor-geometry-conveyor",
+      "input": "autodesk_geometry/inventor/conveyor_model.iam",
+      "kind": "native-geometry",
+      "provenance": "Unmodified roshbeng/opcua_fusion_test_servers_and_hardware native Inventor documents at commit d9ab21ced0a26e09a213a218249ac1938340bae6; MIT, original license retained as autodesk_geometry/inventor/LICENSE-roshbeng.txt. Byte-identical corpus copies of tests/fixtures/native_geometry/inventor/conveyor originals; exact source URLs, Git blobs and SHA-256 hashes are retained in autodesk_geometry/inventor/provenance.json. Fresh native solved-body geometry and saved occurrence placements are rendered; stored thumbnails are bypassed. The assembly retains its four original sibling IPT files. Independent author-exported STEP bounds and volume are qualified in tests/inventor_geometry.rs. https://github.com/roshbeng/opcua_fusion_test_servers_and_hardware/tree/d9ab21ced0a26e09a213a218249ac1938340bae6/CAD%20models/conveyor_model/conveyor_model_v1",
+      "title": "Inventor original four-part conveyor assembly geometry"
+    },
+    {
+      "extension": "iam",
       "id": "inventor-v4-assembly-saved-thumbnail",
       "input": "saved_previews/inventor-v4-assembly-saved-thumbnail.iam",
       "kind": "saved-preview",
@@ -983,6 +1007,14 @@
       "kind": "model",
       "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
       "title": "IGES translated cylinder geometry"
+    },
+    {
+      "extension": "ipt",
+      "id": "inventor-geometry-box",
+      "input": "autodesk_geometry/inventor/box.ipt",
+      "kind": "native-geometry",
+      "provenance": "Unmodified roshbeng/opcua_fusion_test_servers_and_hardware native Inventor documents at commit d9ab21ced0a26e09a213a218249ac1938340bae6; MIT, original license retained as autodesk_geometry/inventor/LICENSE-roshbeng.txt. Byte-identical corpus copies of tests/fixtures/native_geometry/inventor/conveyor originals; exact source URLs, Git blobs and SHA-256 hashes are retained in autodesk_geometry/inventor/provenance.json. Fresh native solved-body geometry and saved occurrence placements are rendered; stored thumbnails are bypassed. The assembly retains its four original sibling IPT files. Independent author-exported STEP bounds and volume are qualified in tests/inventor_geometry.rs. https://github.com/roshbeng/opcua_fusion_test_servers_and_hardware/tree/d9ab21ced0a26e09a213a218249ac1938340bae6/CAD%20models/conveyor_model/conveyor_model_v1",
+      "title": "Inventor original open box part geometry"
     },
     {
       "extension": "ipt",

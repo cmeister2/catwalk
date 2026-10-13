@@ -27,12 +27,16 @@ mod fbx;
 mod fcstd;
 /// Shared bounded FreeCAD archive admission and selected member decoding.
 pub(crate) mod fcstd_container;
+/// Bounded native Fusion bodies, placements and tessellated geometry.
+mod fusion;
 /// glTF/GLB scenes, appearances, deformations and supported extensions.
 mod gltf;
 /// Owned filtered HDF5 index reads using upstream metadata, codec and numeric APIs.
 mod hdf5_owned;
 /// IFC placements, representation geometry and bounded solid operations.
 mod ifc;
+/// Native Inventor parts and recursively resolved assembly occurrences.
+mod inventor;
 /// COLLADA indexed geometry, materials and node transforms.
 mod legacy_scene;
 /// LAS and Rust-decompressed LAZ survey points.
@@ -47,6 +51,10 @@ mod lychee_budget;
 mod lychee_scene;
 /// Polygon, triangle, point and wire interchange readers.
 mod mesh;
+/// Placed native CAD geometry converted through the existing Rust tessellator.
+mod native_cad;
+/// Bounded native boundary meshing with verified product placement and import reports.
+mod native_step;
 /// Indexed OBJ corner attributes and local Wavefront material resources.
 mod obj;
 /// Bounded Wavefront diffuse materials and image maps.
@@ -110,7 +118,9 @@ pub const IMAGE_EXTENSIONS: &[&str] = &[
 ];
 
 /// Document formats with geometry readers in addition to saved-image extraction.
-pub const NATIVE_GEOMETRY_EXTENSIONS: &[&str] = &["blend", "lbrn", "lbrn2", "dwg", "lys", "fcstd"];
+pub const NATIVE_GEOMETRY_EXTENSIONS: &[&str] = &[
+    "blend", "lbrn", "lbrn2", "dwg", "lys", "fcstd", "ipt", "iam", "f3d",
+];
 
 /// Return the path's extension in ASCII lowercase, without its leading dot.
 ///
@@ -136,6 +146,8 @@ pub fn load(path: &Path) -> Result<Scene> {
         "dwg" => dwg::load(path)?,
         "lys" => lychee::load(path)?,
         "fcstd" => fcstd::load(path)?,
+        "ipt" | "iam" => inventor::load(path)?,
+        "f3d" => fusion::load(path)?,
         "tif" | "tiff" => tiff_volume::load(path)?,
         "stl" | "obj" | "ply" | "off" | "pts" | "ptx" | "pcd" | "splat" => mesh::load(path)?,
         "gltf" | "glb" => gltf::load(path)?,

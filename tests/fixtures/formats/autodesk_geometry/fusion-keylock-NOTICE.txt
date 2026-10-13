@@ -1,0 +1,18 @@
+Retained fixture: fusion-keylock.f3d
+Original filename: KeyLock Assembly.f3d
+Project: fusion360-sample-modeling
+Author: Samuel Oladosu
+Source commit: 2d19f73689ac133e1f9abc5d6780681268d21808
+Source URL: https://github.com/samueloladosu37/fusion360-sample-modeling/blob/2d19f73689ac133e1f9abc5d6780681268d21808/KeyLock%20Assembly.f3d
+Source README: https://github.com/samueloladosu37/fusion360-sample-modeling/blob/2d19f73689ac133e1f9abc5d6780681268d21808/README.md
+License: The author's README identifies the designs as MIT licensed and permits use, modification and sharing with attribution. The original README is retained as FUSION-SAMPLES-README.md; the upstream repository has no separate LICENSE file.
+SHA-256: 359c3816bd7eb58c41d9f3f3d60bf1dceb4055069af806c3c09b0b86c0a84a95
+
+Copied byte-for-byte from the author-created Autodesk Fusion native document.
+The source author supplies screenshots but no independent STEP/STL exports.
+This is a negative placement-fidelity fixture. The document contains
+three native bodies but active Assemble and GeometricRelationship operations
+remain native-only, with no qualified neutral placement definition. Native
+geometry rendering must refuse it instead of assuming the local B-rep body
+coordinates are the final assembly placements. The saved preview remains
+available through the ordinary thumbnail path.

@@ -1,0 +1,21 @@
+These five original Inventor documents are byte-identical corpus copies of
+tests/fixtures/native_geometry/inventor/conveyor. The generator validates their
+fixed SHA-256 hashes and byte lengths before copying them. No document bytes,
+stored previews, internal Windows paths or assembly placements are changed.
+
+Source project: roshbeng/opcua_fusion_test_servers_and_hardware
+Revision: d9ab21ced0a26e09a213a218249ac1938340bae6
+Original directory: CAD models/conveyor_model/conveyor_model_v1
+Source URL: https://github.com/roshbeng/opcua_fusion_test_servers_and_hardware/tree/d9ab21ced0a26e09a213a218249ac1938340bae6/CAD%20models/conveyor_model/conveyor_model_v1
+License: MIT; complete original text retained as LICENSE-roshbeng.txt.
+
+provenance.json retains the full source URLs, original paths, Git blobs, byte
+lengths and SHA-256 hashes for these five documents. Only its local file paths
+are adjusted to identify this flat corpus copy. The primary qualification
+directory also retains the original author's independent STEP export and
+OpenCascade measurements. tests/inventor_geometry.rs compares the decoded
+assembly with those independent bounds and volume.
+
+The native-geometry corpus cases bypass stored images. The .iam assembly
+requires its four original sibling .ipt documents; each is retained here with
+its unchanged original filename.

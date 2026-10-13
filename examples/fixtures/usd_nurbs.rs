@@ -1,8 +1,6 @@
 //! Retained Maya-exported NURBS and authored rational-curve/container controls.
 
-#[path = "../../tests/support/digest_hex.rs"]
-/// Lowercase formatting shared with fixture-integrity tests.
-mod digest_hex;
+use crate::digest_hex;
 
 use catwalk3d::Result;
 use sha2::{Digest, Sha256};
