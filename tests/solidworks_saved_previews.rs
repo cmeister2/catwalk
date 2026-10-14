@@ -129,20 +129,22 @@ fn cli_extraction_preserves_pixels_and_geometry_forcing_preserves_output() {
     );
     let previous = directory.0.join("previous.png");
     std::fs::write(&previous, b"previous thumbnail").unwrap();
+    let without_companions = directory.0.join("missing-components.sldasm");
+    std::fs::copy(&source, &without_companions).unwrap();
     let result = cli()
-        .arg(&source)
+        .arg(&without_companions)
         .arg("--render-geometry")
         .arg("--output")
         .arg(&previous)
         .output()
         .unwrap();
     assert!(!result.status.success());
-    assert!(String::from_utf8_lossy(&result.stderr).contains("unsupported model format .sldasm"));
+    assert!(String::from_utf8_lossy(&result.stderr).contains("missing SolidWorks companion"));
     assert_eq!(std::fs::read(previous).unwrap(), b"previous thumbnail");
 }
 
 #[test]
-fn missing_document_thumbnail_has_exit_three_and_keeps_old_output() {
+fn missing_document_thumbnail_extracts_as_absent_and_renders_native_geometry() {
     let directory = Directory::new();
     let source = directory.0.join("missing.sldprt");
     std::fs::copy(fixture("solidworks-about.sldprt"), &source).unwrap();
@@ -153,17 +155,27 @@ fn missing_document_thumbnail_has_exit_three_and_keeps_old_output() {
     }
     let destination = directory.0.join("previous.png");
     std::fs::write(&destination, b"previous thumbnail").unwrap();
-    for extra in [vec![], vec!["--extract-saved-preview"]] {
-        let result = cli()
-            .arg(&source)
-            .args(extra)
-            .arg("--output")
-            .arg(&destination)
-            .output()
-            .unwrap();
-        assert_eq!(result.status.code(), Some(3));
-        assert_eq!(std::fs::read(&destination).unwrap(), b"previous thumbnail");
-    }
+    let result = cli()
+        .arg(&source)
+        .args(["--extract-saved-preview", "--output"])
+        .arg(&destination)
+        .output()
+        .unwrap();
+    assert_eq!(result.status.code(), Some(3));
+    assert_eq!(std::fs::read(&destination).unwrap(), b"previous thumbnail");
+    let result = cli()
+        .arg(&source)
+        .args(["--size", "64", "--output"])
+        .arg(&destination)
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let image = image::open(&destination).unwrap();
+    assert_eq!((image.width(), image.height()), (64, 64));
 }
 
 #[test]

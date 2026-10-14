@@ -303,6 +303,44 @@ dependencies = [
 ]
 
 [[package]]
+name = "cadmpeg-codec-rhino"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7d88b42fb91c7e5af4c75c0433029771f7e3233a0b72ec3d0b2e5ff2c72bed07"
+dependencies = [
+ "cadmpeg-container",
+ "cadmpeg-core",
+ "cadmpeg-ir",
+ "crc32fast",
+ "flate2",
+ "roxmltree",
+ "serde",
+ "serde_json",
+ "sha1",
+ "sha2",
+ "tempfile",
+]
+
+[[package]]
+name = "cadmpeg-codec-sldprt"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7120642fdb67fee1c9a4df272fb8a25f2604bf0c006314b9723aeb1463e793fa"
+dependencies = [
+ "cadmpeg-container",
+ "cadmpeg-core",
+ "cadmpeg-ir",
+ "cadmpeg-parasolid",
+ "crc32fast",
+ "flate2",
+ "rmp",
+ "roxmltree",
+ "serde",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "cadmpeg-codec-step"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -362,6 +400,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cadmpeg-parasolid"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "249789dc0c92e3a80031a6de57ec63c60adc2303b3ff98df30014c1279bef040"
+dependencies = [
+ "cadmpeg-core",
+]
+
+[[package]]
 name = "cadmpeg-protein"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -384,6 +431,8 @@ dependencies = [
  "base64",
  "cadmpeg-codec-f3d",
  "cadmpeg-codec-inventor",
+ "cadmpeg-codec-rhino",
+ "cadmpeg-codec-sldprt",
  "cadmpeg-codec-step",
  "cadmpeg-core",
  "cadmpeg-ir",
@@ -2298,13 +2347,11 @@ checksum = "3582f63211428f83597b51b2ddb88e2a91a9d52d12831f9d08f5e624e8977422"
 
 [[package]]
 name = "rmp"
-version = "0.8.14"
+version = "0.8.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "228ed7c16fa39782c3b3468e974aec2795e9089153cd08ee2e9aefb3613334c4"
+checksum = "4ba8be72d372b2c9b35542551678538b562e7cf86c3315773cae48dfbfe7790c"
 dependencies = [
- "byteorder",
  "num-traits",
- "paste",
 ]
 
 [[package]]
@@ -2488,6 +2535,17 @@ dependencies = [
  "serde",
  "serde_core",
  "zmij",
+]
+
+[[package]]
+name = "sha1"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aacc4cc499359472b4abe1bf11d0b12e688af9a805fa5e3016f9a386dc2d0214"
+dependencies = [
+ "cfg-if",
+ "cpufeatures",
+ "digest",
 ]
 
 [[package]]

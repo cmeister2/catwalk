@@ -98,7 +98,7 @@ fn cli_extraction_preserves_saved_dimensions_and_refuses_geometry() {
 }
 
 #[test]
-fn absent_thumbnail_returns_code_three_and_preserves_existing_output() {
+fn absent_thumbnail_extracts_as_absent_and_unsupported_geometry_preserves_output() {
     let input = std::env::temp_dir().join(format!("catwalk-max-absent-{}.max", std::process::id()));
     std::fs::copy(fixture("Combine Test.max"), &input).unwrap();
     let mut compound = cfb::open_rw(&input).unwrap();
@@ -106,24 +106,20 @@ fn absent_thumbnail_returns_code_three_and_preserves_existing_output() {
     drop(compound);
     assert!(saved_preview::extract(&input).unwrap().is_none());
     let error = thumbnail(&input, &RenderOptions::default()).unwrap_err();
-    assert!(
-        error
-            .downcast_ref::<saved_preview::NoSavedPreview>()
-            .is_some()
-    );
+    assert!(error.to_string().contains("3ds Max"));
     let output = input.with_extension("png");
     std::fs::write(&output, b"keep previous output").unwrap();
     for flags in [vec![], vec!["--extract-saved-preview"]] {
         let command = Command::new(env!("CARGO_BIN_EXE_catwalk"))
             .arg(&input)
-            .args(flags)
+            .args(&flags)
             .arg("--output")
             .arg(&output)
             .output()
             .unwrap();
         assert_eq!(
             command.status.code(),
-            Some(3),
+            Some(if flags.is_empty() { 1 } else { 3 }),
             "{}",
             String::from_utf8_lossy(&command.stderr)
         );

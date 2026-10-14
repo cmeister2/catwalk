@@ -49,6 +49,8 @@ pub mod lychee;
 mod lychee_budget;
 /// Bounded scene-state MessagePack and the qualified public byte transform.
 mod lychee_scene;
+/// Stored 3ds Max meshes, supported primitives and native placements.
+mod max;
 /// Polygon, triangle, point and wire interchange readers.
 mod mesh;
 /// Placed native CAD geometry converted through the existing Rust tessellator.
@@ -61,10 +63,18 @@ mod obj;
 mod obj_material;
 /// First-frame Quake IDPO model geometry.
 mod quakemdl;
+/// Native Rhino meshes, points, bounded curves, NURBS surfaces and boundary bodies.
+mod rhino;
 /// VTK mesh, grid and multiblock geometry.
 mod scientific;
+/// Stored SketchUp half-edge surfaces, wires and placed components.
+mod sketchup;
+/// Legacy SketchUp MFC archive topology, managers and component placements.
+mod sketchup_legacy;
 /// I3S point-cloud packages and bounded hierarchy traversal.
 mod slpk;
+/// Native SolidWorks parts and solved external assembly occurrences.
+mod solidworks;
 /// Compressed Gaussian-center positions and colors.
 mod spz;
 /// STEP B-rep and tessellated geometry, length contexts and assembly placements.
@@ -119,7 +129,8 @@ pub const IMAGE_EXTENSIONS: &[&str] = &[
 
 /// Document formats with geometry readers in addition to saved-image extraction.
 pub const NATIVE_GEOMETRY_EXTENSIONS: &[&str] = &[
-    "blend", "lbrn", "lbrn2", "dwg", "lys", "fcstd", "ipt", "iam", "f3d",
+    "blend", "lbrn", "lbrn2", "dwg", "lys", "fcstd", "ipt", "iam", "f3d", "skp", "max", "3dm",
+    "sldprt", "sldasm",
 ];
 
 /// Return the path's extension in ASCII lowercase, without its leading dot.
@@ -141,6 +152,7 @@ pub fn extension(path: &Path) -> Result<String> {
 pub fn load(path: &Path) -> Result<Scene> {
     let scene = match extension(path)?.as_str() {
         "amf" => amf::load(path)?,
+        "3dm" => rhino::load(path)?,
         "blend" => blend::load(path)?,
         "lbrn" | "lbrn2" => lightburn::load(path)?,
         "dwg" => dwg::load(path)?,
@@ -148,6 +160,9 @@ pub fn load(path: &Path) -> Result<Scene> {
         "fcstd" => fcstd::load(path)?,
         "ipt" | "iam" => inventor::load(path)?,
         "f3d" => fusion::load(path)?,
+        "skp" => sketchup::load(path)?,
+        "max" => max::load(path)?,
+        "sldprt" | "sldasm" => solidworks::load(path)?,
         "tif" | "tiff" => tiff_volume::load(path)?,
         "stl" | "obj" | "ply" | "off" | "pts" | "ptx" | "pcd" | "splat" => mesh::load(path)?,
         "gltf" | "glb" => gltf::load(path)?,

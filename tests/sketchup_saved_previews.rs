@@ -63,7 +63,7 @@ fn original_producer_thumbnails_match_independent_pngs_exactly() {
 }
 
 #[test]
-fn automatic_thumbnail_is_fitted_and_geometry_mode_remains_unsupported() {
+fn automatic_thumbnail_is_fitted_and_geometry_mode_renders_native_surfaces() {
     let input = fixture("2026-box-two-materials", "skp");
     let options = catwalk3d::render::RenderOptions {
         width: 64,
@@ -75,14 +75,23 @@ fn automatic_thumbnail_is_fitted_and_geometry_mode_remains_unsupported() {
         catwalk3d::thumbnail(&input, &options).unwrap().dimensions(),
         (64, 64)
     );
-    assert!(catwalk3d::formats::load(&input).is_err());
+    assert_eq!(
+        catwalk3d::formats::load(&input).unwrap().triangles.len(),
+        12
+    );
     let output = Command::new(env!("CARGO_BIN_EXE_catwalk"))
         .arg(&input)
         .args(["--render-geometry", "--output", "-"])
         .output()
         .unwrap();
-    assert!(!output.status.success());
-    assert_eq!(output.stdout, [] as [u8; 0]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let fresh = image::load_from_memory(&output.stdout).unwrap();
+    assert_eq!(fresh.width(), 512);
+    assert_eq!(fresh.height(), 512);
 }
 
 #[test]

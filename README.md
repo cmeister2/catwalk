@@ -67,7 +67,7 @@ Ordinary raster and DICOM inputs are fitted directly to the canvas, so both docu
 | Type | Extensions | Saved preview | Geometry |
 | --- | --- | :---: | :---: |
 | [3DS](docs/format-coverage.md#3ds) | `.3ds` | — | ✅ |
-| [3ds Max](docs/format-coverage.md#3ds-max) | `.max` | ✅ | ❌ |
+| [3ds Max](docs/format-coverage.md#3ds-max) | `.max` | ✅ | ✅ |
 | [3MF](docs/format-coverage.md#3mf) | `.3mf` | ❌ | ✅ |
 | [Alembic](docs/format-coverage.md#alembic) | `.abc` | — | ✅ |
 | [AMF](docs/format-coverage.md#amf) | `.amf` | — | ✅ |
@@ -110,11 +110,11 @@ Ordinary raster and DICOM inputs are fitted directly to the canvas, so both docu
 | [PTX](docs/format-coverage.md#ptx) | `.ptx` | — | ✅ |
 | [QFIT](docs/format-coverage.md#qfit) | `.qi` | — | ✅ |
 | [Quake MDL](docs/format-coverage.md#quake-mdl) | `.mdl` | — | ✅ |
-| [Rhino](docs/format-coverage.md#rhino) | `.3dm` | ✅ | ❌ |
+| [Rhino](docs/format-coverage.md#rhino) | `.3dm` | ✅ | ✅ |
 | [SBET](docs/format-coverage.md#sbet) | `.sbet` | — | ✅ |
-| [`SketchUp`](docs/format-coverage.md#sketchup) | `.skp` | ✅ | ❌ |
+| [`SketchUp`](docs/format-coverage.md#sketchup) | `.skp` | ✅ | ✅ |
 | [SLPK](docs/format-coverage.md#slpk) | `.slpk` | — | ✅ |
-| [`SolidWorks`](docs/format-coverage.md#solidworks) | `.sldprt`, `.sldasm` | ✅ | ❌ |
+| [`SolidWorks`](docs/format-coverage.md#solidworks) | `.sldprt`, `.sldasm` | ✅ | ✅ |
 | [Splat](docs/format-coverage.md#splat) | `.splat` | — | ✅ |
 | [SPZ](docs/format-coverage.md#spz) | `.spz` | — | ✅ |
 | [STEP](docs/format-coverage.md#step) | `.step`, `.stp`, `.stpnc`, `.p21`, `.210` | — | ✅ |
@@ -152,9 +152,9 @@ Open CASCADE `.brep` previews accept supported ASCII and little-endian binary to
 
 ## Native documents and saved previews
 
-By default, a supported saved image is used when available. Blender, `LightBurn`, DWG, Lychee, `FreeCAD`, Inventor and Fusion fall back to their geometry readers when the saved image is missing or unreadable. A saved thumbnail can be blank or out of date. Rhino support extracts the stored viewport image; documents without that image return the absent-preview status. 3ds Max `.max` thumbnails use the saved image only; a document without a supported image has no geometry fallback.
+By default, a supported saved image is used when available. Native documents with geometry readers fall back to fresh rendering when that image is missing or unreadable. `--render-geometry` bypasses saved images. A saved thumbnail can be blank or out of date; reader versions and supported geometry follow the linked coverage entries.
 
-**`SolidWorks` previews extract the last saved document image.** Qualified compound-storage parts and assemblies use the root `PreviewPNG` image, with a supported `Preview` DIB as fallback. Assembly component files are not needed. Modern compressed-section containers, configuration-specific previews and fresh part/assembly geometry remain unsupported. Absent or empty preview streams return exit code 3; malformed selected images return an error. See [the coverage entry](docs/format-coverage.md#solidworks) and [original source qualification](tests/fixtures/formats/solidworks/README.md).
+**`SolidWorks` supports native geometry and saved images.** Fresh rendering decodes the active solved part state, using qualified complete native 3D mesh caches or supported B-rep tessellation. Assemblies use authored component placements and require their native companion files in the supplied project directory. Saved-image extraction uses root `PreviewPNG` or supported `Preview` DIB streams and needs no companions; absent images return code 3. See [the coverage entry](docs/format-coverage.md#solidworks) and [producer qualification](tests/fixtures/formats/solidworks/README.md) for supported variants and limits.
 
 **`LightBurn` supports fresh vector rendering:** paths, cubic Bézier curves, shared instances, nested groups, rectangles, rounded corners, ellipses and the first 16 standard cut-layer colors. Text, bitmaps, laser fills and multipage geometry remain unsupported. Nine projects without saved thumbnails have geometry checks and PNG snapshots.
 
@@ -166,7 +166,7 @@ By default, a supported saved image is used when available. Blender, `LightBurn`
 
 **`FreeCAD` previews use stored document shapes.** Fresh geometry respects supported visibility, part containers, local links and model arrays without opening `FreeCAD`. The reader supports qualified schema-4 documents with ASCII BREP members. Binary shape members, external links and unsupported link modes return an error; see [the FreeCAD coverage entry](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#freecad).
 
-See [native Autodesk geometry examples and their original source credits](docs/native-autodesk/README.md).
+See [native geometry thumbnail examples](docs/native-geometry/README.md) and [native Autodesk geometry examples and source credits](docs/native-autodesk/README.md).
 
 Choose the preview mode explicitly when needed:
 
@@ -179,6 +179,11 @@ catwalk part.FCStd --render-geometry --output fresh.png --size 256
 catwalk part.ipt --render-geometry --output fresh.png --size 256
 catwalk assembly.iam --render-geometry --output fresh.png --size 256
 catwalk design.f3d --render-geometry --output fresh.png --size 256
+catwalk model.skp --render-geometry --output fresh.png --size 256
+catwalk model.3dm --render-geometry --output fresh.png --size 256
+catwalk scene.max --render-geometry --output fresh.png --size 256
+catwalk part.sldprt --render-geometry --output fresh.png --size 256
+catwalk assembly.sldasm --render-geometry --output fresh.png --size 256
 
 # Extract a saved image at its original dimensions.
 catwalk part.ipt --extract-saved-preview --output saved.png
