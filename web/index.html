@@ -39,7 +39,10 @@
             <fieldset id="input-controls">
               <legend class="visually-hidden">File and thumbnail settings</legend>
               <label id="drop-target" class="drop-target" for="primary-file">
-                <input id="primary-file" class="visually-hidden" type="file" aria-describedby="file-limits">
+                <!-- Keep in sync with the Rust extension registries; tests/web-output.test.js checks coverage. -->
+                <input id="primary-file" class="visually-hidden" type="file"
+                  accept=".210,.3dm,.3ds,.3mf,.abc,.amf,.bin,.blend,.bmp,.bpf,.brep,.cdf,.csd,.dae,.dcm,.drc,.dwg,.dxf,.e,.ex2,.exo,.exr,.f3d,.fbx,.fcstd,.g,.glb,.gltf,.gml,.hdr,.iam,.ifc,.iges,.igs,.ipt,.jpeg,.jpg,.las,.laz,.lbrn,.lbrn2,.lys,.max,.mdl,.mha,.mhd,.nc,.ncdf,.nhdr,.nrrd,.obj,.off,.p21,.pcd,.ply,.png,.pts,.ptx,.qi,.sbet,.skp,.sldasm,.sldprt,.slpk,.splat,.spz,.step,.stl,.stp,.stpnc,.tga,.tif,.tiff,.usd,.usda,.usdc,.usdz,.vdb,.vrml,.vti,.vtk,.vtkhdf,.vtm,.vtp,.vtr,.vts,.vtu,.webp,.wrl,.x,.xbf"
+                  aria-describedby="file-limits">
                 <span class="drop-icon" aria-hidden="true">↑</span>
                 <span class="drop-title">Choose a file</span>
                 <span class="drop-description">or drop one here</span>
@@ -50,6 +53,7 @@
               <div class="companion-section">
                 <label class="field-label" for="companion-files">Companion files <span class="optional">optional</span></label>
                 <p id="companion-help" class="help-text">Add materials, textures or parts beside the main file, in the same folder. Companion files in subfolders are not supported here.</p>
+                <!-- Companion resources may use arbitrary extensions, so leave this picker unfiltered. -->
                 <input id="companion-files" type="file" multiple aria-describedby="companion-help companion-summary">
                 <div id="companion-details" hidden>
                   <p id="companion-summary" class="help-text"></p>
