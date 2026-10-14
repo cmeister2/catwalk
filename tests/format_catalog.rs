@@ -155,6 +155,23 @@ fn category_sets_match_the_readers_and_preserve_overlap() {
 }
 
 #[test]
+fn new_native_geometry_readers_keep_saved_preview_catalog_support() {
+    let document = catalog("--list-formats");
+    let extensions = extension_list(&document["extensions"]);
+    let images = extension_list(&document["categories"]["image"]);
+    for extension in ["skp", "3dm", "max", "sldprt", "sldasm"] {
+        assert!(extensions.contains(&extension));
+        for category in ["geometry", "native_geometry", "saved_preview"] {
+            assert!(
+                extension_list(&document["categories"][category]).contains(&extension),
+                ".{extension} must advertise {category} support"
+            );
+        }
+        assert!(!images.contains(&extension));
+    }
+}
+
+#[test]
 fn default_human_readable_output_is_unchanged() {
     let expected = format!(
         "Implemented model readers: {}\n\
