@@ -51,15 +51,15 @@ netcdf-reader = { version = "=0.9.1", default-features = false, features = ["net
 ndarray = "=0.17.2"
 num-rational = "=0.4.2"
 num-traits = "=0.2.19"
-ogeom-io = { version = "=0.9.16", default-features = false }
-ogeom-mesh = { version = "=0.9.16", default-features = false }
-ogeom-core = { version = "=0.9.16", default-features = false }
-ogeom-doc = { version = "=0.9.16", default-features = false }
-ogeom-geom = { version = "=0.9.16", default-features = false }
-ogeom-intersect = { version = "=0.9.16", default-features = false }
-ogeom-math = { version = "=0.9.16", default-features = false }
-ogeom-topo = { version = "=0.9.16", default-features = false }
-ogeom-algo = { version = "=0.9.16", default-features = false }
+ogeom-io = { version = "=0.11.1", default-features = false }
+ogeom-mesh = { version = "=0.11.1", default-features = false }
+ogeom-core = { version = "=0.11.1", default-features = false }
+ogeom-doc = { version = "=0.11.1", default-features = false }
+ogeom-geom = { version = "=0.11.1", default-features = false }
+ogeom-intersect = { version = "=0.11.1", default-features = false }
+ogeom-math = { version = "=0.11.1", default-features = false }
+ogeom-topo = { version = "=0.11.1", default-features = false }
+ogeom-algo = { version = "=0.11.1", default-features = false }
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "bmp", "tga", "hdr", "webp", "exr", "tiff"] }
 png = "0.18.1"
 roxmltree = "0.21.1"
