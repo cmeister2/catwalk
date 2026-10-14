@@ -308,6 +308,9 @@ fn validate_report(report: &StepReport, limit: f64) -> Result<()> {
                 | "DIRECTION"
                 | "GEOMETRIC_REPRESENTATION_CONTEXT"
                 | "LENGTH_UNIT"
+                // This container only groups STYLED_ITEM presentation records;
+                // ogeom resolves those styles directly against boundary faces.
+                | "MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION"
                 | "NAMED_UNIT"
                 | "PRODUCT_CONTEXT"
                 | "PRODUCT_DEFINITION_CONTEXT"
@@ -318,8 +321,9 @@ fn validate_report(report: &StepReport, limit: f64) -> Result<()> {
     }
     let mut counts = BTreeMap::new();
     for warning in &report.warnings {
-        let (kind, distance) = numerical_warning(warning)
-            .ok_or("native CAD STEP import reported an unqualified warning")?;
+        let (kind, distance) = numerical_warning(warning).ok_or_else(|| {
+            format!("native CAD STEP import reported an unqualified warning: {warning}")
+        })?;
         let trim_window = kind == "vertex-window";
         if !distance.is_finite()
             || distance < 0.0

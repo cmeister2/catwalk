@@ -13,7 +13,7 @@ Ordinary raster and DICOM inputs are fitted directly to the canvas, so both docu
 | Type | Extensions | Saved preview | Geometry |
 | --- | --- | :---: | :---: |
 | [3DS](#3ds) | `.3ds` | — | ✅ |
-| [3ds Max](#3ds-max) | `.max` | ✅ | ❌ |
+| [3ds Max](#3ds-max) | `.max` | ✅ | ✅ |
 | [3MF](#3mf) | `.3mf` | ❌ | ✅ |
 | [Alembic](#alembic) | `.abc` | — | ✅ |
 | [AMF](#amf) | `.amf` | — | ✅ |
@@ -56,11 +56,11 @@ Ordinary raster and DICOM inputs are fitted directly to the canvas, so both docu
 | [PTX](#ptx) | `.ptx` | — | ✅ |
 | [QFIT](#qfit) | `.qi` | — | ✅ |
 | [Quake MDL](#quake-mdl) | `.mdl` | — | ✅ |
-| [Rhino](#rhino) | `.3dm` | ✅ | ❌ |
+| [Rhino](#rhino) | `.3dm` | ✅ | ✅ |
 | [SBET](#sbet) | `.sbet` | — | ✅ |
-| [`SketchUp`](#sketchup) | `.skp` | ✅ | ❌ |
+| [`SketchUp`](#sketchup) | `.skp` | ✅ | ✅ |
 | [SLPK](#slpk) | `.slpk` | — | ✅ |
-| [`SolidWorks`](#solidworks) | `.sldprt`, `.sldasm` | ✅ | ❌ |
+| [`SolidWorks`](#solidworks) | `.sldprt`, `.sldasm` | ✅ | ✅ |
 | [Splat](#splat) | `.splat` | — | ✅ |
 | [SPZ](#spz) | `.spz` | — | ✅ |
 | [STEP](#step) | `.step`, `.stp`, `.stpnc`, `.p21`, `.210` | — | ✅ |
@@ -518,13 +518,17 @@ Limits cap decoded geometry at five million points/faces and expanded attributes
 
 ## 3ds Max
 
-**Extension:** `.max`. **Status:** qualified saved-thumbnail extraction only.
+**Extension:** `.max`. **Status:** qualified saved-thumbnail extraction and native static geometry.
 
-Automatic thumbnails fit the stored image to the requested canvas. `--extract-saved-preview` preserves its original dimensions; a missing or complete unsupported thumbnail returns code 3 and leaves an existing output untouched. There is no scene geometry reader or fallback, and `--render-geometry` fails explicitly. Saved images can be stale, blank or show an authored viewport rather than a fitted model view. Autodesk describes the optional [Explorer thumbnail mechanism](https://www.autodesk.com/support/technical/article/caas/sfdcarticles/sfdcarticles/How-to-view-a-3ds-Max-thumbnail-preview-in-Windows-File-Explorer.html).
+Automatic thumbnails prefer the saved image and fall back to supported native geometry when it is missing or unreadable. `--render-geometry` reads the scene without selecting a saved image. `--extract-saved-preview` preserves the saved image's original dimensions; a missing or complete unsupported thumbnail returns code 3 and leaves an existing output untouched. Saved images can be stale, blank or show an authored viewport rather than a fitted model view. Autodesk describes the optional [Explorer thumbnail mechanism](https://www.autodesk.com/support/technical/article/caas/sfdcarticles/sfdcarticles/How-to-view-a-3ds-Max-thumbnail-preview-in-Windows-File-Explorer.html).
 
 The reader admits CFB/OLE v3/v4 containers with the qualified root `Scene`, `ClassData` and `ClassDirectory3` streams. It selects only root `\u0005SummaryInformation`, checks the standard SummaryInformation FMTID, and resolves PID 17 through the property table. The qualified `VT_CF` carrier contains Windows `CF_METAFILEPICT` and a legacy 16-bit mapping header. Its WMF has one [META_STRETCHDIB record](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-wmf/7ebae08d-61ee-4d82-9aa5-9217ba2aa8c1) followed by EOF: full-size, uncropped, unplaced `SRCCOPY`, containing a positive-height 24-bit `BI_RGB` DIB. Checked lengths, dimensions, BGR channels, bottom-up rows and row padding preserve every saved pixel. Arbitrary byte scanning and scene/plugin/asset loading are not used.
 
 [Two unchanged MIT-licensed Autodesk sample scenes](../tests/fixtures/formats/max_saved/README.md) qualify genuine v4 regular-stream thumbnails at 512 × 256 and 512 × 268. Source hashes, pinned producer URLs, original license and independently decoded RGBA hashes are retained. Authored tests additionally exercise v3/v4 mini/regular streams, root selection and scene identity, padding/orientation, absence, malformed property tables, WMF/DIB extents and original FAT chain integrity. These examples do not establish broad 3ds Max release compatibility.
+
+Fresh geometry reads addressed OLE `Scene` and `ClassDirectory3` streams and resolves native class ids, references and node ancestors. It renders visible Editable Mesh triangles, Editable Poly faces with stored diagonals or supported planar boundaries, and constant unsegmented Box primitives. Constant PRS/XYZ/Bezier placements, object-offset pivots, anisotropic scale axes and mirrored winding are retained. Native node wire colors supply appearance. Material shaders, textures, unsupported procedural objects, modifier stacks, animated meshes or parameters, multiple/nonzero-time controller keys and unsupported controller families fail or remain outside the documented appearance subset. Coordinates retain authored Z-up system units. Three unchanged Apache-2.0 BabylonJS native scenes have independent producer-export bounds, surface-area, sharing and placement checks; see [native MAX qualification](../tests/fixtures/native_geometry/max/README.md).
+
+Geometry bounds source input at 256 MiB, each encoded/decoded selected stream at 64 MiB, cumulative chunks and final triangles at one million, source mesh vertices at one million, polygon degree at 4096 and chunk/ancestor depth at 64, with a cooperative 30-second deadline. Gzip streams require exact framing without trailing bytes.
 
 Other clipboard/image formats, arbitrary metafile drawing operations, alternate scene identity streams, password/encrypted documents and non-sector-aligned containers are unsupported. Source files are capped at 512 MiB, selected summaries at 8 MiB and 4096 properties, and image axes at 4096 pixels; RGBA allocation is at most 64 MiB. Extraction uses a cooperative five-second deadline. The shared compound-file preflight bounds FAT metadata at 8 MiB, directory/DIFAT/miniFAT metadata at 4 MiB each and the root mini-stream at 64 MiB, and validates the original selected allocation chain before reading the image.
 
@@ -758,15 +762,19 @@ Primary inputs use the shared 512 MiB limit. The JSON index allows at most 2 MiB
 
 ## Rhino
 
-**Extension:** `.3dm` (case-insensitive). **Status:** saved viewport image extraction.
+**Extension:** `.3dm` (case-insensitive). **Status:** saved viewport extraction and native model geometry.
 
-Automatic thumbnails fit the stored image to the requested canvas. `--extract-saved-preview` returns its original dimensions. A document without a preview returns the absent-preview status (CLI code 3). The saved image may be stale, blank or reflect a viewport different from the current model; fresh Rhino geometry rendering is unavailable.
+Automatic thumbnails prefer the saved viewport and fall back to supported native geometry when it is missing or unreadable. `--render-geometry` bypasses saved images; `--extract-saved-preview` returns the original image dimensions, with code 3 for absence. Saved viewports can be stale, blank or show a different view of the model.
 
 The reader follows the official [openNURBS thumbnail procedure](https://developer.rhino3d.com/en/guides/cpp/extracting-thumbnail-preview-images/): read the native start section, then the leading document-properties table, and select its `TCODE_PROPERTIES_PREVIEWIMAGE` or `TCODE_PROPERTIES_COMPRESSED_PREVIEWIMAGE` record. Geometry, bitmap tables, materials and plugin data cannot supply a substitute image. Archive words 2, 3 and 4 use 32-bit chunk lengths; 50, 60, 70 and 80 use 64-bit lengths. Archive 1, the legacy word 5, newer/unknown versions, malformed boundaries and duplicate preview properties are refused.
 
 Qualified carriers contain a 40-byte `BITMAPINFOHEADER` with uncompressed Windows RGB rows. Native contiguous or separate palette/pixel buffers support direct bytes or exactly one framed zlib stream. The preview's direct-data CRC, compressed anonymous-child CRC and expanded-buffer CRC are all checked independently. Image dimensions, palette length and exact padded row storage are validated before inflation. This is a direct Rust reader using existing image/compression dependencies, with no Rhino installation or converter subprocess.
 
 Sources are limited to 512 MiB; leading comments to 256 KiB, properties to 16 MiB and 4,096 records, decoded bitmap storage to 64 MiB and each axis to 4,096 pixels. Only the start and properties sections are loaded. Later model tables and whole-file integrity are outside saved-image qualification.
+
+Fresh geometry uses pinned Rust `cadmpeg-codec-rhino=0.6.1` for native archive framing, checksums, mesh/point/curve/surface decoding, units, visibility, object colors and block expansion. Independent meshes retain authored positions, winding and normals. Complete native per-face render meshes with unique contiguous render slots for every source face can supply B-rep surfaces; bodies without a complete cache use the shared exact-boundary tessellator. Supported standalone curves and NURBS patches use bounded sampling over their native domains and knot spans. Text/annotation objects, unknown plugin classes and incomplete geometry fail explicitly. Native meshes are model geometry, independent of the saved viewport image.
+
+Geometry input is capped at 512 MiB; source vertices and total emitted primitives at five million, evaluated curve/surface samples at four million, body tessellation at 4096 bodies and curve nesting at 64. Curves use up to 64 uniform subdivisions per span; surface spans use 32. These preview sampling limits do not establish a universal chord-error bound. The decoder additionally uses its service allocation, decompression and work budgets. Official meshes, curves, point clouds, trimmed surfaces and extrusion examples plus separately authored openNURBS v5–v8 mixed models, hidden points, block placements and a free NURBS patch have independent `rhino3dm` SDK measurements; see [geometry witnesses](../tests/fixtures/formats/rhino/README.md).
 
 Six unchanged official McNeel producer samples from Rhino 3–8 have exact independently decoded saved-pixel references and corpus snapshots; Rhino 2 and an openNURBS 6 mesh qualify absence. [Fixture provenance and retained licensing](../tests/fixtures/formats/rhino/README.md) record pinned hashes. Authored controls exercise RGB/indexed rows, both row orientations, raw/compressed records, contiguous/separate buffers, all checksum layers, truncation, trailing streams, excessive expansion, dimensions, ambiguity and output preservation. These establish saved-image compatibility for the retained carriers, rather than complete native geometry or universal release compatibility.
 
@@ -840,7 +848,13 @@ The saved-preview reader does not parse geometry, verify whole-file CRCs or reco
 
 ## SolidWorks
 
-**Extensions:** `.sldprt`, `.sldasm`. **Coverage:** saved document thumbnails in qualified CFB/OLE v3/v4 containers, without part or assembly geometry decoding.
+**Extensions:** `.sldprt`, `.sldasm`. **Coverage:** qualified active native part geometry, placed assembly companions and saved document thumbnails.
+
+Fresh part geometry uses pinned Rust `cadmpeg-codec-sldprt=0.6.1` to decode the active solved Parasolid state, units, body identity and native 3D display meshes. Qualified complete single-body/configuration render caches retain their original 3D positions, triangle winding, normals and available typed colors; unusable caches fall back to the shared exact-boundary tessellator. Source geometry/topology losses, stale or incoherent cache inventories and unverified native dialects fail explicitly. Display meshes are model geometry and do not use saved thumbnail pixels.
+
+Legacy compound assemblies follow the addressed `COMPINSTANCETREE` XML, join native file/model/configuration identities, retain suppression and display visibility, and apply stored column-major placements with metre translations converted to millimetres. Referenced `.sldprt`/`.sldasm` companions must resolve unambiguously within the supplied project directory. Missing files, escaped references, cycles, unsupported configurations and unsupported local assembly result geometry fail explicitly. Stored thumbnail extraction remains available without companions. Original MIT producer parts and assemblies, source hashes, geometry and placement witnesses are retained in [SolidWorks qualification](../tests/fixtures/formats/solidworks/README.md).
+
+Geometry bounds the supplied project at 256 MiB and 128 distinct files, assembly expansion at 4096 occurrences and nesting at 32, final/cached primitives at five million and conservative scene storage at 512 MiB. Addressed assembly XML is capped at 8 MiB with 100,000 entries. The part decoder retains its service allocation/decompression policy with eight million collection items and one billion charged work units; these limits do not imply a global allocation or runtime bound.
 
 The root `ISolidWorksInformation` stream qualifies the document container. The reader selects the exact root `PreviewPNG` stream, followed by the exact root `Preview` stream when the PNG is absent or unreadable. `Preview` is a little-endian byte length followed by a DIB; the enabled Rust bitmap decoder handles supported palettes, row orientation and RLE encodings. It does not search geometry or miscellaneous streams for images. Configuration-specific thumbnails and nested streams are not document candidates.
 
@@ -848,9 +862,9 @@ SOLIDWORKS Document Manager exposes separate document [PNG and bitmap preview st
 
 The shared compound preflight preserves the Inventor reader's limits: 512 MiB source, 8 MiB FAT metadata, 4 MiB each directory/DIFAT/miniFAT, 64 MiB root mini-stream, exact original selected-stream chain lengths and cycle checks. Selected previews are limited to 8 MiB encoded bytes, 4096 pixels per axis and 64 MiB decoded allocation, with a cooperative five-second extraction deadline.
 
-Two unchanged, separately MIT-licensed producer files qualify parts and assemblies. Public extraction matches PNGs independently read using Python `olefile`; removing only `PreviewPNG` from temporary copies also matches independently decoded original RLE8 DIB pixels. CLI tests cover original-size extraction, absent-preview code 3, output preservation and unsupported fresh rendering. [Fixture provenance, hashes and license](../tests/fixtures/formats/solidworks/README.md) are retained alongside both producer files.
+Two unchanged, separately MIT-licensed producer files qualify parts and assemblies. Public extraction matches PNGs independently read using Python `olefile`; removing only `PreviewPNG` from temporary copies also matches independently decoded original RLE8 DIB pixels. CLI tests cover original-size extraction, absent-preview code 3, native geometry fallback and output preservation on unsupported geometry or missing companions. [Fixture provenance, hashes and license](../tests/fixtures/formats/solidworks/README.md) are retained alongside both producer files.
 
-Modern compressed-section SolidWorks containers, `.slddrw`, configuration-selection APIs and fresh Parasolid/model geometry remain unsupported. Assemblies use their stored image without opening referenced component files. PNG/DIB fallback does not establish whole-model validity or compatibility with every SolidWorks release; saved images can be absent or stale.
+The saved-image reader remains limited to qualified compound-storage containers; alternate compressed-section preview carriers, `.slddrw` and configuration-selection APIs remain unsupported. Geometry qualification follows the native codec and the retained producer files rather than every SolidWorks release. Assembly images are extracted without opening referenced component files. PNG/DIB fallback does not establish whole-model validity or compatibility with every SolidWorks release; saved images can be absent or stale.
 
 ## Remaining compatibility work
 
@@ -862,14 +876,18 @@ Remaining work covers valid encodings and geometry outside the documented subset
 
 ## SketchUp
 
-**Extension:** `.skp`. **Status:** addressed saved model-thumbnail PNG extraction only.
+**Extension:** `.skp`. **Status:** native surface/wire/component geometry and addressed saved model-thumbnail PNG extraction.
 
 SketchUp 2013–2017 legacy containers are qualified by unchanged retail producer files. The reader validates the UTF-16 document/version strings, skips the per-model GUID and save seed, walks the bounded schema-0 `CVersionMap`, then follows the fixed document prefix to its first schema-3 `CDib`. PNG subtype 4 and the declared image byte length select the model thumbnail. SketchUp 17 adds the next persistent ID and reserved field to this prefix. A null thumbnail pointer returns absence; later preview, component and texture images never substitute for it.
 
 SketchUp 2026 VFF/ZIP containers are qualified by unchanged SketchUp Web 26.2.0 saves. The reader checks the qualified VFF prefix, bounded physical ZIP directory and unambiguous member names, requires `model.dat`, and checks `meta/meta.dat` root/type/version records against the outer header. Only the metadata model-image field `0x67 > 0x2328` with PNG subtype 4 and exact `meta/model_thumbnail.png` address supplies the saved image. An absent model-image record returns absence. A declared but missing or malformed selected member returns an error. Preview, scene, component, watermark and material images are ignored. Selected metadata and PNG members accept stored or Deflate compression and must pass ZIP CRC validation.
 
-Automatic previews fit the saved image to the requested canvas. `--extract-saved-preview` preserves its original decoded pixels and dimensions; absence returns exit code 3. There is no SketchUp geometry reader or fallback. 2018–2025, other legacy schemas or VFF prefixes, JPEG thumbnails and other image descriptors are outside this qualification; unsupported carriers fail explicitly. A saved image may be blank or stale.
+Automatic previews prefer the saved image and fall back to supported native geometry when it is missing or unreadable. `--render-geometry` bypasses thumbnail pixels; `--extract-saved-preview` preserves original saved dimensions, with code 3 for absence. 2018–2025, other legacy schemas or VFF prefixes, JPEG thumbnails and other image descriptors remain outside saved-image qualification. A saved image may be blank or stale.
 
 Inputs use the shared 512 MiB source limit. Version/class strings allow at most 128 UTF-16 code units, the legacy version map 256 unique classes, modern ZIP directories 4096 entries, metadata 64 KiB and 128 unique records per parsed level. Selected image members allow 8 MiB compressed and decoded, dimensions up to 4096 per axis, 16 million pixels and 64 MiB codec allocation. The PNG IHDR is checked before decoding. No desktop application, SDK, subprocess or new dependency is required.
+
+Fresh geometry decodes the native half-edge kernel: vertices, edges, ordered face loops and holes. It triangulates the visible surfaces, emits loose wires/curves, expands shared groups/components under row-major native affine placements, and retains front diffuse colors, opacity, inherited paint and layer/entity visibility, including implicit default tags and the displayed current tag. Coordinates are converted from inches to millimetres. Mirror placements preserve outward winding. Legacy 2013–2017 readers walk the complete native prefix and global MFC class/object map, including template definitions and explicit entity lists; later scene/style/view metadata is not loaded. They never select geometry by signatures. The modern 2026 reader selects `model.dat` through the addressed VFF/ZIP archive and decodes typed TLV pools and definition references. Selected model/material members require supported compression, lengths and CRCs.
+
+Texture images, back-face materials, annotation rendering, placed images, camera-facing components and active section clipping remain outside this static subset. Unsupported geometry classes and unresolved references fail explicitly. Legacy input is capped at 64 MiB with one million objects/list entries/output primitives, depth 128 and a cooperative 30-second deadline. Modern selected members are capped at 64 MiB each, total expansion at 512 MiB, records/expanded primitives/container visits at one million and instance depth at 128. Independent producer COLLADA exports qualify bounds and areas across original legacy and modern boxes, holes, a hexagonal face, shared/nested components, rotations, nonuniform scale and mirroring. Separate cube tests verify twelve triangles, surface area and outward volume; image removal/corruption preserves native geometry and automatic fallback. See [SketchUp geometry witnesses](../tests/fixtures/formats/sketchup/README.md).
 
 Eight original producer files, their independent 256 × 256 PNG witnesses, original fixture license and corpus notice, pinned source hashes and qualification notes are retained in the [SketchUp corpus](../tests/fixtures/formats/sketchup/README.md). Integration tests compare exact saved pixels across all qualified versions, exercise extraction and absence through the CLI, and reject truncated/framing/schema/size/dimension/version/metadata/address/CRC failures. The fixtures are separately licensed GPL-3.0-only geometry with the upstream notice's bundled Trimble-content exclusions; Catwalk's independently implemented reader retains its MIT license.

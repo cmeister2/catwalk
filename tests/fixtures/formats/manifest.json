@@ -2327,6 +2327,230 @@
       "kind": "model",
       "provenance": "Author-created deterministic Rust fixture; MIT, matching the project license",
       "title": "XBF colored face with genuine carrier and instance placement"
+    },
+    {
+      "id": "skp-geometry-2026-box",
+      "extension": "skp",
+      "title": "SketchUp 2026 native box",
+      "input": "sketchup/2026-box.skp",
+      "kind": "native-geometry",
+      "provenance": "Unchanged retail SketchUp Web 26.2.0 producer geometry from hew3d/openskp at a6788afa6386cfd4bc781998dca99c591b3fb069; GPL-3.0-only authored corpus with bundled Trimble-content exclusions; independently qualified against producer COLLADA exports."
+    },
+    {
+      "id": "skp-geometry-2026-box-two-materials",
+      "extension": "skp",
+      "title": "SketchUp 2026 native box-two-materials",
+      "input": "sketchup/2026-box-two-materials.skp",
+      "kind": "native-geometry",
+      "provenance": "Unchanged retail SketchUp Web 26.2.0 producer geometry from hew3d/openskp at a6788afa6386cfd4bc781998dca99c591b3fb069; GPL-3.0-only authored corpus with bundled Trimble-content exclusions; independently qualified against producer COLLADA exports."
+    },
+    {
+      "id": "skp-geometry-2026-box-component-two-instances",
+      "extension": "skp",
+      "title": "SketchUp 2026 native box-component-two-instances",
+      "input": "sketchup/2026-box-component-two-instances.skp",
+      "kind": "native-geometry",
+      "provenance": "Unchanged retail SketchUp Web 26.2.0 producer geometry from hew3d/openskp at a6788afa6386cfd4bc781998dca99c591b3fb069; GPL-3.0-only authored corpus with bundled Trimble-content exclusions; independently qualified against producer COLLADA exports."
+    },
+    {
+      "id": "skp-geometry-2026-nested-3-deep",
+      "extension": "skp",
+      "title": "SketchUp 2026 native nested-3-deep",
+      "input": "sketchup/2026-nested-3-deep.skp",
+      "kind": "native-geometry",
+      "provenance": "Unchanged retail SketchUp Web 26.2.0 producer geometry from hew3d/openskp at a6788afa6386cfd4bc781998dca99c591b3fb069; GPL-3.0-only authored corpus with bundled Trimble-content exclusions; independently qualified against producer COLLADA exports."
+    },
+    {
+      "id": "skp-geometry-2026-face-with-hole",
+      "extension": "skp",
+      "title": "SketchUp 2026 native face-with-hole",
+      "input": "sketchup/2026-face-with-hole.skp",
+      "kind": "native-geometry",
+      "provenance": "Unchanged retail SketchUp Web 26.2.0 producer geometry from hew3d/openskp at a6788afa6386cfd4bc781998dca99c591b3fb069; GPL-3.0-only authored corpus with bundled Trimble-content exclusions; independently qualified against producer COLLADA exports."
+    },
+    {
+      "id": "skp-geometry-2026-instance-scaled",
+      "extension": "skp",
+      "title": "SketchUp 2026 native instance-scaled",
+      "input": "sketchup/2026-instance-scaled.skp",
+      "kind": "native-geometry",
+      "provenance": "Unchanged retail SketchUp Web 26.2.0 producer geometry from hew3d/openskp at a6788afa6386cfd4bc781998dca99c591b3fb069; GPL-3.0-only authored corpus with bundled Trimble-content exclusions; independently qualified against producer COLLADA exports."
+    },
+    {
+      "id": "max-geometry-simpletriangle",
+      "extension": "max",
+      "input": "max_geometry/SimpleTriangle.max",
+      "kind": "native-geometry",
+      "provenance": "Unchanged Apache-2.0 BabylonJS/Exporters native 3ds Max scene at 231c4f720609d7e93999e43dcd6865388d89b117; geometry independently qualified against original Babylon producer export.",
+      "title": "3ds Max native SimpleTriangle"
+    },
+    {
+      "id": "max-geometry-instances",
+      "extension": "max",
+      "input": "max_geometry/Instances.max",
+      "kind": "native-geometry",
+      "provenance": "Unchanged Apache-2.0 BabylonJS/Exporters native 3ds Max scene at 231c4f720609d7e93999e43dcd6865388d89b117; geometry independently qualified against original Babylon producer export.",
+      "title": "3ds Max native Instances"
+    },
+    {
+      "id": "max-geometry-doublesidedmaterial",
+      "extension": "max",
+      "input": "max_geometry/DoubleSidedMaterial.max",
+      "kind": "native-geometry",
+      "provenance": "Unchanged Apache-2.0 BabylonJS/Exporters native 3ds Max scene at 231c4f720609d7e93999e43dcd6865388d89b117; geometry independently qualified against original Babylon producer export.",
+      "title": "3ds Max native DoubleSidedMaterial"
+    },
+    {
+      "id": "3dm-geometry-my-mesh",
+      "extension": "3dm",
+      "input": "rhino/my_mesh.3dm",
+      "kind": "native-geometry",
+      "provenance": "Native Rhino/openNURBS producer geometry independently qualified with McNeel rhino3dm 8.17.0; source credits, hashes, license and producer-generation details retained in rhino/README.md and geometry-witnesses.json.",
+      "title": "Rhino native my_mesh"
+    },
+    {
+      "id": "3dm-geometry-v5-extrusions",
+      "extension": "3dm",
+      "input": "rhino/v5_extrusions.3dm",
+      "kind": "native-geometry",
+      "provenance": "Native Rhino/openNURBS producer geometry independently qualified with McNeel rhino3dm 8.17.0; source credits, hashes, license and producer-generation details retained in rhino/README.md and geometry-witnesses.json.",
+      "title": "Rhino native v5_extrusions"
+    },
+    {
+      "id": "3dm-geometry-producer-geometry-v5",
+      "extension": "3dm",
+      "input": "rhino/producer_geometry_v5.3dm",
+      "kind": "native-geometry",
+      "provenance": "Native Rhino/openNURBS producer geometry independently qualified with McNeel rhino3dm 8.17.0; source credits, hashes, license and producer-generation details retained in rhino/README.md and geometry-witnesses.json.",
+      "title": "Rhino native producer_geometry_v5"
+    },
+    {
+      "id": "3dm-geometry-producer-geometry-v8",
+      "extension": "3dm",
+      "input": "rhino/producer_geometry_v8.3dm",
+      "kind": "native-geometry",
+      "provenance": "Native Rhino/openNURBS producer geometry independently qualified with McNeel rhino3dm 8.17.0; source credits, hashes, license and producer-generation details retained in rhino/README.md and geometry-witnesses.json.",
+      "title": "Rhino native producer_geometry_v8"
+    },
+    {
+      "id": "3dm-geometry-producer-instances",
+      "extension": "3dm",
+      "input": "rhino/producer_instances.3dm",
+      "kind": "native-geometry",
+      "provenance": "Native Rhino/openNURBS producer geometry independently qualified with McNeel rhino3dm 8.17.0; source credits, hashes, license and producer-generation details retained in rhino/README.md and geometry-witnesses.json.",
+      "title": "Rhino native producer_instances"
+    },
+    {
+      "id": "3dm-geometry-producer-surface",
+      "extension": "3dm",
+      "input": "rhino/producer_surface.3dm",
+      "kind": "native-geometry",
+      "provenance": "Native Rhino/openNURBS producer geometry independently qualified with McNeel rhino3dm 8.17.0; source credits, hashes, license and producer-generation details retained in rhino/README.md and geometry-witnesses.json.",
+      "title": "Rhino native producer_surface"
+    },
+    {
+      "id": "3dm-geometry-my-curves",
+      "extension": "3dm",
+      "input": "rhino/my_curves.3dm",
+      "kind": "native-geometry",
+      "provenance": "Native Rhino/openNURBS producer geometry independently qualified with McNeel rhino3dm 8.17.0; source credits, hashes, license and producer-generation details retained in rhino/README.md and geometry-witnesses.json.",
+      "title": "Rhino native my_curves"
+    },
+    {
+      "id": "3dm-geometry-my-points",
+      "extension": "3dm",
+      "input": "rhino/my_points.3dm",
+      "kind": "native-geometry",
+      "provenance": "Native Rhino/openNURBS producer geometry independently qualified with McNeel rhino3dm 8.17.0; source credits, hashes, license and producer-generation details retained in rhino/README.md and geometry-witnesses.json.",
+      "title": "Rhino native my_points"
+    },
+    {
+      "id": "sldprt-geometry-about",
+      "extension": "sldprt",
+      "input": "solidworks/solidworks-about.sldprt",
+      "kind": "native-geometry",
+      "provenance": "Unchanged MIT-licensed GuoXiong Power-Package native producer document at bc6b8d0ca0fe472a4f0ed91c9e64f986b3ddc7e6; native3D geometry with source assembly companions, independent source geometry witnesses and placement qualification.",
+      "title": "SolidWorks native about"
+    },
+    {
+      "id": "sldasm-geometry-powerpackage",
+      "extension": "sldasm",
+      "input": "solidworks/solidworks-powerpackage.sldasm",
+      "kind": "native-geometry",
+      "provenance": "Unchanged MIT-licensed GuoXiong Power-Package native producer document at bc6b8d0ca0fe472a4f0ed91c9e64f986b3ddc7e6; native3D geometry with source assembly companions, independent source geometry witnesses and placement qualification.",
+      "title": "SolidWorks native powerpackage"
+    },
+    {
+      "id": "skp-geometry-legacy-box-v2013",
+      "extension": "skp",
+      "input": "sketchup/legacy-box-v2013.skp",
+      "kind": "native-geometry",
+      "provenance": "Unchanged retail SketchUp native producer geometry from hew3d/openskp at a6788afa6386cfd4bc781998dca99c591b3fb069; GPL-3.0-only authored corpus with bundled Trimble-content exclusions; independent producer COLLADA bounds and surface-area witnesses.",
+      "title": "SketchUp legacy native legacy-box-v2013"
+    },
+    {
+      "id": "skp-geometry-legacy-box-v2014",
+      "extension": "skp",
+      "input": "sketchup/legacy-box-v2014.skp",
+      "kind": "native-geometry",
+      "provenance": "Unchanged retail SketchUp native producer geometry from hew3d/openskp at a6788afa6386cfd4bc781998dca99c591b3fb069; GPL-3.0-only authored corpus with bundled Trimble-content exclusions; independent producer COLLADA bounds and surface-area witnesses.",
+      "title": "SketchUp legacy native legacy-box-v2014"
+    },
+    {
+      "id": "skp-geometry-legacy-box-v2015",
+      "extension": "skp",
+      "input": "sketchup/legacy-box-v2015.skp",
+      "kind": "native-geometry",
+      "provenance": "Unchanged retail SketchUp native producer geometry from hew3d/openskp at a6788afa6386cfd4bc781998dca99c591b3fb069; GPL-3.0-only authored corpus with bundled Trimble-content exclusions; independent producer COLLADA bounds and surface-area witnesses.",
+      "title": "SketchUp legacy native legacy-box-v2015"
+    },
+    {
+      "id": "skp-geometry-legacy-box-v2016",
+      "extension": "skp",
+      "input": "sketchup/legacy-box-v2016.skp",
+      "kind": "native-geometry",
+      "provenance": "Unchanged retail SketchUp native producer geometry from hew3d/openskp at a6788afa6386cfd4bc781998dca99c591b3fb069; GPL-3.0-only authored corpus with bundled Trimble-content exclusions; independent producer COLLADA bounds and surface-area witnesses.",
+      "title": "SketchUp legacy native legacy-box-v2016"
+    },
+    {
+      "id": "skp-geometry-2017-box",
+      "extension": "skp",
+      "input": "sketchup/2017-box.skp",
+      "kind": "native-geometry",
+      "provenance": "Unchanged retail SketchUp native producer geometry from hew3d/openskp at a6788afa6386cfd4bc781998dca99c591b3fb069; GPL-3.0-only authored corpus with bundled Trimble-content exclusions; independent producer COLLADA bounds and surface-area witnesses.",
+      "title": "SketchUp legacy native 2017-box"
+    },
+    {
+      "id": "skp-geometry-2017-box-two-materials",
+      "extension": "skp",
+      "input": "sketchup/2017-box-two-materials.skp",
+      "kind": "native-geometry",
+      "provenance": "Unchanged retail SketchUp native producer geometry from hew3d/openskp at a6788afa6386cfd4bc781998dca99c591b3fb069; GPL-3.0-only authored corpus with bundled Trimble-content exclusions; independent producer COLLADA bounds and surface-area witnesses.",
+      "title": "SketchUp legacy native 2017-box-two-materials"
+    },
+    {
+      "id": "skp-geometry-2017-box-component-two-instances",
+      "extension": "skp",
+      "input": "sketchup/2017-box-component-two-instances.skp",
+      "kind": "native-geometry",
+      "provenance": "Unchanged retail SketchUp native producer geometry from hew3d/openskp at a6788afa6386cfd4bc781998dca99c591b3fb069; GPL-3.0-only authored corpus with bundled Trimble-content exclusions; independent producer COLLADA bounds and surface-area witnesses.",
+      "title": "SketchUp legacy native 2017-box-component-two-instances"
+    },
+    {
+      "id": "skp-geometry-2017-component-rotate",
+      "extension": "skp",
+      "input": "sketchup/2017-component-rotate.skp",
+      "kind": "native-geometry",
+      "provenance": "Unchanged retail SketchUp native producer geometry from hew3d/openskp at a6788afa6386cfd4bc781998dca99c591b3fb069; GPL-3.0-only authored corpus with bundled Trimble-content exclusions; independent producer COLLADA bounds and surface-area witnesses.",
+      "title": "SketchUp legacy native 2017-component-rotate"
+    },
+    {
+      "id": "skp-geometry-2017-face-with-hole",
+      "extension": "skp",
+      "input": "sketchup/2017-face-with-hole.skp",
+      "kind": "native-geometry",
+      "provenance": "Unchanged retail SketchUp native producer geometry from hew3d/openskp at a6788afa6386cfd4bc781998dca99c591b3fb069; GPL-3.0-only authored corpus with bundled Trimble-content exclusions; independent producer COLLADA bounds and surface-area witnesses.",
+      "title": "SketchUp legacy native 2017-face-with-hole"
     }
   ],
   "render": {

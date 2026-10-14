@@ -138,22 +138,24 @@ fn absence_corruption_and_geometry_forcing_preserve_existing_outputs() -> Result
     let temporary = Temporary::new("failures");
     let destination = temporary.path.join("existing.png");
     fs::write(&destination, b"existing thumbnail")?;
-    for flag in ["--extract-saved-preview", "--render-geometry"] {
-        let output = Command::new(env!("CARGO_BIN_EXE_catwalk"))
-            .arg(fixture("my_mesh.3dm"))
-            .args([flag, "--output"])
-            .arg(&destination)
-            .output()?;
-        assert_eq!(
-            output.status.code(),
-            Some(if flag == "--extract-saved-preview" {
-                3
-            } else {
-                1
-            })
-        );
-        assert_eq!(fs::read(&destination)?, b"existing thumbnail");
-    }
+    let output = Command::new(env!("CARGO_BIN_EXE_catwalk"))
+        .arg(fixture("my_mesh.3dm"))
+        .args(["--extract-saved-preview", "--output"])
+        .arg(&destination)
+        .output()?;
+    assert_eq!(output.status.code(), Some(3));
+    assert_eq!(fs::read(&destination)?, b"existing thumbnail");
+    let output = Command::new(env!("CARGO_BIN_EXE_catwalk"))
+        .arg(fixture("my_mesh.3dm"))
+        .args(["--render-geometry", "--output", "-"])
+        .output()?;
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(image::load_from_memory(&output.stdout)?.width(), 512);
+    assert_eq!(fs::read(&destination)?, b"existing thumbnail");
     let mut source = fs::read(fixture("v3_DeformSpheres.3dm"))?;
     // The original V3 fixture's addressed preview record starts at 1061,
     // has an eight-byte header and a 7124-byte payload including its CRC.

@@ -1,0 +1,43 @@
+{
+  "repository": "https://github.com/BabylonJS/Exporters",
+  "revision": "231c4f720609d7e93999e43dcd6865388d89b117",
+  "license": "Apache-2.0",
+  "files": [
+    {
+      "file": "SimpleTriangle.max",
+      "original_path": "3ds Max/Samples/sourceModels/SimpleTriangle/SimpleTriangle.max",
+      "source_url": "https://raw.githubusercontent.com/BabylonJS/Exporters/231c4f720609d7e93999e43dcd6865388d89b117/3ds%20Max/Samples/sourceModels/SimpleTriangle/SimpleTriangle.max",
+      "sha256": "f5b5689d8e3c56f0b23fe6718526511ff0e8c138cd3be4abec8ef881ed569a76"
+    },
+    {
+      "file": "SimpleTriangle.babylon",
+      "original_path": "3ds Max/Samples/babylon/SimpleTriangle/SimpleTriangle.babylon",
+      "source_url": "https://raw.githubusercontent.com/BabylonJS/Exporters/231c4f720609d7e93999e43dcd6865388d89b117/3ds%20Max/Samples/babylon/SimpleTriangle/SimpleTriangle.babylon",
+      "sha256": "4ffe0227b8d6d8b66814e2d0406b73029d9bd758881625217b89f6e25331c6d6"
+    },
+    {
+      "file": "Instances.max",
+      "original_path": "3ds Max/Samples/sourceModels/Instances/Instances.max",
+      "source_url": "https://raw.githubusercontent.com/BabylonJS/Exporters/231c4f720609d7e93999e43dcd6865388d89b117/3ds%20Max/Samples/sourceModels/Instances/Instances.max",
+      "sha256": "4c898593e7be62e784e0aeba621ff4d2500c95e4bd94e5d41cffa12af8c37b2d"
+    },
+    {
+      "file": "Instances.babylon",
+      "original_path": "3ds Max/Samples/babylon/Instances/Instances.babylon",
+      "source_url": "https://raw.githubusercontent.com/BabylonJS/Exporters/231c4f720609d7e93999e43dcd6865388d89b117/3ds%20Max/Samples/babylon/Instances/Instances.babylon",
+      "sha256": "5f20d7408fbdccfde24ce89bcfa71fb3461fa80b3795bb3fb561eb3793420e09"
+    },
+    {
+      "file": "DoubleSidedMaterial.max",
+      "original_path": "3ds Max/Samples/sourceModels/DoubleSidedMaterial/DoubleSidedMaterial.max",
+      "source_url": "https://raw.githubusercontent.com/BabylonJS/Exporters/231c4f720609d7e93999e43dcd6865388d89b117/3ds%20Max/Samples/sourceModels/DoubleSidedMaterial/DoubleSidedMaterial.max",
+      "sha256": "0624f2e06db6abeabc4f689b88c201ca0e7103e0fd8c3939189cab3dcd9da68f"
+    },
+    {
+      "file": "DoubleSidedMaterial.babylon",
+      "original_path": "3ds Max/Samples/babylon/DoubleSidedMaterial/DoubleSidedMaterial.babylon",
+      "source_url": "https://raw.githubusercontent.com/BabylonJS/Exporters/231c4f720609d7e93999e43dcd6865388d89b117/3ds%20Max/Samples/babylon/DoubleSidedMaterial/DoubleSidedMaterial.babylon",
+      "sha256": "14ada2ef7e64b8f42c37f625e3f989872fa1391c67cb6c7748b322d6e418cb31"
+    }
+  ]
+}

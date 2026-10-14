@@ -29,6 +29,8 @@ acadrust = { version = "=0.6.4", default-features = false }
 base64 = "0.23.0"
 cadmpeg-codec-f3d = "=0.6.1"
 cadmpeg-codec-inventor = "=0.6.1"
+cadmpeg-codec-rhino = "=0.6.1"
+cadmpeg-codec-sldprt = "=0.6.1"
 cadmpeg-codec-step = "=0.6.1"
 cadmpeg-core = "=0.6.1"
 cadmpeg-ir = "=0.6.1"
