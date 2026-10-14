@@ -1,5 +1,8 @@
 //! Command-line preview rendering, saved-image extraction and PNG output.
 
+/// Versioned reader discovery and display descriptions for downstream integrations.
+mod format_catalog;
+
 use catwalk3d::{
     Result, formats,
     render::{RenderOptions, write_png},
@@ -45,6 +48,9 @@ struct Args {
     /// Print implemented readers and their limitations.
     #[arg(long, alias = "list-readers")]
     list_formats: bool,
+    /// Print the format catalog as versioned JSON, including display descriptions.
+    #[arg(long, requires = "list_formats")]
+    json: bool,
 }
 
 /// Mutually exclusive ways to bypass normal saved-image preference and fallback.
@@ -89,6 +95,14 @@ fn dimensions(args: &Args) -> Result<(u32, u32)> {
 /// Complete preview decoding and PNG encoding before opening the destination.
 fn run(args: &Args) -> Result<()> {
     if args.list_formats {
+        if args.json {
+            let stdout = std::io::stdout();
+            let mut writer = std::io::BufWriter::new(stdout.lock());
+            serde_json::to_writer_pretty(&mut writer, &format_catalog::json())?;
+            writer.write_all(b"\n")?;
+            writer.flush()?;
+            return Ok(());
+        }
         println!(
             "Implemented model readers: {}",
             formats::MODEL_EXTENSIONS.join(", ")

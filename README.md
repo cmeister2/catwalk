@@ -140,6 +140,8 @@ The ❌ saved-preview entries have documented image carriers that Catwalk does n
 
 Run `catwalk --list-formats` for the complete extension list. Each reader supports a documented subset; the [coverage matrix](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md) lists supported encodings, scene features and limitations.
 
+Use `catwalk --list-formats --json` for a versioned catalog with every extension alias, human-readable format descriptions and support categories. See the [discovery contract](docs/format-catalog.md) and [JSON Schema](docs/format-catalog.schema.json) for downstream CI checks and settings tables.
+
 Models use a fitted static view. Supported colors and materials are preserved; OBJ, glTF/GLB and 3MF additionally support base-color textures. Animation files use a supported static pose or sample. Raster images are fitted to the canvas with their proportions preserved.
 
 TIFF (`.tif` / `.tiff`) supports fitted single-page images and fresh 3D previews of homogeneous grayscale page stacks. Volume previews use thresholded density surfaces, TIFF orientation and supported physical XY resolution; slice spacing defaults to X spacing. RGB stacks, heterogeneous image series and OME hyperstack axes remain unsupported. See [the TIFF coverage entry](https://github.com/cmeister2/catwalk3d/blob/main/docs/format-coverage.md#tiff).

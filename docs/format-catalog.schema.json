@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/cmeister2/catwalk3d/blob/main/docs/format-catalog.schema.json",
+  "title": "Catwalk format catalog, schema version 1",
+  "type": "object",
+  "required": ["schema_version", "catwalk_version", "extensions", "formats", "categories"],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "catwalk_version": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Version of the executable that produced this catalog."
+    },
+    "extensions": {
+      "$ref": "#/$defs/extensions",
+      "description": "Sorted union of every enabled reader registry, including all aliases."
+    },
+    "formats": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["extension", "description"],
+        "properties": {
+          "extension": {
+            "$ref": "#/$defs/extension"
+          },
+          "description": {
+            "type": "string",
+            "pattern": "\\S",
+            "description": "Human-readable English display label for the format."
+          }
+        },
+        "additionalProperties": true
+      },
+      "description": "Exactly one entry per extension, in the same order as extensions."
+    },
+    "categories": {
+      "type": "object",
+      "required": ["geometry", "image", "saved_preview", "native_geometry"],
+      "properties": {
+        "geometry": {
+          "$ref": "#/$defs/extensions",
+          "description": "Model and native-document geometry readers combined."
+        },
+        "image": {
+          "$ref": "#/$defs/extensions",
+          "description": "Raster and DICOM image readers."
+        },
+        "saved_preview": {
+          "$ref": "#/$defs/extensions",
+          "description": "Readers that can extract embedded document images."
+        },
+        "native_geometry": {
+          "$ref": "#/$defs/extensions",
+          "description": "Native-document geometry readers; a subset of geometry."
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "extension": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+$",
+      "description": "Lowercase extension without a leading dot."
+    },
+    "extensions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/extension"
+      },
+      "uniqueItems": true
+    }
+  }
+}
